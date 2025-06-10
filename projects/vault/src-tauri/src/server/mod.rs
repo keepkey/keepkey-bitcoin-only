@@ -6,7 +6,8 @@ use axum::{
     serve,
     routing::get,
 };
-use bitcoin::BitcoinState;
+use bitcoin::BitcoinState; // legacy, still used for device-related state
+use crate::cache::device_cache::DeviceCache;
 
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
@@ -26,6 +27,7 @@ pub struct ServerState {
 pub struct AppState {
     pub server_state: Arc<ServerState>,
     pub bitcoin_state: Arc<BitcoinState>,
+    pub device_cache: Arc<DeviceCache>,
 }
 
 #[derive(OpenApi)]
@@ -36,10 +38,18 @@ pub struct AppState {
         routes::list_devices,
         routes::registry_status,
         routes::firmware_releases,
-        bitcoin::networks,
-        bitcoin::parse_path,
-        bitcoin::pubkey,
-        bitcoin::frontload,
+        // === v2 endpoints ===
+        routes::v2_endpoints::get_networks,
+        routes::v2_endpoints::post_network,
+        routes::v2_endpoints::get_paths,
+        routes::v2_endpoints::get_path,
+        routes::v2_endpoints::post_path,
+        routes::v2_endpoints::put_path,
+        routes::v2_endpoints::delete_path,
+        routes::v2_endpoints::get_pubkeys,
+        routes::v2_endpoints::get_balances,
+        routes::v2_endpoints::post_portfolio_balances,
+        routes::v2_endpoints::get_portfolio_summary,
     ),
     components(
         schemas(
@@ -49,18 +59,23 @@ pub struct AppState {
             routes::KeepKeyInfo,
             routes::UsbDeviceInfo,
             routes::ApiResponse<routes::DeviceStatus>,
-            bitcoin::NetworksResponse,
-            bitcoin::ParsePathRequest,
-            bitcoin::ParsePathResponse,
-            bitcoin::PubkeyRequest,
-            bitcoin::PubkeyResponse,
-            bitcoin::FrontloadResponse,
+            // v2 schemas
+            crate::cache::device_cache::Network,
+            crate::cache::device_cache::Path,
+            crate::cache::device_cache::CachedBalance,
+            crate::cache::device_cache::PortfolioSummary,
+            routes::v2_endpoints::NetworkInput,
+            routes::v2_endpoints::PubkeyResponse,
+            routes::v2_endpoints::GetPubkeysQuery,
+            routes::v2_endpoints::GetBalancesQuery,
+            routes::v2_endpoints::BalanceResponse,
+            routes::v2_endpoints::PortfolioBalanceRequest,
         )
     ),
     tags(
         (name = "system", description = "System health and status endpoints"),
         (name = "device", description = "KeepKey device management endpoints"),
-        (name = "bitcoin", description = "Bitcoin REST endpoints with frontloading")
+        (name = "v2", description = "Unified v2 API endpoints (networks, paths, balances, etc.)")
     ),
     info(
         title = "KeepKey Desktop API",
@@ -93,10 +108,14 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
             .expect("Failed to initialize Bitcoin state")
     );
 
+    // Create DeviceCache for v2 endpoints
+    let device_cache = Arc::new(DeviceCache::open()?);
+
     // Create unified app state
     let app_state = Arc::new(AppState {
         server_state,
         bitcoin_state,
+        device_cache: device_cache.clone(),
     });
 
     // Create Swagger UI
@@ -111,11 +130,8 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
         .route("/api/devices/debug", get(routes::debug_devices))
         .route("/api/devices/registry", get(routes::registry_status))
         .route("/api/firmware", get(routes::firmware_releases))
-        // Bitcoin endpoints
-        .route("/api/networks", get(bitcoin::networks))
-        .route("/api/parse-path", axum::routing::post(bitcoin::parse_path))
-        .route("/api/pubkey", axum::routing::post(bitcoin::pubkey))
-        .route("/api/frontload", axum::routing::post(bitcoin::frontload))
+        // Mount v2 API router under /api/v2 (modular endpoints)
+        .nest("/api/v2", routes::v2_endpoints::v2_router())
         // Add state and middleware
         .with_state(app_state)
         .merge(swagger_ui)
@@ -127,8 +143,8 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
     info!("🚀 Server started successfully:");
     info!("  📋 REST API: http://{}/api", addr);
     info!("  📚 API Documentation: http://{}/docs", addr);
-    info!("  🔑 Bitcoin API Root: http://{}/api", addr);
-    info!("  💾 Frontload: POST http://{}/api/frontload", addr);
+    info!("  🔑 Bitcoin API Root: http://{}/api/v2", addr);
+    info!("  💾 Frontload: POST http://{}/api/v2/frontload", addr);
     
     // Spawn the server
     tokio::spawn(async move {

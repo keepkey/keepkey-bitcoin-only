@@ -2,10 +2,14 @@ use axum::{
     extract::{State, Path as AxumPath, Query},
     http::StatusCode,
     response::{IntoResponse, Json},
-    Router,
 };
+// Keep Router import separately to avoid unused warning when compiling without v2_router use in this module
+#[allow(unused_imports)]
+use axum::Router;
+use crate::cache::device_cache::{DeviceCache, Network, Path, CachedBalance, PortfolioSummary};
+use crate::server::AppState;
 use serde::{Deserialize, Serialize};
-use crate::server::cache::device_cache::{DeviceCache, Network, Path, CachedBalance, PortfolioSummary};
+use utoipa::ToSchema;
 use std::sync::Arc;
 use std::collections::HashMap;
 use tracing::{info, error, debug, warn};
@@ -14,7 +18,19 @@ use anyhow::Result;
 // Import try_get_device directly from the server module (for future use)
 // use crate::server::try_get_device;
 
-pub async fn get_networks(State(cache): State<Arc<DeviceCache>>) -> Json<Vec<Network>> {
+/// Get networks endpoint
+#[utoipa::path(
+    get,
+    context_path = "/v2",
+    path = "/networks",
+    tag = "Networks",
+    responses(
+        (status = 200, body = Vec<Network>, description = "List of networks"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
+pub async fn get_networks(State(app_state): State<Arc<AppState>>) -> Json<Vec<Network>> {
+    let cache = &app_state.device_cache;
     let mut networks = match cache.get_enabled_networks().await {
         Ok(n) => n,
         Err(e) => {
@@ -41,7 +57,7 @@ pub async fn get_networks(State(cache): State<Arc<DeviceCache>>) -> Json<Vec<Net
 }
 
 /// Input model for network creation - doesn't require ID field
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct NetworkInput {
     pub chain_id_caip2: String,
     pub display_name: String,
@@ -53,10 +69,23 @@ pub struct NetworkInput {
 }
 
 /// Add a new network via POST request
+#[utoipa::path(
+    post,
+    context_path = "/v2",
+    path = "/networks",
+    tag = "Networks",
+    request_body = NetworkInput,
+    responses(
+        (status = 200, body = String, description = "Network added successfully"),
+        (status = 400, body = String, description = "Missing required field"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
 pub async fn post_network(
-    State(cache): State<Arc<DeviceCache>>,
+    State(app_state): State<Arc<AppState>>,
     Json(network_input): Json<NetworkInput>,
 ) -> impl IntoResponse {
+    let cache = &app_state.device_cache;
     // Validate required fields
     if network_input.chain_id_caip2.trim().is_empty() {
         error!("Missing required field: chain_id_caip2");
@@ -102,7 +131,18 @@ pub async fn post_network(
 }
 
 // Path API endpoints
-pub async fn get_paths(State(cache): State<Arc<DeviceCache>>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    context_path = "/v2",
+    path = "/paths",
+    tag = "Paths",
+    responses(
+        (status = 200, body = Vec<Path>, description = "List of paths"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
+pub async fn get_paths(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
+    let cache = &app_state.device_cache;
     match cache.get_paths().await {
         Ok(paths) => (StatusCode::OK, Json(paths)).into_response(),
         Err(e) => {
@@ -112,7 +152,22 @@ pub async fn get_paths(State(cache): State<Arc<DeviceCache>>) -> impl IntoRespon
     }
 }
 
-pub async fn get_path(State(cache): State<Arc<DeviceCache>>, AxumPath(id): AxumPath<i64>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    context_path = "/v2",
+    path = "/paths/{id}",
+    tag = "Paths",
+    params(
+        ("id" = i64, Path, description = "Path ID"),
+    ),
+    responses(
+        (status = 200, body = Path, description = "Path details"),
+        (status = 404, body = String, description = "Path not found"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
+pub async fn get_path(State(app_state): State<Arc<AppState>>, AxumPath(id): AxumPath<i64>) -> impl IntoResponse {
+    let cache = &app_state.device_cache;
     match cache.get_path(id).await {
         Ok(Some(path)) => (StatusCode::OK, Json(path)).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, format!("Path with ID {} not found", id)).into_response(),
@@ -123,7 +178,20 @@ pub async fn get_path(State(cache): State<Arc<DeviceCache>>, AxumPath(id): AxumP
     }
 }
 
-pub async fn post_path(State(cache): State<Arc<DeviceCache>>, Json(path): Json<Path>) -> impl IntoResponse {
+#[utoipa::path(
+    post,
+    context_path = "/v2",
+    path = "/paths",
+    tag = "Paths",
+    request_body = Path,
+    responses(
+        (status = 201, body = String, description = "Path added successfully"),
+        (status = 400, body = String, description = "Missing required field"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
+pub async fn post_path(State(app_state): State<Arc<AppState>>, Json(path): Json<Path>) -> impl IntoResponse {
+    let cache = &app_state.device_cache;
     // Validate required fields
     if path.note.trim().is_empty() {
         error!("Missing required field: note");
@@ -162,7 +230,24 @@ pub async fn post_path(State(cache): State<Arc<DeviceCache>>, Json(path): Json<P
     }
 }
 
-pub async fn put_path(State(cache): State<Arc<DeviceCache>>, AxumPath(id): AxumPath<i64>, Json(path): Json<Path>) -> impl IntoResponse {
+#[utoipa::path(
+    put,
+    context_path = "/v2",
+    path = "/paths/{id}",
+    tag = "Paths",
+    request_body = Path,
+    params(
+        ("id" = i64, Path, description = "Path ID"),
+    ),
+    responses(
+        (status = 200, body = String, description = "Path updated successfully"),
+        (status = 400, body = String, description = "Missing required field"),
+        (status = 404, body = String, description = "Path not found"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
+pub async fn put_path(State(app_state): State<Arc<AppState>>, AxumPath(id): AxumPath<i64>, Json(path): Json<Path>) -> impl IntoResponse {
+    let cache = &app_state.device_cache;
     // Validate required fields (same as post)
     if path.note.trim().is_empty() {
         error!("Missing required field: note");
@@ -205,7 +290,22 @@ pub async fn put_path(State(cache): State<Arc<DeviceCache>>, AxumPath(id): AxumP
     }
 }
 
-pub async fn delete_path(State(cache): State<Arc<DeviceCache>>, AxumPath(id): AxumPath<i64>) -> impl IntoResponse {
+#[utoipa::path(
+    delete,
+    context_path = "/v2",
+    path = "/paths/{id}",
+    tag = "Paths",
+    params(
+        ("id" = i64, Path, description = "Path ID"),
+    ),
+    responses(
+        (status = 200, body = String, description = "Path deleted successfully"),
+        (status = 404, body = String, description = "Path not found"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
+pub async fn delete_path(State(app_state): State<Arc<AppState>>, AxumPath(id): AxumPath<i64>) -> impl IntoResponse {
+    let cache = &app_state.device_cache;
     match cache.delete_path(id).await {
         Ok(_) => {
             info!("Deleted path with ID {}", id);
@@ -223,13 +323,13 @@ pub async fn delete_path(State(cache): State<Arc<DeviceCache>>, AxumPath(id): Ax
 }
 
 /// Query parameters for filtering pubkeys by network
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct GetPubkeysQuery {
     pub network: Option<String>,
 }
 
 /// PubkeyResponse represents a structured public key response for a specific network/path combination
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct PubkeyResponse {
     #[serde(rename = "type")]
     pub key_type: String,
@@ -246,15 +346,28 @@ pub struct PubkeyResponse {
 }
 
 /// Get device pubkeys - ONLY REAL DATA, NO MOCKING, NO FALLBACKS
+#[utoipa::path(
+    get,
+    context_path = "/v2",
+    path = "/pubkeys",
+    tag = "Pubkeys",
+    params(
+        ("network" = String, Query, description = "Filter by network"),
+    ),
+    responses(
+        (status = 200, body = Vec<PubkeyResponse>, description = "List of pubkeys"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
 pub async fn get_pubkeys(
-    State(cache): State<Arc<DeviceCache>>,
+    State(app_state): State<Arc<AppState>>,
     Query(params): Query<GetPubkeysQuery>,
 ) -> impl IntoResponse {
     let tag = "get_pubkeys";
     debug!("{}: Getting pubkeys with params: {:?}", tag, params);
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let device_id = match cache.get_device_id() {
+    let device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
             error!("{}: No device found in cache", tag);
@@ -263,7 +376,7 @@ pub async fn get_pubkeys(
     };
     
     // Get paths from database, filtered by network if specified
-    let paths = match cache.get_paths().await {
+    let paths = match app_state.device_cache.get_paths().await {
         Ok(all_paths) => {
             if let Some(network_filter) = &params.network {
                 all_paths.into_iter()
@@ -299,7 +412,7 @@ pub async fn get_pubkeys(
             let address_path = &path.address_n_list_master;
             
             // Check if this address is cached - ONLY USE REAL DATA
-            if let Some(cached_addr) = cache.get_cached_address(&coin_name, &script_type, address_path) {
+            if let Some(cached_addr) = app_state.device_cache.get_cached_address(&coin_name, &script_type, address_path) {
                 // Format BIP32 path strings
                 let path_str = format_bip32_path(&path.address_n_list);
                 let path_master_str = format_bip32_path(address_path);
@@ -331,32 +444,32 @@ pub async fn get_pubkeys(
     Json(pubkey_responses).into_response()
 }
 
-/// Get coin and script type info from network identifier  
+/// Get coin and script type info from network identifier
 fn get_coin_info_from_network(network: &str, script_type: &str) -> Result<(String, String), anyhow::Error> {
     let coin_name = match network {
         // Bitcoin networks
         n if n.starts_with("bip122:000000000019d6689c085ae165831e93") => "Bitcoin",
         n if n.starts_with("bip122:000000000000000000651ef99cb9fcbe") => "BitcoinCash",
         n if n.starts_with("bip122:000000000933ea01ad0ee984209779ba") => "Testnet", // Bitcoin testnet
-        
-        // UTXO altcoins  
+
+        // UTXO altcoins
         n if n.starts_with("bip122:12a765e31ffd4059bada1e25190f6e98") => "Litecoin",
         n if n.starts_with("bip122:000007d91d1254d60e2dd1ae58038307") => "Dash",
-        n if n.starts_with("bip122:00000000001a91e3dace36e2be3bf030") => "Dogecoin", 
+        n if n.starts_with("bip122:00000000001a91e3dace36e2be3bf030") => "Dogecoin",
         n if n.starts_with("bip122:7497ea1b465eb39f1c8f507bc877078f") => "DigiByte",
         n if n.starts_with("bip122:0000000000196a45") => "Zcash",
         n if n.starts_with("bip122:027e3758c3a65b12aa1046462b486d0a") => "Komodo",
-        
+
         // Account-based networks
         n if n.starts_with("eip155:") => "Ethereum",
         n if n.starts_with("cosmos:") => "Cosmos",
         n if n.starts_with("thorchain:") => "Thorchain",
         n if n.starts_with("mayachain:") => "Mayachain",
         n if n.starts_with("ripple:") => "Ripple",
-        
+
         _ => return Err(anyhow::anyhow!("Unknown network: {}", network)),
     };
-    
+
     Ok((coin_name.to_string(), script_type.to_string()))
 }
 
@@ -371,21 +484,19 @@ fn format_bip32_path(address_n_list: &[u32]) -> String {
             }
         })
         .collect();
-    
+
     format!("m/{}", parts.join("/"))
 }
 
-// === Balance Endpoints ===
-
 /// Query parameters for filtering balances
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct GetBalancesQuery {
     pub network: Option<String>,
     pub force_refresh: Option<bool>,
 }
 
 /// Balance response structure
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BalanceResponse {
     pub caip: String,
     pub pubkey: String,
@@ -399,22 +510,36 @@ pub struct BalanceResponse {
 }
 
 /// Portfolio balance request (for POST endpoint)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct PortfolioBalanceRequest {
     pub caip: String,
     pub pubkey: String,
 }
 
 /// Get cached balances with optional refresh if > 10 minutes old
+#[utoipa::path(
+    get,
+    context_path = "/v2",
+    path = "/balances",
+    tag = "Balances",
+    params(
+        ("network" = String, Query, description = "Filter by network"),
+        ("force_refresh" = bool, Query, description = "Force refresh of balances"),
+    ),
+    responses(
+        (status = 200, body = Vec<BalanceResponse>, description = "List of balances"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
 pub async fn get_balances(
-    State(cache): State<Arc<DeviceCache>>,
+    State(app_state): State<Arc<AppState>>,
     Query(params): Query<GetBalancesQuery>,
 ) -> impl IntoResponse {
     let tag = "get_balances";
     debug!("{}: Getting balances with params: {:?}", tag, params);
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let device_id = match cache.get_device_id() {
+    let device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
             error!("{}: No device found in cache", tag);
@@ -426,7 +551,7 @@ pub async fn get_balances(
     
     // Check if balances need refresh or force refresh is requested
     let force_refresh = params.force_refresh.unwrap_or(false);
-    let needs_refresh = match cache.balances_need_refresh(&device_id).await {
+    let needs_refresh = match app_state.device_cache.balances_need_refresh(&device_id).await {
         Ok(needs) => needs || force_refresh,
         Err(e) => {
             error!("{}: Error checking refresh status: {}", tag, e);
@@ -436,7 +561,7 @@ pub async fn get_balances(
     
     if needs_refresh {
         info!("{}: Balances need refresh - fetching from Pioneer API", tag);
-        if let Err(e) = refresh_balances_from_pioneer(&cache, &device_id).await {
+        if let Err(e) = refresh_balances_from_pioneer(&*app_state.device_cache, &device_id).await {
             error!("{}: Failed to refresh balances - FAIL FAST: {}", tag, e);
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
                 "error": format!("Failed to refresh balances: {}", e)
@@ -445,7 +570,7 @@ pub async fn get_balances(
     }
     
     // Get cached balances
-    let balances = match cache.get_cached_balances(&device_id).await {
+    let balances = match app_state.device_cache.get_cached_balances(&device_id).await {
         Ok(balances) => balances,
         Err(e) => {
             error!("{}: Failed to get cached balances: {}", tag, e);
@@ -483,15 +608,26 @@ pub async fn get_balances(
 }
 
 /// Get portfolio balances for specific caip/pubkey pairs
+#[utoipa::path(
+    post,
+    context_path = "/v2",
+    path = "/portfolio",
+    tag = "Portfolio",
+    request_body = Vec<PortfolioBalanceRequest>,
+    responses(
+        (status = 200, body = Vec<BalanceResponse>, description = "List of portfolio balances"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
 pub async fn post_portfolio_balances(
-    State(cache): State<Arc<DeviceCache>>,
+    State(app_state): State<Arc<AppState>>,
     Json(requests): Json<Vec<PortfolioBalanceRequest>>,
 ) -> impl IntoResponse {
     let tag = "post_portfolio_balances";
     debug!("{}: Getting portfolio balances for {} requests", tag, requests.len());
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let device_id = match cache.get_device_id() {
+    let device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
             error!("{}: No device found in cache", tag);
@@ -502,7 +638,7 @@ pub async fn post_portfolio_balances(
     };
     
     // Check if balances need refresh
-    let needs_refresh = match cache.balances_need_refresh(&device_id).await {
+    let needs_refresh = match app_state.device_cache.balances_need_refresh(&device_id).await {
         Ok(needs) => needs,
         Err(e) => {
             error!("{}: Error checking refresh status: {}", tag, e);
@@ -512,7 +648,7 @@ pub async fn post_portfolio_balances(
     
     if needs_refresh {
         info!("{}: Balances need refresh - fetching from Pioneer API", tag);
-        if let Err(e) = refresh_balances_from_pioneer(&cache, &device_id).await {
+        if let Err(e) = refresh_balances_from_pioneer(&*app_state.device_cache, &device_id).await {
             error!("{}: Failed to refresh balances - FAIL FAST: {}", tag, e);
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
                 "error": format!("Failed to refresh balances: {}", e)
@@ -521,7 +657,7 @@ pub async fn post_portfolio_balances(
     }
     
     // Get all cached balances
-    let cached_balances = match cache.get_cached_balances(&device_id).await {
+    let cached_balances = match app_state.device_cache.get_cached_balances(&device_id).await {
         Ok(balances) => balances,
         Err(e) => {
             error!("{}: Failed to get cached balances: {}", tag, e);
@@ -572,11 +708,21 @@ pub async fn post_portfolio_balances(
 }
 
 /// Get portfolio summary (total values, counts)
-pub async fn get_portfolio_summary(State(cache): State<Arc<DeviceCache>>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    context_path = "/v2",
+    path = "/portfolio/summary",
+    tag = "Portfolio",
+    responses(
+        (status = 200, body = PortfolioSummary, description = "Portfolio summary"),
+        (status = 500, body = String, description = "Internal server error"),
+    ),
+)]
+pub async fn get_portfolio_summary(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
     let tag = "get_portfolio_summary";
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let device_id = match cache.get_device_id() {
+    let device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
             error!("{}: No device found in cache", tag);
@@ -586,11 +732,11 @@ pub async fn get_portfolio_summary(State(cache): State<Arc<DeviceCache>>) -> imp
         }
     };
     
-    match cache.get_portfolio_summary(&device_id).await {
+    match app_state.device_cache.get_portfolio_summary(&device_id).await {
         Ok(Some(summary)) => Json(summary).into_response(),
         Ok(None) => {
             // Generate summary from current balances
-            match cache.get_cached_balances(&device_id).await {
+            match app_state.device_cache.get_cached_balances(&device_id).await {
                 Ok(balances) => {
                     let mut total_value_usd = 0.0;
                     let mut networks = std::collections::HashSet::new();
@@ -614,7 +760,7 @@ pub async fn get_portfolio_summary(State(cache): State<Arc<DeviceCache>>) -> imp
                     };
                     
                     // Save the summary
-                    if let Err(e) = cache.save_portfolio_summary(&device_id, &summary).await {
+                    if let Err(e) = app_state.device_cache.save_portfolio_summary(&device_id, &summary).await {
                         warn!("{}: Failed to save portfolio summary: {}", tag, e);
                     }
                     
@@ -767,11 +913,11 @@ async fn refresh_balances_from_pioneer(cache: &DeviceCache, device_id: &str) -> 
                 last_updated: chrono::Utc::now().timestamp(),
             };
             
-            info!("{}: ✅ Created cached balance: caip={}, balance={}, price_usd={}, value_usd={}", 
+            info!("{}: Created cached balance: caip={}, balance={}, price_usd={}, value_usd={}", 
                 tag, caip, cached_balance.balance, price_usd, value_usd);
             cached_balances.push(cached_balance);
         } else {
-            warn!("{}: ❌ Skipping balance entry with missing caip/pubkey: {}", tag, 
+            warn!("{}: Skipping balance entry with missing caip/pubkey: {}", tag, 
                 serde_json::to_string(&balance_data)?);
         }
     }
@@ -963,8 +1109,8 @@ fn format_age(timestamp: i64) -> String {
     }
 }
 
-/// Create the v2 router with all v2 endpoints
-pub fn v2_router(cache: Arc<DeviceCache>) -> axum::Router {
+/// Create the v2 router with all v2 endpoints (uses AppState as router state)
+pub fn v2_router() -> axum::Router<Arc<AppState>> {
     use axum::routing::{get, post, put, delete};
     
     axum::Router::new()
@@ -975,5 +1121,4 @@ pub fn v2_router(cache: Arc<DeviceCache>) -> axum::Router {
         .route("/balances", get(get_balances))
         .route("/portfolio", post(post_portfolio_balances))
         .route("/portfolio/summary", get(get_portfolio_summary))
-        .with_state(cache)
 }

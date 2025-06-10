@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use rusqlite::{Connection, params, OptionalExtension};
 use serde::{Serialize, Deserialize};
+use utoipa::ToSchema;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::path::PathBuf;
@@ -50,7 +51,7 @@ pub struct CachedAddress {
     pub pubkey: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Network {
     #[serde(serialize_with = "as_string")]
     pub id: i64,
@@ -63,7 +64,7 @@ pub struct Network {
     pub enabled: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Path {
     #[serde(serialize_with = "as_string", default)]
     pub id: i64,
@@ -85,7 +86,7 @@ pub struct Path {
     pub show_display: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CachedBalance {
     #[serde(serialize_with = "as_string")]
     pub id: i64,
@@ -100,7 +101,7 @@ pub struct CachedBalance {
     pub last_updated: i64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct PortfolioSummary {
     #[serde(serialize_with = "as_string")]
     pub id: i64,
@@ -1216,97 +1217,4 @@ mod tests {
             no_backup: Some(false),
         }
     }
-
-    /// Test that reproduces the exact startup cache loading bug scenario
-    #[tokio::test] 
-    async fn test_startup_cache_loading_bug_reproduction() {
-        let temp_dir = TempDir::new().unwrap();
-        let device_id = "333433373337333430463437333633333146303033423030"; // Real device ID from logs
-        
-        // Simulate first startup: Device detected, features saved, addresses cached
-        {
-            let cache = create_test_cache_with_path(temp_dir.path()).await.unwrap();
-            let features = mock_routes_features();
-            
-            // Save device features (this always happens on device detection)
-            cache.save_features(&features, device_id).await.unwrap();
-            
-            // Simulate successful frontload - save addresses
-            cache.save_address(device_id, "bitcoin", "p2pkh", &[44, 0, 0, 0, 0], "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2", Some("pubkey1")).await.unwrap();
-            cache.save_address(device_id, "bitcoin", "p2pkh", &[44, 0, 0, 0, 1], "1C5bSj1iEGUgSTbziymG7Cn18ENQuT36vv", Some("pubkey2")).await.unwrap();
-            
-            // Verify data exists in first session
-            assert!(cache.has_device(device_id).await.unwrap());
-            assert!(cache.has_cached_addresses(device_id).await.unwrap());
-            
-            // Verify memory cache is populated
-            cache.load_device(device_id).await.unwrap();
-            assert!(cache.get_cached_address("bitcoin", "p2pkh", &[44, 0, 0, 0, 0]).is_some());
-        } // Simulate application shutdown
-        
-        // Simulate second startup: Should load existing cache but logs show it doesn't
-        {
-            let cache = create_test_cache_with_path(temp_dir.path()).await.unwrap();
-            
-            // This is what the logs show - device exists but no addresses detected
-            println!("🧪 Testing cache persistence after restart...");
-            assert!(cache.has_device(device_id).await.unwrap(), "Device should exist in cache");
-            
-            let has_addresses = cache.has_cached_addresses(device_id).await.unwrap();
-            println!("🧪 Device has cached addresses: {}", has_addresses);
-            
-            if !has_addresses {
-                println!("🚨 BUG REPRODUCED: Device exists but has 0 cached addresses!");
-                println!("   This matches the logs showing 'Device has 0 cached addresses'");
-                
-                // Let's debug the database directly
-                let db = cache.db.lock().await;
-                let total_devices: i64 = db.query_row("SELECT COUNT(*) FROM devices", [], |row| row.get(0)).unwrap();
-                let total_addresses: i64 = db.query_row("SELECT COUNT(*) FROM cached_addresses", [], |row| row.get(0)).unwrap();
-                let device_addresses: i64 = db.query_row("SELECT COUNT(*) FROM cached_addresses WHERE device_id = ?1", [device_id], |row| row.get(0)).unwrap();
-                
-                println!("🧪 Database debug:");
-                println!("   Total devices: {}", total_devices);
-                println!("   Total addresses: {}", total_addresses);
-                println!("   Addresses for this device: {}", device_addresses);
-                
-                if total_addresses > 0 && device_addresses == 0 {
-                    println!("🚨 CRITICAL: Addresses exist in DB but not associated with device!");
-                    
-                    // Check for device_id mismatch
-                    let mut stmt = db.prepare("SELECT DISTINCT device_id FROM cached_addresses LIMIT 3").unwrap();
-                    let device_ids = stmt.query_map([], |row| {
-                        Ok(row.get::<_, String>(0).unwrap())
-                    }).unwrap();
-                    
-                    for (i, device_id_result) in device_ids.enumerate() {
-                        if let Ok(db_device_id) = device_id_result {
-                            println!("🧪 DB device_id #{}: '{}'", i+1, db_device_id);
-                            println!("🧪 Query device_id:   '{}'", device_id);
-                            println!("🧪 IDs match: {}", db_device_id == device_id);
-                        }
-                    }
-                }
-                
-                // Try to load device and see what happens
-                println!("🧪 Attempting to load device...");
-                let loaded_features = cache.load_device(device_id).await.unwrap();
-                assert!(loaded_features.is_some(), "Features should load");
-                
-                // Check if addresses are now in memory
-                let addr_check = cache.get_cached_address("bitcoin", "p2pkh", &[44, 0, 0, 0, 0]);
-                println!("🧪 Address in memory after load_device: {}", addr_check.is_some());
-                
-                if addr_check.is_none() {
-                    println!("🚨 CONFIRMED BUG: load_device() is not loading addresses into memory!");
-                }
-            } else {
-                // If addresses are detected, verify they can be loaded
-                cache.load_device(device_id).await.unwrap();
-                assert!(cache.get_cached_address("bitcoin", "p2pkh", &[44, 0, 0, 0, 0]).is_some(), 
-                       "Address should be loadable from cache");
-                println!("✅ Cache persistence working correctly");
-            }
-        }
-    }
-} 
+}

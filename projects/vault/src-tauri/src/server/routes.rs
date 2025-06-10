@@ -358,4 +358,6 @@ pub async fn registry_status() -> Result<Json<serde_json::Value>, StatusCode> {
     });
     
     Ok(Json(registry_info))
-} 
+}
+
+pub mod v2_endpoints;
