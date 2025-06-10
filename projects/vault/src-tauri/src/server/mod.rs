@@ -1,10 +1,11 @@
 pub mod routes;
 pub mod bitcoin;
+pub mod context;
 
 use axum::{
     Router,
     serve,
-    routing::get,
+    routing::{get, post, delete},
 };
 use bitcoin::BitcoinState; // legacy, still used for device-related state
 use crate::cache::device_cache::DeviceCache;
@@ -38,6 +39,15 @@ pub struct AppState {
         routes::list_devices,
         routes::registry_status,
         routes::firmware_releases,
+        // === context endpoints ===
+        routes::api_get_context,
+        routes::api_set_context,
+        routes::api_clear_context,
+        // === auth endpoints ===
+        routes::auth::auth_verify,
+        routes::auth::auth_pair,
+        // === v1 endpoints (legacy protocol compatibility) ===
+        routes::utxo_get_address,
         // === v2 endpoints ===
         routes::v2_endpoints::get_networks,
         routes::v2_endpoints::post_network,
@@ -59,6 +69,16 @@ pub struct AppState {
             routes::KeepKeyInfo,
             routes::UsbDeviceInfo,
             routes::ApiResponse<routes::DeviceStatus>,
+            // context schemas
+            context::DeviceContext,
+            context::ContextResponse,
+            context::SetContextRequest,
+            // auth schemas
+            routes::auth::PairingInfo,
+            routes::auth::AuthResponse,
+            // v1 schemas (legacy protocol compatibility)
+            routes::UtxoAddressRequest,
+            routes::UtxoAddressResponse,
             // v2 schemas
             crate::cache::device_cache::Network,
             crate::cache::device_cache::Path,
@@ -75,12 +95,14 @@ pub struct AppState {
     tags(
         (name = "system", description = "System health and status endpoints"),
         (name = "device", description = "KeepKey device management endpoints"),
+        (name = "auth", description = "Authentication and pairing endpoints"),
+        (name = "Address", description = "V1 Address endpoints for protocol compatibility"),
         (name = "v2", description = "Unified v2 API endpoints (networks, paths, balances, etc.)")
     ),
     info(
         title = "KeepKey Desktop API",
         version = "0.1.0",
-        description = "Simple, focused Bitcoin API with real device communication and frontloading",
+        description = "Bitcoin API with v1 (legacy protocol) and v2 (modern) endpoints. Supports real device communication and frontloading.",
         contact(
             name = "KeepKey Support",
             url = "https://keepkey.com"
@@ -118,6 +140,25 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
         device_cache: device_cache.clone(),
     });
 
+    // Check if any devices are already connected and set context automatically
+    // This ensures V1 API calls work even if frontloading hasn't run yet
+    if let Ok(entries) = crate::device_registry::get_all_device_entries() {
+        if let Some(first_device) = entries.first() {
+            info!("Setting initial device context to first available device: {}", first_device.device.unique_id);
+            
+            // Use the helper function that gets real Ethereum address from device
+            let _status = context::set_context_with_real_eth_address(
+                first_device.device.unique_id.clone(),
+                first_device.features.as_ref().and_then(|f| f.label.clone())
+            ).await;
+            info!("Initial device context set successfully for device {}", first_device.device.unique_id);
+        } else {
+            info!("No devices available for initial context setting");
+        }
+    } else {
+        info!("Failed to get device registry for initial context setting");
+    }
+
     // Create Swagger UI
     let swagger_ui = SwaggerUi::new("/docs")
         .url("/api-docs/openapi.json", ApiDoc::openapi());
@@ -130,6 +171,15 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
         .route("/api/devices/debug", get(routes::debug_devices))
         .route("/api/devices/registry", get(routes::registry_status))
         .route("/api/firmware", get(routes::firmware_releases))
+        // Context endpoints
+        .route("/api/context", get(routes::api_get_context))
+        .route("/api/context", post(routes::api_set_context))
+        .route("/api/context", delete(routes::api_clear_context))
+        // Auth endpoints
+        .route("/auth/pair", get(routes::auth::auth_verify))
+        .route("/auth/pair", post(routes::auth::auth_pair))
+        // Mount v1 API router (legacy protocol compatibility)
+        .merge(routes::v1_router())
         // Mount v2 API router under /api/v2 (modular endpoints)
         .nest("/api/v2", routes::v2_endpoints::v2_router())
         // Add state and middleware
@@ -143,7 +193,10 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
     info!("🚀 Server started successfully:");
     info!("  📋 REST API: http://{}/api", addr);
     info!("  📚 API Documentation: http://{}/docs", addr);
-    info!("  🔑 Bitcoin API Root: http://{}/api/v2", addr);
+    info!("  🎯 Device Context: http://{}/api/context", addr);
+    info!("  🔐 Authentication: http://{}/auth/pair", addr);
+    info!("  🔑 V1 API (Legacy): http://{}/addresses/utxo", addr);
+    info!("  🔑 V2 API (Modern): http://{}/api/v2", addr);
     info!("  💾 Frontload: POST http://{}/api/v2/frontload", addr);
     
     // Spawn the server

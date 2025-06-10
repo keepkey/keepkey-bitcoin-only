@@ -1,8 +1,8 @@
-import { VStack, HStack, Box, Text, Button, Badge, Icon, Spinner, IconButton, Flex } from '@chakra-ui/react'
+import { VStack, HStack, Box, Text, Button, Badge, Icon, Spinner, IconButton, Flex, Alert } from '@chakra-ui/react'
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { FaUsb, FaDownload, FaWallet, FaShieldAlt, FaSync, FaExclamationTriangle, FaTools, FaTrash, FaCheckCircle } from 'react-icons/fa'
+import { FaUsb, FaDownload, FaWallet, FaShieldAlt, FaExclamationTriangle, FaTools, FaTrash, FaCheckCircle } from 'react-icons/fa'
 import type { DeviceFeatures, DeviceStatus } from '../types/device'
 import { useTroubleshootingWizard } from '../contexts/DialogContext'
 
@@ -29,7 +29,27 @@ export const KeepKeyDeviceList = ({
   const [devices, setDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
   const [wipingDevice, setWipingDevice] = useState<string | null>(null)
+  const [connectStatus, setConnectStatus] = useState<string | null>(null) // NEW: connection attempt status
   const troubleshootingWizard = useTroubleshootingWizard()
+
+  // Listen for feature fetch retrying events from backend
+  useEffect(() => {
+    const unlisten = listen('feature:retrying', (event: any) => {
+      // event.payload: { device_id, attempt, max }
+      const { attempt, max } = event.payload || {}
+      if (attempt && max) {
+        if (attempt < max) {
+          setConnectStatus(`Attempting to connect (${attempt}/${max})...`)
+        } else {
+          setConnectStatus(`Giving up after ${max} attempts – please reconnect KeepKey.`)
+        }
+      }
+    })
+    return () => {
+      // @ts-ignore
+      if (typeof unlisten.then === 'function') unlisten.then((fn: any) => fn())
+    }
+  }, [])
 
   // Helper function to determine if device communication is working
   const isDeviceCommunicating = (device: Device): boolean => {
@@ -224,23 +244,17 @@ export const KeepKeyDeviceList = ({
           variant="ghost"
           colorScheme="blue"
           onClick={loadDevices}
-          disabled={loading}
-          _hover={{ bg: 'gray.700' }}
-        >
-          <FaSync />
-        </IconButton>
+        />
       </HStack>
       
       {devices.map((device) => (
         <Box
           key={device.id}
+          borderWidth="1px"
+          borderRadius="md"
           p={4}
           bg="gray.800"
-          borderRadius="lg"
-          borderWidth="1px"
-          borderColor="gray.700"
-          _hover={{ borderColor: "gray.600" }}
-          transition="border-color 0.2s"
+          boxShadow="md"
         >
           <VStack align="stretch" gap={3}>
             {/* Device Header */}
@@ -497,4 +511,4 @@ export const KeepKeyDeviceList = ({
       ))}
     </VStack>
   )
-} 
+}

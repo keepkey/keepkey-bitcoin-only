@@ -22,7 +22,14 @@ pub enum DeviceControllerEvent {
     DeviceUpdated(DeviceEntry),
     FeaturesFetched { device_id: String, features: DeviceFeatures, status: DeviceStatus },
     FeatureFetchFailed { device_id: String, error: String },
+    FeatureFetchRetrying { device_id: String, attempt: u8, max: u8 }, // NEW: for frontend status
+    /// Generic status message for UI/UX, logs, or debugging. Can be sent from anywhere.
+    StatusMessage {
+        device_id: Option<String>,
+        message: String,
+    },
 }
+
 
 /// Background service that manages device state and caching
 pub struct DeviceController {
@@ -44,6 +51,15 @@ pub struct DeviceController {
 }
 
 impl DeviceController {
+    /// Emit a generic status message to the frontend (or any subscriber) from anywhere in the backend.
+    /// Usage: DeviceController::emit_status_message(&event_tx, Some(device_id), "Attempting USB");
+    pub fn emit_status_message(event_tx: &broadcast::Sender<DeviceControllerEvent>, device_id: Option<String>, message: impl Into<String>) {
+        let _ = event_tx.send(DeviceControllerEvent::StatusMessage {
+            device_id,
+            message: message.into(),
+        });
+    }
+
     pub fn new(blocking_actions: BlockingActionsState, app_handle: AppHandle) -> (Self, mpsc::Sender<(FriendlyUsbDevice, bool)>, broadcast::Receiver<DeviceControllerEvent>) {
         let (event_tx, event_rx) = broadcast::channel(100);
         let (device_updates_tx, device_updates_rx) = mpsc::channel(100);
@@ -65,6 +81,11 @@ impl DeviceController {
     /// Start the background device monitoring service
     pub async fn run(mut self) {
         log::info!("DeviceController starting...");
+        // Log number of connected devices at startup
+        if let Ok(entries) = crate::device_registry::get_all_device_entries() {
+            let count = entries.len();
+            log::info!("{} device(s) connected", count);
+        }
         
         // Spawn feature refresh task
         let pending_features = Arc::clone(&self.pending_features);
@@ -111,21 +132,30 @@ impl DeviceController {
                         let counts = retry_counts.read().unwrap();
                         counts.get(&device_id).copied().unwrap_or(0)
                     };
+                    // Broadcast retry attempt to frontend
+                    let _ = event_tx.send(DeviceControllerEvent::FeatureFetchRetrying {
+                        device_id: device_id.clone(),
+                        attempt: retry_count + 1,
+                        max: 3,
+                    });
+                    log::info!("Attempting to connect to device {} ({}/{})", device_id, retry_count + 1, 3);
                     
                     if retry_count >= 3 {
-                        log::warn!("Max retries reached for device {}, creating communication failure action", device_id);
-                        
+                        log::warn!("Giving up after {} attempts for device {} – please reconnect KeepKey", 3, device_id);
+                        let _ = event_tx.send(DeviceControllerEvent::FeatureFetchRetrying {
+                            device_id: device_id.clone(),
+                            attempt: 3,
+                            max: 3,
+                        });
                         // Create communication failure blocking action
                         let action = BlockingAction::new_communication_failure(
                             &device_id,
-                            "Failed to fetch device features after multiple attempts"
+                            "Failed to fetch device features after multiple attempts. Please reconnect KeepKey."
                         );
-                        
                         // Add the blocking action
                         if let Ok(mut registry) = self.blocking_actions.registry().lock() {
                             registry.add_action(action);
                         }
-                        
                         // Emit blocking actions update event to frontend
                         let action_count = self.blocking_actions.registry()
                             .lock()
@@ -133,7 +163,6 @@ impl DeviceController {
                             .unwrap_or(0);
                         log::info!("Emitting blocking actions update: {} actions", action_count);
                         let _ = self.app_handle.emit("blocking:actions_updated", action_count);
-                        
                         pending_features.write().unwrap().remove(&device_id);
                         retry_counts.write().unwrap().remove(&device_id);
                         active_fetches.write().unwrap().remove(&device_id);
@@ -210,7 +239,7 @@ impl DeviceController {
                                             device_id: device_id_clone.clone(),
                                             error: e.to_string(),
                                         });
-                                        
+                                        DeviceController::emit_status_message(&event_tx_clone, Some(device_id_clone.clone()), "Please reconnect your keepkey");
                                         // Clean up active fetch
                                         active_fetches_clone.write().unwrap().remove(&device_id_clone);
                                     }
@@ -229,7 +258,7 @@ impl DeviceController {
                                             device_id: device_id_clone.clone(),
                                             error: "Operation timed out".to_string(),
                                         });
-                                        
+                                        DeviceController::emit_status_message(&event_tx_clone, Some(device_id_clone.clone()), "Please reconnect your keepkey");
                                         // Clean up active fetch
                                         active_fetches_clone.write().unwrap().remove(&device_id_clone);
                                     }

@@ -3,7 +3,5 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/projects/kkcli" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/projects/vault" vcs="Git" />
   </component>
 </project>

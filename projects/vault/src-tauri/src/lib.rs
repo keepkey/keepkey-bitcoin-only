@@ -101,10 +101,32 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                         }
                     };
                     
-                    // If device is ready, trigger frontload
+                    // If device is ready, set context first, then trigger frontload
                     if is_device_ready {
-                        log::info!("Device {} is ready (firmware v{}, initialized), starting frontload...", 
+                        log::info!("Device {} is ready (firmware v{}, initialized), setting context and starting frontload...", 
                             device_id, features.version);
+                        
+                        // Clone what we need for context setting
+                        let device_id_for_context = device_id.clone();
+                        let device_label = features.label.clone();
+                        
+                        // Set device context immediately before frontload
+                        // This ensures V1 API calls will work even if frontload fails
+                        log::info!("Setting device context for {} before frontload", device_id_for_context);
+                        
+                        tauri::async_runtime::spawn(async move {
+                            // Use the helper function that gets real Ethereum address from device
+                            let status = crate::server::context::set_context_with_real_eth_address(
+                                device_id_for_context.clone(),
+                                device_label.clone()
+                            ).await;
+                            
+                            if status == axum::http::StatusCode::NO_CONTENT {
+                                log::info!("✅ Device context set successfully for {} before frontload", device_id_for_context);
+                            } else {
+                                log::error!("❌ Failed to set device context for {} before frontload", device_id_for_context);
+                            }
+                        });
                         
                         // Clone what we need for the async task
                         let device_id_clone = device_id.clone();
@@ -179,6 +201,21 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                     Ok((transport, _config_desc, _device_handle_arc)) => {
                                         let transport_arc = Arc::new(tokio::sync::Mutex::new(Some(transport)));
                                         
+                                        // Validate device cache before frontloading
+                                        // Check if the device wallet state has changed (wiped/reinitialized)
+                                        match crate::server::context::clear_device_cache_if_invalid(&device_id_clone).await {
+                                            Ok(cache_cleared) => {
+                                                if cache_cleared {
+                                                    log::info!("🧹 Device cache cleared for {} due to wallet state change", device_id_clone);
+                                                } else {
+                                                    log::info!("✅ Device cache is valid for {}", device_id_clone);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                log::warn!("⚠️  Failed to validate device cache for {}: {}", device_id_clone, e);
+                                            }
+                                        }
+
                                         // Create frontloader
                                         let frontloader = cache::DeviceFrontloader::new(
                                             cache,
@@ -208,6 +245,27 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                             match frontloader.frontload_all_with_progress(Some(progress_callback)).await {
                                                 Ok(_) => {
                                                     log::info!("Frontload completed successfully for device {}", device_id_clone);
+                                                    
+                                                    // Automatically set device context for the successfully frontloaded device
+                                                    // This ensures V1 API calls will work without manual context setup
+                                                    log::info!("Setting device context to {}", device_id_clone);
+                                                    
+                                                    // Try to get device label from registry
+                                                    let device_label = device_registry::get_all_device_entries()
+                                                        .ok()
+                                                        .and_then(|entries| {
+                                                            entries.into_iter()
+                                                                .find(|e| e.device.unique_id == device_id_clone)
+                                                                .and_then(|entry| entry.features)
+                                                                .and_then(|features| features.label)
+                                                        });
+                                                    
+                                                    // Use the helper function that gets real Ethereum address from device
+                                                    let _status = crate::server::context::set_context_with_real_eth_address(
+                                                        device_id_clone.clone(),
+                                                        device_label.clone()
+                                                    ).await;
+                                                    log::info!("Device context set successfully for device {} with label: {:?}", device_id_clone, device_label);
                                                     
                                                     // Update status to "Device ready"
                                                     if let Ok(entries) = device_registry::get_all_device_entries() {

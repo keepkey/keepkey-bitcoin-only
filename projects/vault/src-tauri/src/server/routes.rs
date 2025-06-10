@@ -2,15 +2,37 @@ use axum::{
     extract::State,
     http::StatusCode,
     Json,
+    routing::{get, post},
+    Router,
 };
 use std::sync::Arc;
 use utoipa::ToSchema;
 use std::fs;
 use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use tracing::{info, error};
 use log;
 
 use super::AppState;
 use crate::device_update;
+
+// === V1 API Types (matching swagger.json) ===
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UtxoAddressRequest {
+    pub show_display: Option<bool>,
+    pub script_type: Option<String>,
+    pub coin: String,
+    pub address_n: Vec<u32>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UtxoAddressResponse {
+    pub address: String,
+    pub address_n: Vec<u32>,
+}
+
+// === Existing Types ===
 
 #[derive(serde::Serialize, ToSchema)]
 pub struct ApiResponse<T> {
@@ -360,4 +382,135 @@ pub async fn registry_status() -> Result<Json<serde_json::Value>, StatusCode> {
     Ok(Json(registry_info))
 }
 
+// === V1 API Endpoints ===
+
+/// V1 UTXO Address Generation - matches swagger.json specification
+#[utoipa::path(
+    post,
+    path = "/addresses/utxo",
+    request_body = UtxoAddressRequest,
+    responses(
+        (status = 200, description = "Bitcoin address generated", body = UtxoAddressResponse),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Error processing request")
+    ),
+    tag = "Address"
+)]
+pub async fn utxo_get_address(
+    State(app_state): State<Arc<AppState>>,
+    Json(request): Json<UtxoAddressRequest>
+) -> (StatusCode, Json<ApiResponse<UtxoAddressResponse>>) {
+    info!("🚀 V1 API: UTXO address request - coin: {}, script_type: {:?}, path: {:?}", 
+        request.coin, request.script_type, request.address_n);
+    
+    // Use the existing implementation from impl_addresses.rs
+    let cache = &app_state.device_cache;
+    let device_mutex = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+    
+    match self::impl_addresses::generate_utxo_address_impl(request, cache, device_mutex).await {
+        Ok(response) => {
+            info!("✅ V1 API: Generated address: {}", response.address);
+            (
+                StatusCode::OK,
+                Json(ApiResponse {
+                    success: true,
+                    data: Some(response),
+                    error: None,
+                })
+            )
+        }
+        Err(self::impl_addresses::UtxoAddressError::NotCached) => {
+            error!("❌ V1 API: Address not found in cache and device not available.");
+            (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<UtxoAddressResponse> {
+                    success: false,
+                    data: None,
+                    error: Some("Address not cached and device not available.".to_string()),
+                })
+            )
+        }
+        Err(self::impl_addresses::UtxoAddressError::NoContext) => {
+            error!("❌ V1 API: No device context set.");
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiResponse::<UtxoAddressResponse> {
+                    success: false,
+                    data: None,
+                    error: Some("No device context set. Please select a device first using the /api/context endpoint.".to_string()),
+                })
+            )
+        }
+        Err(self::impl_addresses::UtxoAddressError::DeviceNotFound(device_id)) => {
+            error!("❌ V1 API: Device not found: {}", device_id);
+            (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<UtxoAddressResponse> {
+                    success: false,
+                    data: None,
+                    error: Some(format!("Device not found: {}", device_id)),
+                })
+            )
+        }
+        Err(e) => {
+            error!("❌ V1 API: Unexpected error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse::<UtxoAddressResponse> {
+                    success: false,
+                    data: None,
+                    error: Some(e.to_string()),
+                })
+            )
+        }
+    }
+}
+
+/// Create the v1 router with legacy endpoints for backward compatibility
+pub fn v1_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/addresses/utxo", post(utxo_get_address))
+        // Add more v1 endpoints as needed
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/context",
+    responses(
+        (status = 200, description = "Get current device context", body = crate::server::context::ContextResponse)
+    ),
+    tag = "device"
+)]
+pub async fn api_get_context() -> axum::Json<crate::server::context::ContextResponse> {
+    crate::server::context::get_context().await
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/context",
+    request_body = crate::server::context::SetContextRequest,
+    responses(
+        (status = 204, description = "Set device context")
+    ),
+    tag = "device"
+)]
+pub async fn api_set_context(payload: axum::Json<crate::server::context::SetContextRequest>) -> axum::http::StatusCode {
+    crate::server::context::set_context(payload).await
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/context",
+    responses(
+        (status = 204, description = "Clear device context")
+    ),
+    tag = "device"
+)]
+pub async fn api_clear_context() -> axum::http::StatusCode {
+    crate::server::context::clear_context().await
+}
+
+
 pub mod v2_endpoints;
+pub mod impl_addresses;
+pub mod auth;
