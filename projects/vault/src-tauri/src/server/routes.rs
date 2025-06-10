@@ -4,6 +4,7 @@ use axum::{
     Json,
     routing::{get, post},
     Router,
+    response::IntoResponse, // Import IntoResponse trait
 };
 use std::sync::Arc;
 use utoipa::ToSchema;
@@ -399,7 +400,7 @@ pub async fn registry_status() -> Result<Json<serde_json::Value>, StatusCode> {
 pub async fn utxo_get_address(
     State(app_state): State<Arc<AppState>>,
     Json(request): Json<UtxoAddressRequest>
-) -> (StatusCode, Json<ApiResponse<UtxoAddressResponse>>) {
+) -> impl axum::response::IntoResponse {
     info!("🚀 V1 API: UTXO address request - coin: {}, script_type: {:?}, path: {:?}", 
         request.coin, request.script_type, request.address_n);
     
@@ -410,14 +411,8 @@ pub async fn utxo_get_address(
     match self::impl_addresses::generate_utxo_address_impl(request, cache, device_mutex).await {
         Ok(response) => {
             info!("✅ V1 API: Generated address: {}", response.address);
-            (
-                StatusCode::OK,
-                Json(ApiResponse {
-                    success: true,
-                    data: Some(response),
-                    error: None,
-                })
-            )
+            // Return address data directly for SDK compatibility (not wrapped in ApiResponse)
+            (StatusCode::OK, Json(response)).into_response()
         }
         Err(self::impl_addresses::UtxoAddressError::NotCached) => {
             error!("❌ V1 API: Address not found in cache and device not available.");
@@ -428,7 +423,7 @@ pub async fn utxo_get_address(
                     data: None,
                     error: Some("Address not cached and device not available.".to_string()),
                 })
-            )
+            ).into_response()
         }
         Err(self::impl_addresses::UtxoAddressError::NoContext) => {
             error!("❌ V1 API: No device context set.");
@@ -439,7 +434,7 @@ pub async fn utxo_get_address(
                     data: None,
                     error: Some("No device context set. Please select a device first using the /api/context endpoint.".to_string()),
                 })
-            )
+            ).into_response()
         }
         Err(self::impl_addresses::UtxoAddressError::DeviceNotFound(device_id)) => {
             error!("❌ V1 API: Device not found: {}", device_id);
@@ -450,7 +445,7 @@ pub async fn utxo_get_address(
                     data: None,
                     error: Some(format!("Device not found: {}", device_id)),
                 })
-            )
+            ).into_response()
         }
         Err(e) => {
             error!("❌ V1 API: Unexpected error: {}", e);
@@ -461,7 +456,7 @@ pub async fn utxo_get_address(
                     data: None,
                     error: Some(e.to_string()),
                 })
-            )
+            ).into_response()
         }
     }
 }
