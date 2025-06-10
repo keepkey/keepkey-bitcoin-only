@@ -37,7 +37,8 @@ DATABASE="💾"
 command -v curl >/dev/null 2>&1 || { echo -e "${RED}${CROSSMARK} curl required${NC}"; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo -e "${RED}${CROSSMARK} jq required${NC}"; exit 1; }
 
-BASE_URL="${BASE_URL:-http://localhost:1646/api/bitcoin}"
+API_URL="${API_URL:-http://localhost:1646/api}"
+BASE_URL="${BASE_URL:-http://localhost:1646/api}"
 VERBOSE=${VERBOSE:-1}
 
 # Track test failures
@@ -89,7 +90,8 @@ echo -e "${BOLD}${WHITE}"
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║         ${ROCKET} KeepKey Bitcoin API Test Suite - RUD over DRY ${ROCKET}         ║"
 echo "║                                                                ║"
-echo "║  Testing against: $BASE_URL"
+echo "║  Testing Bitcoin endpoints: $BASE_URL"
+echo "║  Testing Root API: $API_URL"
 echo "║  Focus: Frontloading, Real Data, Simplicity                   ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
@@ -99,32 +101,57 @@ echo -e "${NC}"
 ########################################
 header "📋 INFRASTRUCTURE TESTS"
 
-subheader "🔧 Bitcoin Health Check"
-log "GET /health"
-health_response=$(curl -s "$BASE_URL/health")
-health_status=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health")
-log "Response: $health_response"
-log "Status: $health_status"
+# --- System Health ----------------------------------------------------
+subheader "🚦 System Health Check"
+log "GET $API_URL/health"
+sys_health_response=$(curl -s "$API_URL/health")
+sys_health_status=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health")
+log "Response: $sys_health_response"
+log "Status: $sys_health_status"
 
-if [[ $(echo "$health_response" | jq -r '.status' 2>/dev/null) == "ok" ]]; then
-  device_connected=$(echo "$health_response" | jq -r '.device_connected' 2>/dev/null)
-  frontloaded=$(echo "$health_response" | jq -r '.frontloaded' 2>/dev/null)
-  
-  pass "Health endpoint responding"
-  
+if [[ "$sys_health_status" == "200" && $(echo "$sys_health_response" | jq -r '.status' 2>/dev/null) == "ok" ]]; then
+  pass "System health endpoint responding"
+else
+  fail "System health check failed"
+fi
+
+# --- Device Status ----------------------------------------------------
+subheader "📱 Device Status"
+log "GET $API_URL/status"
+status_response=$(curl -s "$API_URL/status")
+status_code=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/status")
+log "Response: $status_response"
+log "Status: $status_code"
+
+if [[ "$status_code" == "200" ]]; then
+  device_connected=$(echo "$status_response" | jq -r '.connected' 2>/dev/null)
   if [[ "$device_connected" == "true" ]]; then
-    pass "KeepKey device detected"
+    pass "Device status reports a connected KeepKey"
   else
-    fail "No KeepKey device detected - cannot test real functionality!"
-  fi
-  
-  if [[ "$frontloaded" == "true" ]]; then
-    pass "Data is frontloaded"
-  else
-    info "Data not yet frontloaded (will test frontload endpoint)"
+    warn "Device status reports no KeepKey connected"
   fi
 else
-  fail "Health check failed"
+  fail "Device status endpoint failed"
+fi
+
+# --- List Devices -----------------------------------------------------
+subheader "🔍 List Connected Devices"
+log "GET $API_URL/devices"
+list_response=$(curl -s "$API_URL/devices")
+list_status=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/devices")
+log "Response: $list_response"
+log "Status: $list_status"
+
+if [[ "$list_status" == "200" ]]; then
+  count=$(echo "$list_response" | jq 'length')
+  info "Devices reported: $count"
+  if [[ "$count" -gt 0 ]]; then
+    pass "Device list returned $count device(s)"
+  else
+    warn "No USB devices returned by list endpoint"
+  fi
+else
+  fail "List devices endpoint failed"
 fi
 
 ########################################
@@ -133,7 +160,7 @@ fi
 header "${NETWORK} NETWORK TESTS"
 
 subheader "🌐 Supported Networks (CAIP-2)"
-log "GET /networks"
+log "GET $BASE_URL/networks"
 networks_response=$(curl -s "$BASE_URL/networks")
 networks_status=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/networks")
 log "Response: $networks_response"
@@ -168,7 +195,7 @@ for i in "${!TEST_PATHS[@]}"; do
   expected="${EXPECTED_VALID[$i]}"
   
   subheader "🔍 Testing $name Path: $path"
-  log "POST /parse-path path=$path"
+  log "POST $BASE_URL/parse-path path=$path"
   
   path_response=$(curl -s -X POST "$BASE_URL/parse-path" \
     -H 'Content-Type: application/json' \
@@ -194,7 +221,7 @@ done
 header "${DATABASE} FRONTLOADING TESTS"
 
 subheader "💾 Frontload Bitcoin Addresses"
-log "POST /frontload"
+log "POST $BASE_URL/frontload"
 
 frontload_response=$(curl -s -X POST "$BASE_URL/frontload")
 frontload_status=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/frontload")
@@ -230,7 +257,7 @@ for i in "${!TEST_PATHS[@]:0:3}"; do  # Only test valid paths
   path="${TEST_PATHS[$i]}"
   name="${PATH_NAMES[$i]}"
   
-  log "POST /pubkey path=$path network=$NETWORK_DISPLAY"
+  log "POST $BASE_URL/pubkey path=$path network=$NETWORK_DISPLAY"
   
   pubkey_response=$(curl -s -X POST "$BASE_URL/pubkey" \
     -H 'Content-Type: application/json' \

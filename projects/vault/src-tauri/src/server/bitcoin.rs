@@ -87,13 +87,6 @@ pub struct BalanceResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct HealthResponse {
-    pub status: &'static str,
-    pub device_connected: bool,
-    pub frontloaded: bool,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
 pub struct FrontloadResponse {
     pub success: bool,
     pub addresses_loaded: u32,
@@ -135,38 +128,10 @@ async fn load_default_paths() -> Result<Vec<DefaultPath>> {
 
 // === API Endpoints ===
 
-/// Health check - shows device and frontload status
-#[utoipa::path(
-    get,
-    path = "/api/bitcoin/health",
-    responses(
-        (status = 200, description = "Health status", body = HealthResponse)
-    ),
-    tag = "bitcoin"
-)]
-pub async fn health(State(state): State<Arc<super::AppState>>) -> Json<HealthResponse> {
-    let bitcoin_state = &state.bitcoin_state;
-    let device_manager = bitcoin_state.device_manager.lock().await;
-    let devices = device_manager.get_connected_devices();
-    // Check for any KeepKey device (normal mode or bootloader)
-    let device_connected = devices.iter().any(|d| {
-        d.is_keepkey || (d.vid == 0x2B24 && (d.pid == 0x0001 || d.pid == 0x0002))
-    });
-    
-    // Check if we have frontloaded data
-    let frontloaded = check_frontloaded(&bitcoin_state.indexdb).await.unwrap_or(false);
-    
-    Json(HealthResponse {
-        status: "ok",
-        device_connected,
-        frontloaded,
-    })
-}
-
 /// List supported networks (from default paths)
 #[utoipa::path(
     get,
-    path = "/api/bitcoin/networks",
+    path = "/api/networks",
     responses(
         (status = 200, description = "Supported networks", body = NetworksResponse)
     ),
@@ -188,7 +153,7 @@ pub async fn networks(State(state): State<Arc<super::AppState>>) -> Json<Network
 /// Parse and validate BIP32 paths
 #[utoipa::path(
     post,
-    path = "/api/bitcoin/parse-path",
+    path = "/api/parse-path",
     request_body = ParsePathRequest,
     responses(
         (status = 200, description = "Path validation result", body = ParsePathResponse)
@@ -219,7 +184,7 @@ pub async fn parse_path(Json(req): Json<ParsePathRequest>) -> Json<ParsePathResp
 /// Get pubkey/address for a path (from frontloaded data or device)
 #[utoipa::path(
     post,
-    path = "/api/bitcoin/pubkey",
+    path = "/api/pubkey",
     request_body = PubkeyRequest,
     responses(
         (status = 200, description = "Public key data", body = PubkeyResponse),
@@ -248,7 +213,7 @@ pub async fn pubkey(
 /// Frontload all addresses from connected device
 #[utoipa::path(
     post,
-    path = "/api/bitcoin/frontload",
+    path = "/api/frontload",
     responses(
         (status = 200, description = "Frontload result", body = FrontloadResponse),
         (status = 503, description = "No device connected")

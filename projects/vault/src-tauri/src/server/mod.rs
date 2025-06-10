@@ -36,7 +36,6 @@ pub struct AppState {
         routes::list_devices,
         routes::registry_status,
         routes::firmware_releases,
-        bitcoin::health,
         bitcoin::networks,
         bitcoin::parse_path,
         bitcoin::pubkey,
@@ -55,7 +54,6 @@ pub struct AppState {
             bitcoin::ParsePathResponse,
             bitcoin::PubkeyRequest,
             bitcoin::PubkeyResponse,
-            bitcoin::HealthResponse,
             bitcoin::FrontloadResponse,
         )
     ),
@@ -114,11 +112,10 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
         .route("/api/devices/registry", get(routes::registry_status))
         .route("/api/firmware", get(routes::firmware_releases))
         // Bitcoin endpoints
-        .route("/api/bitcoin/health", get(bitcoin::health))
-        .route("/api/bitcoin/networks", get(bitcoin::networks))
-        .route("/api/bitcoin/parse-path", axum::routing::post(bitcoin::parse_path))
-        .route("/api/bitcoin/pubkey", axum::routing::post(bitcoin::pubkey))
-        .route("/api/bitcoin/frontload", axum::routing::post(bitcoin::frontload))
+        .route("/api/networks", get(bitcoin::networks))
+        .route("/api/parse-path", axum::routing::post(bitcoin::parse_path))
+        .route("/api/pubkey", axum::routing::post(bitcoin::pubkey))
+        .route("/api/frontload", axum::routing::post(bitcoin::frontload))
         // Add state and middleware
         .with_state(app_state)
         .merge(swagger_ui)
@@ -130,8 +127,8 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
     info!("🚀 Server started successfully:");
     info!("  📋 REST API: http://{}/api", addr);
     info!("  📚 API Documentation: http://{}/docs", addr);
-    info!("  🔑 Bitcoin API: http://{}/api/bitcoin", addr);
-    info!("  💾 Frontload: POST http://{}/api/bitcoin/frontload", addr);
+    info!("  🔑 Bitcoin API Root: http://{}/api", addr);
+    info!("  💾 Frontload: POST http://{}/api/frontload", addr);
     
     // Spawn the server
     tokio::spawn(async move {
