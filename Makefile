@@ -15,4 +15,4 @@ vault-ui:
 	cd vault-ui && npm install && npm run build
 
 vault:
-	cd vault && cargo tauri build
+	cd projects/vault && bun i && cargo tauri build
