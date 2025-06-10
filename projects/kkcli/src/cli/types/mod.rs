@@ -4,7 +4,7 @@ pub use bip32::Bip32Path;
 
 use crate::messages;
 use clap::ValueEnum;
-use primitive_types::U256;
+
 
 /// This type alias keeps clap's derive macro from misinterpreting an arg which takes many bytes as a repeated arg where each instance takes one byte.
 pub type ByteVec = Vec<u8>;
@@ -13,13 +13,7 @@ pub trait IntoBigEndian {
     fn into_big_endian(self) -> Vec<u8>;
 }
 
-impl IntoBigEndian for U256 {
-    fn into_big_endian(self) -> Vec<u8> {
-        let mut out = vec![0u8; 32];
-        self.to_big_endian(&mut out);
-        out.into_iter().skip_while(|x| *x == 0).collect()
-    }
-}
+
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
 pub enum ScriptType {

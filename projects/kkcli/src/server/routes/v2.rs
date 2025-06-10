@@ -205,23 +205,6 @@ pub async fn list_paths(Query(params): Query<PathQuery>) -> Json<Vec<DerivationP
 fn get_initial_networks() -> Vec<Network> {
     vec![
         Network {
-            id: "ETH".to_string(),
-            display_name: "Ethereum".to_string(),
-            network_name_pioneer: "ethereum".to_string(),
-            chain_id_caip2: "eip155:1".to_string(),
-            symbol: "ETH".to_string(),
-            native_asset_decimals: 18,
-            slip44: 60,
-            default_derivation_path_str: Some("m/44'/60'/0'/0/0".to_string()),
-            is_evm: true,
-            is_testnet: false,
-            explorer_url_mainnet: Some("https://etherscan.io".to_string()),
-            explorer_address_url_mainnet: Some("https://etherscan.io/address/{}".to_string()),
-            explorer_tx_url_mainnet: Some("https://etherscan.io/tx/{}".to_string()),
-            logo_uri: None,
-            supported_asset_namespaces_caip19: vec!["erc20".to_string(), "erc721".to_string()],
-        },
-        Network {
             id: "BTC".to_string(),
             display_name: "Bitcoin".to_string(),
             network_name_pioneer: "bitcoin".to_string(),
@@ -238,13 +221,6 @@ fn get_initial_networks() -> Vec<Network> {
             logo_uri: None,
             supported_asset_namespaces_caip19: vec!["slip44".to_string()],
         },
-        Network {
-            id: "ARB".to_string(),
-            display_name: "Arbitrum".to_string(),
-            network_name_pioneer: "arbitrum".to_string(),
-            chain_id_caip2: "eip155:42161".to_string(),
-            symbol: "ETH".to_string(),
-            native_asset_decimals: 18,
             slip44: 60,
             default_derivation_path_str: Some("m/44'/60'/0'/0/0".to_string()),
             is_evm: true,
@@ -260,30 +236,6 @@ fn get_initial_networks() -> Vec<Network> {
 
 fn get_initial_assets() -> Vec<Asset> {
     vec![
-        Asset {
-            id_caip19: "eip155:1/slip44:60".to_string(),
-            network_id_caip2: "eip155:1".to_string(),
-            asset_namespace_caip19: "slip44".to_string(),
-            contract_address: None,
-            name: "Ethereum".to_string(),
-            symbol: "ETH".to_string(),
-            decimals: 18,
-            description: Some("Native Ethereum token".to_string()),
-            logo_uri: None,
-            source_list_name: Some("Pioneer".to_string()),
-        },
-        Asset {
-            id_caip19: "eip155:1/erc20:0xA0b86a33E6441F8C8B18B8F0b862C62b16C7DC4C".to_string(),
-            network_id_caip2: "eip155:1".to_string(),
-            asset_namespace_caip19: "erc20".to_string(),
-            contract_address: Some("0xA0b86a33E6441F8C8B18B8F0b862C62b16C7DC4C".to_string()),
-            name: "USD Coin".to_string(),
-            symbol: "USDC".to_string(),
-            decimals: 6,
-            description: Some("USD Coin stablecoin".to_string()),
-            logo_uri: None,
-            source_list_name: Some("Pioneer".to_string()),
-        },
         Asset {
             id_caip19: "bip122:000000000019d6689c085ae165831e93/slip44:0".to_string(),
             network_id_caip2: "bip122:000000000019d6689c085ae165831e93".to_string(),
@@ -303,14 +255,6 @@ fn get_initial_paths() -> Vec<DerivationPath> {
     vec![
         DerivationPath {
             id: 1,
-            network_id_caip2: "eip155:1".to_string(),
-            path_string: "m/44'/60'/0'/0/0".to_string(),
-            description: Some("Ethereum default path".to_string()),
-            path_type: Some("default".to_string()),
-            purpose: Some(44),
-        },
-        DerivationPath {
-            id: 2,
             network_id_caip2: "bip122:000000000019d6689c085ae165831e93".to_string(),
             path_string: "m/84'/0'/0'/0/0".to_string(),
             description: Some("Bitcoin SegWit native".to_string()),
@@ -318,7 +262,7 @@ fn get_initial_paths() -> Vec<DerivationPath> {
             purpose: Some(84),
         },
         DerivationPath {
-            id: 3,
+            id: 2,
             network_id_caip2: "bip122:000000000019d6689c085ae165831e93".to_string(),
             path_string: "m/44'/0'/0'/0/0".to_string(),
             description: Some("Bitcoin legacy".to_string()),

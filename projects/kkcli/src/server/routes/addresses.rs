@@ -34,25 +34,7 @@ pub struct UtxoAddressResponse {
     pub address_n: Vec<u32>,
 }
 
-// Cosmos-based chains
-#[derive(Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct CosmosAddressRequest {
-    /// BIP-32 path as array of numbers
-    pub address_n: Vec<u32>,
-    /// Whether to show on device display
-    pub show_display: Option<bool>,
-}
 
-// EVM chains
-#[derive(Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct EthAddressRequest {
-    /// BIP-32 path as array of numbers
-    pub address_n: Vec<u32>,
-    /// Whether to show on device display
-    pub show_display: Option<bool>,
-}
 
 // Route handlers
 #[utoipa::path(
@@ -89,60 +71,4 @@ pub async fn generate_utxo_address(
     }
 } 
 
-// Cosmos address generation
-#[utoipa::path(
-    post,
-    path = "/addresses/cosmos",
-    request_body = CosmosAddressRequest,
-    responses(
-        (status = 200, description = "Cosmos address generated", body = AddressResponse),
-        (status = 500, description = "Internal server error")
-    ),
-    tag = "addresses"
-)]
-pub async fn generate_cosmos_address(
-    State(state): State<Arc<ServerState>>,
-    Json(request): Json<CosmosAddressRequest>,
-) -> Result<Json<AddressResponse>, StatusCode> {
-    info!("Cosmos address generation request: path={:?}", request.address_n);
-    
-    match crate::server::generate_cosmos_address_impl(request, &state.cache, state.device_mutex.clone()).await {
-        Ok(address) => {
-            info!("Generated Cosmos address: {}", address);
-            Ok(Json(AddressResponse { address }))
-        }
-        Err(e) => {
-            error!("Failed to generate Cosmos address: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
 
-// Ethereum address generation
-#[utoipa::path(
-    post,
-    path = "/addresses/eth",
-    request_body = EthAddressRequest,
-    responses(
-        (status = 200, description = "Ethereum address generated", body = AddressResponse),
-        (status = 500, description = "Internal server error")
-    ),
-    tag = "addresses"
-)]
-pub async fn generate_eth_address(
-    State(state): State<Arc<ServerState>>,
-    Json(request): Json<EthAddressRequest>,
-) -> Result<Json<AddressResponse>, StatusCode> {
-    info!("Ethereum address generation request: path={:?}", request.address_n);
-    
-    match crate::server::generate_eth_address_impl(request, &state.cache, state.device_mutex.clone()).await {
-        Ok(address) => {
-            info!("Generated Ethereum address: {}", address);
-            Ok(Json(AddressResponse { address }))
-        }
-        Err(e) => {
-            error!("Failed to generate Ethereum address: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-} 

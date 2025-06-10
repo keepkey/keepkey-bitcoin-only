@@ -9,7 +9,7 @@ use std::fs;
 use serde_json::Value;
 use log;
 
-use super::ServerState;
+use super::AppState;
 use crate::device_update;
 
 #[derive(serde::Serialize, ToSchema)]
@@ -131,9 +131,9 @@ fn get_package_version() -> Result<String, Box<dyn std::error::Error>> {
     tag = "device"
 )]
 pub async fn device_status(
-    State(state): State<Arc<ServerState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<DeviceStatus>, StatusCode> {
-    let _device_manager = state.device_manager.lock().await;
+    let _device_manager = state.server_state.device_manager.lock().await;
     
     // Get device features using the features module
     let status = match crate::features::get_device_features_impl() {
@@ -205,7 +205,7 @@ pub async fn firmware_releases() -> Result<Json<serde_json::Value>, StatusCode> 
     tag = "device"
 )]
 pub async fn list_devices(
-    State(_state): State<Arc<ServerState>>,
+    State(_state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<DeviceInfo>>, StatusCode> {
     // Read from the cached device registry - no scanning or blocking operations
     let entries = match crate::device_registry::get_all_device_entries() {

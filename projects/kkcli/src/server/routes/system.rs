@@ -274,17 +274,17 @@ pub async fn system_list_coins(
                                 bip44_account_path: coin_type.bip44_account_path,
                                 forkid: coin_type.forkid,
                                 decimals: coin_type.decimals,
-                                contract_address: coin_type.contract_address.map(|bytes| hex::encode(bytes)),
+
                                 xpub_magic: coin_type.xpub_magic,
                                 segwit: coin_type.segwit,
                                 force_bip143: coin_type.force_bip143,
-                                curve_name: coin_type.curve_name,
+
                                 cashaddr_prefix: coin_type.cashaddr_prefix,
                                 bech32_prefix: coin_type.bech32_prefix,
                                 decred: coin_type.decred,
                                 xpub_magic_segwit_p2sh: coin_type.xpub_magic_segwit_p2sh,
                                 xpub_magic_segwit_native: coin_type.xpub_magic_segwit_native,
-                                nanoaddr_prefix: coin_type.nanoaddr_prefix,
+
                             });
                         }
                     }

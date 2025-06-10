@@ -7,11 +7,10 @@ import {
   Flex,
   Icon,
 } from "@chakra-ui/react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { FaCheckCircle } from "react-icons/fa";
 import { invoke } from "@tauri-apps/api/core";
 import { useDialog } from "../../contexts/DialogContext";
-import { Logo } from "../logo/logo";
 
 // Import individual steps
 import { Step0Language } from "./steps/Step0Language";
@@ -132,7 +131,7 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
   return (
     <Box
       w="100%"
-      maxW="1000px"
+      maxW="1200px"
       bg="gray.800"
       borderRadius="xl"
       boxShadow="xl"
@@ -218,7 +217,7 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
         </HStack>
 
         {/* Content */}
-        <Box p={6} minH="400px" bg="gray.800">
+        <Box p={6} minH="350px" bg="gray.800">
           <StepComponent onNext={handleNext} onPrevious={handlePrevious} />
         </Box>
 

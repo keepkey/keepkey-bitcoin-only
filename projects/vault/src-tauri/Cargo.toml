@@ -31,6 +31,7 @@ semver = "1.0"
 hidapi = { version = "2.6", features = ["linux-static-hidraw"] }
 hex  = "0.4"     # just a helper crate
 anyhow = "1.0.58"
+async-trait = "0.1"
 prost = "0.11"
 prost-types = "0.11"
 serde_with = { version = "1.13", features = ["hex"] }
@@ -62,3 +63,4 @@ zeroize = "1"
 dirs = "5"
 base64 = "0.22"
 sha2 = "0.10"
+reqwest = { version = "0.11", features = ["json"] }

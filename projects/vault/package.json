@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:tauri": "vite && tauri dev",
     "dev:windows": "powershell ./skills/build.ps1 -debug",
-    "build": "powershell ./skills/build.ps1",
+    "build": "bash ./skills/build.sh",
     "preview": "vite preview",
     "tauri": "tauri"
   },

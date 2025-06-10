@@ -10,7 +10,7 @@ pub mod debug;
 pub mod manufacturing;
 pub mod raw;
 pub mod websocket;
-pub mod icons;
+
 
 
 // Re-export all types and handlers for convenience
@@ -25,5 +25,5 @@ pub use debug::*;
 pub use manufacturing::*;
 pub use raw::*;
 pub use websocket::*;
-pub use icons::*;
+
  

@@ -3,7 +3,7 @@ pub mod bip32;
 pub mod hex;
 pub mod serde;
 pub mod typed_possible_values;
-pub mod u256;
+
 pub mod xprv;
 
 use anyhow::Result;
@@ -16,7 +16,7 @@ pub use self::{
     hex::{HexParser, HexParser16, HexParser20, HexParser32, HexParser65},
     serde::SerdeJsonFileOrLiteralParser,
     typed_possible_values::TypedPossibleValuesParser,
-    u256::U256Parser,
+
     xprv::XprvParser,
 };
 

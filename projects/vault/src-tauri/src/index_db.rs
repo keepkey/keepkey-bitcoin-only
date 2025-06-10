@@ -24,7 +24,13 @@ pub struct DeviceRecord {
 }
 
 pub struct IndexDb {
-    conn: Connection,
+    pub(crate) conn: Connection,
+}
+
+impl IndexDb {
+    pub fn into_arc_mutex(self) -> std::sync::Arc<tokio::sync::Mutex<Connection>> {
+        std::sync::Arc::new(tokio::sync::Mutex::new(self.conn))
+    }
 }
 
 impl IndexDb {
@@ -86,14 +92,49 @@ impl IndexDb {
     pub fn set_onboarding_completed(&self) -> Result<()> {
         log::info!("Marking onboarding as completed in database");
         let timestamp = Utc::now().timestamp();
+        
+        // Directly execute the statements with IMMEDIATE transaction mode for atomicity
+        // First ensure we can update the onboarding_completed value
         self.conn.execute(
-            "INSERT OR REPLACE INTO meta (key, val) VALUES ('onboarding_completed', 'true')",
+            "UPDATE meta SET val = 'true' WHERE key = 'onboarding_completed'",
             [],
         )?;
+        
+        // If the row doesn't exist, insert it
+        if self.conn.changes() == 0 {
+            log::info!("No existing onboarding_completed row, inserting new one");
+            self.conn.execute(
+                "INSERT INTO meta (key, val) VALUES ('onboarding_completed', 'true')",
+                [],
+            )?;
+        }
+        
+        // Also update the timestamp
         self.conn.execute(
-            "INSERT OR REPLACE INTO meta (key, val) VALUES ('onboarding_timestamp', ?1)",
+            "UPDATE meta SET val = ?1 WHERE key = 'onboarding_timestamp'",
             params![timestamp.to_string()],
         )?;
+        
+        // If timestamp row doesn't exist, insert it
+        if self.conn.changes() == 0 {
+            self.conn.execute(
+                "INSERT INTO meta (key, val) VALUES ('onboarding_timestamp', ?1)",
+                params![timestamp.to_string()],
+            )?;
+        }
+        
+        // Force database to sync changes to disk
+        self.conn.pragma_update(None, "synchronous", "FULL")?;
+        
+        // Verify the change was made
+        let mut stmt = self.conn.prepare("SELECT val FROM meta WHERE key = 'onboarding_completed'")?;
+        let result: String = stmt.query_row([], |row| row.get(0))?;
+        
+        if result != "true" {
+            log::error!("Failed to update onboarding status: value is still {}", result);
+            return Err(anyhow::anyhow!("Failed to update onboarding status"));
+        }
+        
         log::info!("Onboarding marked as completed at timestamp: {}", timestamp);
         Ok(())
     }

@@ -1,18 +1,7 @@
-use axum::{
-    extract::{Path, State},
-    http::{header, StatusCode},
-    response::{IntoResponse, Response},
-};
-use std::sync::Arc;
-use std::collections::HashMap;
-use tokio::fs;
-use tracing::{info, warn, error};
-use base64::{Engine as _, engine::general_purpose};
-
-use crate::server::ServerState;
+// Deprecated: All icon-serving endpoints and logic have been removed. Icons are now handled by the frontend.
 
 /// Create mapping of CAIP-19 identifiers to icon file paths
-fn get_caip19_to_icon_mapping() -> HashMap<String, String> {
+
     let mut mapping = HashMap::new();
     
     // Bitcoin family
@@ -24,13 +13,6 @@ fn get_caip19_to_icon_mapping() -> HashMap<String, String> {
         "bip122:000000000000000000651ef99cb9fcbe/slip44:145".to_string(),
         "assets/icons/bitcoin-cash.png".to_string()
     );
-    
-    // Ethereum
-    mapping.insert(
-        "eip155:1/slip44:60".to_string(),
-        "assets/icons/ethereum.png".to_string()
-    );
-    
     // Other UTXO coins
     mapping.insert(
         "bip122:12a765e31ffd4059bada1e25190f6e98/slip44:2".to_string(),
@@ -53,38 +35,6 @@ fn get_caip19_to_icon_mapping() -> HashMap<String, String> {
         "assets/icons/zcash.png".to_string()
     );
     
-    // Cosmos ecosystem
-    mapping.insert(
-        "cosmos:cosmoshub-4/slip44:118".to_string(),
-        "assets/icons/cosmos.png".to_string()
-    );
-    mapping.insert(
-        "cosmos:thorchain-mainnet-v1/slip44:931".to_string(),
-        "assets/icons/thorchain.png".to_string()
-    );
-    mapping.insert(
-        "cosmos:mayachain-mainnet-v1/slip44:931".to_string(),
-        "assets/icons/mayachain.png".to_string()
-    );
-    mapping.insert(
-        "cosmos:osmosis-1/slip44:118".to_string(),
-        "assets/icons/osmosis.png".to_string()
-    );
-    
-    // Other supported chains  
-    mapping.insert(
-        "eip155:137/slip44:966".to_string(),
-        "assets/icons/polygon.png".to_string()
-    );
-    mapping.insert(
-        "eip155:43114/slip44:9005".to_string(),
-        "assets/icons/avalanche.png".to_string()
-    );
-    mapping.insert(
-        "ripple:mainnet/slip44:144".to_string(),
-        "assets/icons/ripple.png".to_string()
-    );
-    
     mapping
 }
 
@@ -94,7 +44,7 @@ fn get_caip19_to_icon_mapping() -> HashMap<String, String> {
     get,
     path = "/icons/{base64_caip19}.png",
     tag = "icons",
-    summary = "Get coin icon",
+
     description = "Retrieve PNG icon for a cryptocurrency using base64-encoded CAIP-19 identifier. Only primary assets on supported networks are available.",
     params(
         ("base64_caip19" = String, Path, description = "Base64-encoded CAIP-19 identifier")
@@ -106,7 +56,7 @@ fn get_caip19_to_icon_mapping() -> HashMap<String, String> {
         (status = 500, description = "Server error")
     )
 )]
-pub async fn get_coin_icon(
+
     State(_state): State<Arc<ServerState>>,
     Path(filename): Path<String>,
 ) -> impl IntoResponse {
@@ -178,13 +128,13 @@ pub async fn get_coin_icon(
     get,
     path = "/icons",
     tag = "icons", 
-    summary = "List available icons",
+
     description = "Get a list of all available coin icons for primary assets with CAIP-19 base64 encoded names",
     responses(
         (status = 200, description = "Map of CAIP-19 identifiers to base64 encoded filenames", body = std::collections::HashMap<String, String>),
     )
 )]
-pub async fn list_coin_icons() -> impl IntoResponse {
+
     let mapping = get_caip19_to_icon_mapping();
     let mut available_icons = std::collections::HashMap::new();
     

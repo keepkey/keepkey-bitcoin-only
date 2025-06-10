@@ -30,11 +30,13 @@ pub mod index_db;      // SQLite index database for metadata and onboarding
 pub mod blocking_actions; // Device blocking actions tracking (mandatory updates)
 pub mod updates;       // Firmware and bootloader update functionality
 pub mod server;        // REST API and MCP server
+pub mod cache;         // Device cache and frontload functionality
 mod device_controller_ext; // Extension to DeviceController for update functionality
 
 // ---------- Std / 3rd‑party ----------
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, Emitter};
+use anyhow;
 
 // UI payload
 #[derive(serde::Serialize, Clone)]
@@ -86,6 +88,163 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                     let _ = emitter.emit("device:disconnected", &device_id);
                 }
                 device_controller::DeviceControllerEvent::FeaturesFetched { device_id, features, status } => {
+                    // Check if device is ready (on latest firmware and initialized)
+                    let is_device_ready = {
+                        if let Ok(latest_firmware) = device_update::get_latest_firmware_version() {
+                            if let Ok(is_outdated) = utils::is_version_older(&features.version, &latest_firmware) {
+                                !is_outdated && features.initialized
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    };
+                    
+                    // If device is ready, trigger frontload
+                    if is_device_ready {
+                        log::info!("Device {} is ready (firmware v{}, initialized), starting frontload...", 
+                            device_id, features.version);
+                        
+                        // Clone what we need for the async task
+                        let device_id_clone = device_id.clone();
+                        let emitter_clone = emitter.clone();
+                        
+                        // Emit "registering device" status immediately
+                        if let Ok(entries) = device_registry::get_all_device_entries() {
+                            let payload = ApplicationState {
+                                status: "Registering device...".to_string(),
+                                connected: !entries.is_empty(),
+                                devices: entries,
+                                blocking_actions_count: 0,
+                            };
+                            let _ = emitter_clone.emit("application:state", &payload);
+                        }
+                        
+                        // Spawn async task to handle frontload
+                        tauri::async_runtime::spawn(async move {
+                            log::info!("Starting frontload process for device {}", device_id_clone);
+                            
+                            // Initialize cache database  
+                            let cache = match cache::DeviceCache::open() {
+                                Ok(cache) => cache,
+                                Err(e) => {
+                                    log::error!("Failed to initialize cache: {}", e);
+                                    return;
+                                }
+                            };
+                            
+                            // Get the device from registry to access USB info
+                            let device_entry = match device_registry::get_all_device_entries() {
+                                Ok(entries) => entries.into_iter()
+                                    .find(|e| e.device.unique_id == device_id_clone),
+                                Err(e) => {
+                                    log::error!("Failed to get device from registry: {}", e);
+                                    None
+                                }
+                            };
+                            
+                            if let Some(entry) = device_entry {
+                                // Create USB device handle and transport immediately
+                                let transport_result = {
+                                    // Wrap in closure so we can use ? for early returns
+                                    (|| -> anyhow::Result<_> {
+                                        let devices = rusb::devices()
+                                            .map_err(|e| anyhow::anyhow!("Failed to get USB devices: {e}"))?;
+                                        
+                                        // Find matching USB device
+                                        let device_obj = devices
+                                            .iter()
+                                            .find(|d| {
+                                                if let Ok(desc) = d.device_descriptor() {
+                                                    desc.vendor_id() == entry.device.vid
+                                                        && desc.product_id() == entry.device.pid
+                                                } else {
+                                                    false
+                                                }
+                                            })
+                                            .ok_or_else(|| {
+                                                anyhow::anyhow!("Could not find USB device for frontload")
+                                            })?;
+                                        
+                                        // Create transport with interface index 0 and map errors
+                                        let res = crate::transport::UsbTransport::new(&device_obj, 0)
+                                            .map_err(|e| anyhow::anyhow!("Transport init error: {e}"))?;
+                                        Ok(res)
+                                    })()
+                                };
+                                
+                                // Now handle the transport result outside the scope
+                                match transport_result {
+                                    Ok((transport, _config_desc, _device_handle_arc)) => {
+                                        let transport_arc = Arc::new(tokio::sync::Mutex::new(Some(transport)));
+                                        
+                                        // Create frontloader
+                                        let frontloader = cache::DeviceFrontloader::new(
+                                            cache,
+                                            transport_arc
+                                        );
+                                            
+                                            // Track progress for UI updates
+                                                                        let _last_progress = 0;
+                            let _total_steps = 50; // Approximate number of addresses to load
+                                            
+                                            // Create progress callback that emits to frontend
+                                            let emitter_for_progress = emitter_clone.clone();
+                                            let progress_callback = move |msg: String| {
+                                                log::info!("Frontload progress: {}", msg);
+                                                if let Ok(entries) = device_registry::get_all_device_entries() {
+                                                    let payload = ApplicationState {
+                                                        status: msg,
+                                                        connected: !entries.is_empty(),
+                                                        devices: entries,
+                                                        blocking_actions_count: 0,
+                                                    };
+                                                    let _ = emitter_for_progress.emit("application:state", &payload);
+                                                }
+                                            };
+                                            
+                                            // Start frontload with progress tracking
+                                            match frontloader.frontload_all_with_progress(Some(progress_callback)).await {
+                                                Ok(_) => {
+                                                    log::info!("Frontload completed successfully for device {}", device_id_clone);
+                                                    
+                                                    // Update status to "Device ready"
+                                                    if let Ok(entries) = device_registry::get_all_device_entries() {
+                                                        let payload = ApplicationState {
+                                                            status: "Device ready".to_string(),
+                                                            connected: !entries.is_empty(),
+                                                            devices: entries,
+                                                            blocking_actions_count: 0,
+                                                        };
+                                                        let _ = emitter_clone.emit("application:state", &payload);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    log::error!("Frontload failed for device {}: {}", device_id_clone, e);
+                                                    
+                                                    // Update status to show error
+                                                    if let Ok(entries) = device_registry::get_all_device_entries() {
+                                                        let payload = ApplicationState {
+                                                            status: format!("Device registration failed: {}", e),
+                                                            connected: !entries.is_empty(),
+                                                            devices: entries,
+                                                            blocking_actions_count: 0,
+                                                        };
+                                                        let _ = emitter_clone.emit("application:state", &payload);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to create transport for device {}: {}", device_id_clone, e);
+                                        }
+                                    }
+                            } else {
+                                log::error!("Device {} not found in registry for frontload", device_id_clone);
+                            }
+                        });
+                    }
                     // Check bootloader version against required version and create blocking action if needed
                     let mut actions_added = false;
                     if let Some(bootloader_version) = features.bootloader_version.as_deref() {
@@ -183,12 +342,34 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
             
             // Always emit the current state after any change
             if let Ok(entries) = device_registry::get_all_device_entries() {
-                let payload = ApplicationState {
-                    status: if entries.is_empty() {
-                        "No devices connected".to_string()
+                let status = if entries.is_empty() {
+                    "No devices connected".to_string()
+                } else {
+                    // Check if any device is ready (on latest firmware and no blocking actions)
+                    let ready_devices = entries.iter().filter(|entry| {
+                        if let Some(features) = &entry.features {
+                            // Check if firmware is up to date
+                            if let Ok(latest_firmware) = device_update::get_latest_firmware_version() {
+                                if let Ok(is_outdated) = utils::is_version_older(&features.version, &latest_firmware) {
+                                    if !is_outdated && features.initialized {
+                                        // Device is on latest firmware and initialized
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        false
+                    }).count();
+                    
+                    if ready_devices > 0 {
+                        "Device ready".to_string()
                     } else {
                         format!("{} device(s) connected", entries.len())
-                    },
+                    }
+                };
+                
+                let payload = ApplicationState {
+                    status,
                     connected: !entries.is_empty(),
                     devices: entries,
                     blocking_actions_count: 0, // Will need to get actual count in the future
@@ -205,12 +386,34 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         
         if let Ok(entries) = device_registry::get_all_device_entries() {
-            let payload = ApplicationState {
-                status: if entries.is_empty() {
-                    "No devices connected".to_string()
+            let status = if entries.is_empty() {
+                "No devices connected".to_string()
+            } else {
+                // Check if any device is ready (on latest firmware and no blocking actions)
+                let ready_devices = entries.iter().filter(|entry| {
+                    if let Some(features) = &entry.features {
+                        // Check if firmware is up to date
+                        if let Ok(latest_firmware) = device_update::get_latest_firmware_version() {
+                            if let Ok(is_outdated) = utils::is_version_older(&features.version, &latest_firmware) {
+                                if !is_outdated && features.initialized {
+                                    // Device is on latest firmware and initialized
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                }).count();
+                
+                if ready_devices > 0 {
+                    "Device ready".to_string()
                 } else {
                     format!("{} device(s) connected", entries.len())
-                },
+                }
+            };
+            
+            let payload = ApplicationState {
+                status,
                 connected: !entries.is_empty(),
                 devices: entries,
                 blocking_actions_count: 0, // Default count until we implement tracking

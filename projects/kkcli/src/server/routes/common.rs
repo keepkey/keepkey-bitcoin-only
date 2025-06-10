@@ -45,17 +45,14 @@ pub struct Coin {
     pub bip44_account_path: Option<u32>,
     pub forkid: Option<u32>,
     pub decimals: Option<u32>,
-    pub contract_address: Option<String>,
     pub xpub_magic: Option<u32>,
     pub segwit: Option<bool>,
     pub force_bip143: Option<bool>,
-    pub curve_name: Option<String>,
     pub cashaddr_prefix: Option<String>,
     pub bech32_prefix: Option<String>,
     pub decred: Option<bool>,
     pub xpub_magic_segwit_p2sh: Option<u32>,
     pub xpub_magic_segwit_native: Option<u32>,
-    pub nanoaddr_prefix: Option<String>,
 }
 
 // Common request structures

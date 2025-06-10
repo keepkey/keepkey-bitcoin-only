@@ -305,14 +305,14 @@ pub async fn start_server(port: u16) -> Result<()> {
             super::routes::system_get_features,
             super::routes::system_ping,
             super::routes::generate_utxo_address,
-            super::routes::generate_cosmos_address,
-            super::routes::generate_mayachain_address,
-            super::routes::mayachain_sign_amino_transfer,
-            super::routes::generate_eth_address,
-            super::routes::ethereum_sign_tx,
+
+            
+            
+            
+            
             super::routes::bitcoin::utxo_sign_transaction,
-            super::routes::icons::get_coin_icon,
-            super::routes::icons::list_coin_icons,
+            
+            
         ),
         components(schemas(
             super::routes::HealthResponse,
@@ -325,27 +325,27 @@ pub async fn start_server(port: u16) -> Result<()> {
             super::routes::PingResponse,
             super::routes::UtxoAddressRequest,
             super::routes::UtxoAddressResponse,
-            super::routes::CosmosAddressRequest,
-            // CosmosAddressResponse doesn't exist, only using types that exist
+
+
             // Use only types that exist in the mayachain routes
-            super::routes::MayachainSignRequest,
-            super::routes::MayachainFee,
-            super::routes::MayachainCoin,
-            super::routes::MayachainMsgValue,
-            super::routes::MayachainSignature,
-            super::routes::MayachainPubKey,
-            super::routes::MayachainSignResponse,
-            super::routes::EthereumSignRequest,
-            super::routes::EthereumSignResponse,
+            
+            
+            
+            
+            
+            
+            
+            
+            
         )),
         tags(
             (name = "system", description = "System health and status endpoints"),
             (name = "device", description = "Device management and information endpoints"),
             (name = "addresses", description = "Address generation endpoints"),
-            (name = "ethereum", description = "Ethereum transaction operations"),
-            (name = "cosmos", description = "Cosmos transaction operations"),
-            (name = "mayachain", description = "Maya transaction operations"),
-            (name = "icons", description = "Cryptocurrency icon endpoints"),
+            
+
+            
+            
         ),
         info(
             title = "KeepKey CLI Server API",
@@ -382,19 +382,9 @@ pub async fn start_server(port: u16) -> Result<()> {
         // Address generation endpoints
         // Modern API endpoints
         .route("/api/v1/utxo/address", post(super::routes::generate_utxo_address))
-        .route("/api/v1/cosmos/address", post(super::routes::generate_cosmos_address))
-        .route("/api/v1/mayachain/address", post(super::routes::generate_mayachain_address))
-        .route("/api/v1/ethereum/address", post(super::routes::generate_eth_address))
         
         // Legacy address endpoints for backward compatibility
         .route("/addresses/utxo", post(super::routes::generate_utxo_address))
-        .route("/addresses/cosmos", post(super::routes::generate_cosmos_address))
-        .route("/addresses/eth", post(super::routes::generate_eth_address))
-        .route("/addresses/thorchain", post(super::routes::thorchain::generate_thorchain_address))
-        
-        // Transaction signing endpoints
-        .route("/api/v1/ethereum/tx", post(super::routes::ethereum_sign_tx))
-        .route("/api/v1/mayachain/tx", post(super::routes::mayachain_sign_amino_transfer))
         
         // Bitcoin endpoints
         .route("/api/v1/bitcoin/tx", post(super::routes::bitcoin::bitcoin_sign_tx))
@@ -402,26 +392,7 @@ pub async fn start_server(port: u16) -> Result<()> {
         .route("/api/v1/bitcoin/verify-message", post(super::routes::bitcoin::bitcoin_verify_message))
         .route("/api/v1/utxo/tx", post(super::routes::bitcoin::utxo_sign_transaction))
         .route("/utxo/sign-transaction", post(super::routes::bitcoin::utxo_sign_transaction))
-        
-        // Ethereum additional endpoints
-        .route("/api/v1/ethereum/sign-message", post(super::routes::ethereum::ethereum_sign_message))
-        .route("/api/v1/ethereum/verify-message", post(super::routes::ethereum::ethereum_verify_message))
-        .route("/api/v1/ethereum/sign-typed-data", post(super::routes::ethereum::ethereum_sign_typed_data))
-        
-        // Cosmos endpoints
-        .route("/api/v1/cosmos/tx", post(super::routes::cosmos::cosmos_sign_amino_transfer))
-        .route("/api/v1/osmosis/tx", post(super::routes::osmosis::osmosis_sign_amino_transfer))
-        .route("/api/v1/thorchain/tx", post(super::routes::thorchain::thorchain_sign_amino_transfer))
-        
-        // Legacy Cosmos/THORChain signing endpoints for backward compatibility
-        .route("/thorchain/sign-amino-transfer", post(super::routes::thorchain::thorchain_sign_amino_transfer))
-        .route("/thorchain/sign-amino-deposit", post(super::routes::thorchain::thorchain_sign_amino_deposit))
-        
-        // Additional crypto endpoints
-        .route("/api/v1/binance/tx", post(super::routes::binance::binance_sign_tx))
-        .route("/api/v1/ripple/tx", post(super::routes::ripple::ripple_sign_tx))
-        .route("/api/v1/eos/tx", post(super::routes::eos::eos_sign_tx))
-        .route("/api/v1/nano/tx", post(super::routes::nano::nano_sign_tx))
+
         
         // System management endpoints
         .route("/system/info/apply-settings", post(super::routes::system_management::system_apply_settings))
@@ -460,10 +431,6 @@ pub async fn start_server(port: u16) -> Result<()> {
         // Raw message endpoint
         .route("/api/v1/raw-message", post(super::routes::raw::raw_message))
         .route("/raw", post(super::routes::raw::raw_message))
-        
-        // Icon endpoints
-        .route("/icons", get(super::routes::icons::list_coin_icons))
-        .route("/icons/:filename", get(super::routes::icons::get_coin_icon))
         
         // Legacy Swagger compatibility route
         .route("/spec/swagger.json", get(super::get_swagger_spec))

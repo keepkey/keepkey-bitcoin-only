@@ -1,7 +1,7 @@
 use super::serde_clap_parser;
 use anyhow::Result;
 use bitcoin::{base58, bip32};
-use primitive_types::U256;
+
 use serde_with::serde_conv;
 
 serde_conv! {
