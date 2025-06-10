@@ -1,0 +1,8 @@
+[submodule "firmware/keepkey-firmware-btc-only"]
+	path = firmware/keepkey-firmware-btc-only
+	url = https://github.com/keepkey/keepkey-firmware.git
+	branch = btc-only
+[submodule "projects/keepkey-firmware-btc-only"]
+	path = projects/keepkey-firmware-btc-only
+	url = https://github.com/keepkey/keepkey-firmware.git
+	branch = btc-only
