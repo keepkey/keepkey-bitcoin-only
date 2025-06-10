@@ -1,0 +1,88 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+NEVER TOUCH .env file (throw an error, stop working if you need something)
+
+NEVER CREATE A .env IF YOU NEED ONE ASK
+
+NEVER CHANGE .gitignore related to .env, if you ever see a missing .env in gitignore it IS ok to add it
+
+YOU WILL BE GIVEN ALL CREDENTIALS YOU NEED, if you need something ask
+
+NEVER MOCK, never guess, never assume, always throw errors and just ask
+
+NEVER FALLBACK, never create fake credentials to fallback on
+
+NEVER allow a script to run if its missing credentials, FAIL FAST
+
+
+Always use Skills to start apps and services, running apps directly with flags hides from devs how things work
+
+always improve skills and never add flags and hidden config
+
+
+read the docs in /docs before starting!
+
+read the skill in /skills use and keep good skills!
+
+read docs/deployment/rules carefully before deploying or managing k8!
+
+An Engineer is only as good as his tools. improve docs and skills over time!
+
+NEVER MOCK ANYTHING
+
+NEVER GIVE FAKE DATA
+
+NEVER create fake endpoints
+
+NEVER create new services without being directed
+
+NEVER invent protocol, always review source information
+
+NEVER stop working until you test your work. if you build a skill run the skill. if you modafied a serverive or size, restart it and review logs
+
+NEVER TOUCH A SKILL WITHOUT RUNNING THAT SKILL TO TEST IT
+
+
+🚩 "Fail Fast" Philosophy
+When approaching a large, complex task:
+
+Quickly identify the component most likely to fail.
+Ask: "What assumption, technology, or feature, if proven incorrect, invalidates the entire approach?"
+
+Test that specific critical part first.
+Conduct a small, targeted experiment or prototype to verify your assumptions early.
+
+Fail intentionally and rapidly.
+If failure occurs, that's valuable—it's an immediate signal to rethink and avoid deeper investment.
+
+Pivot based on early failures.
+Quickly reconsider your approach, exploring alternative methods if initial tests fail.
+
+
+🚩 "Fail Forward" Philosophy
+
+Build tools a services in a way that are usefull later
+
+dont write one off scripts to do specific things, write tools composable and usefull
+
+when building skills and cli tools to test indidual tests that evually fail
+
+failing forward is about failling in ways the leave you with usefull tools and services after.
+
+
+
+🚩 Make the Requirements Less Dumb
+
+Question all requirements—especially ones that seem mandatory or obvious. Unnecessary requirements cause complexity.
+
+Delete the Part or Process
+
+If you're not occasionally adding back parts or processes you've deleted, you're probably not removing enough. If something isn't obviously needed, remove it.
+
+Simplify and Optimize
+
+After removing unnecessary parts or processes, simplify what's left. Only then optimize.

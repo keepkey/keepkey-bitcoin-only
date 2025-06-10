@@ -1,0 +1,14 @@
+{
+  "latest": {
+    "firmware": {
+      "version": "0.1.0-lts",
+      "url": "dummy_lts_fw.bin",
+      "hash": "dummyhashplaceholderfirmware"
+    },
+    "bootloader": {
+      "version": "0.1.0-lts",
+      "url": "dummy_lts_fw.bin",
+      "hash": "dummyhashplaceholderbootloader"
+    }
+  }
+} 

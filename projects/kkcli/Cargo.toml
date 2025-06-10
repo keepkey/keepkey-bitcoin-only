@@ -1,0 +1,71 @@
+[package]
+name = "kkcli"
+version = "0.2.3"
+authors = ["MrNerdHair <mrnerdhair@gmail.com>"]
+edition = "2021"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+strip = "symbols"
+
+[dependencies]
+anyhow = "1.0.58"
+base64 = "0.21"
+bitcoin = { version = "0.30", features = ["serde", "std"] }
+bytes = "1.1.0"
+chrono = { version = "0.4.23", default-features = false, features = ["serde", "clock"] }
+clap = { version = "3.2.8", features = ["derive"] }
+crossterm = "0.25"
+hex = { version = "0.4.3", features = ["serde"] }
+hidapi = { version = "2.6", features = ["linux-static-hidraw"] }
+humantime = "2.1.0"
+inquire = "0.7.5"
+semver = "1.0"
+kkcli_derive = { path = "./kkcli_derive" }
+lazy_static = "1.4.0"
+mode = "0.4.1"
+passterm = "1.1.6"
+prost = { version = "0.12", default-features = false, features = ["prost-derive"] }
+prost-types = { version = "0.12", default-features = false }
+rand = "0.8.5"
+regex = "1.5.6"
+rusb = "0.9.3"
+rust-fsm = { version = "0.6.0", default-features = false, features = ["dsl"] }
+schemars = { version = "0.8.10", features = ["chrono"] }
+rust-embed = "8.7.2"
+reqwest = { version = "0.11.27", features = ["blocking", "json"] }
+serde = { version = "1.0.138", features = ["derive"] }
+serde_json = "1.0.82"
+serde_with = { version = "1.14.0", features = ["hex", "base64"] }
+sha2 = "0.10.6"
+thiserror = "1.0.31"
+url = "2.2.2"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Server dependencies for REST API and MCP
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+utoipa = { version = "4", features = ["axum_extras"] }
+utoipa-axum = "0.2.0"
+utoipa-swagger-ui = { version = "5", features = ["axum", "debug-embed"] }
+futures = "0.3"
+futures-util = "0.3"
+
+# Database dependencies
+rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite_migration = "1.2"
+dirs = "5.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+mockall = "0.12"
+
+[build-dependencies]
+prost-build = "0.12"
+protoc-bin-vendored = "3.0.0"
