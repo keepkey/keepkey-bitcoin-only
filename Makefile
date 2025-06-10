@@ -2,7 +2,8 @@
 
 all: firmware kkcli rest vault-ui vault
 
-test: test-rest
+test:
+	cargo test --manifest-path projects/keepkey-rest/Cargo.toml --all-features
 
 firmware:
 	$(MAKE) -C firmware
@@ -14,7 +15,7 @@ rest:
 	cargo build --manifest-path keepkey-rest/Cargo.toml
 
 test-rest:
-	cargo test --manifest-path projects/keepkey-rest/Cargo.toml --all-features
+	./skills/test-rest.sh
 
 vault-ui:
 	cd projects/vault-ui && bun install && bun run dev
