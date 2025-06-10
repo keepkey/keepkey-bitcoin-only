@@ -1,18 +1,23 @@
-.PHONY: all firmware kkcli rest vault-ui vault
+.PHONY: all firmware kkcli rest vault-ui vault test test-rest
 
 all: firmware kkcli rest vault-ui vault
+
+test: test-rest
 
 firmware:
 	$(MAKE) -C firmware
 
 kkcli:
-	cargo build --manifest-path projects/kkcli/Cargo.toml
+	cd projects/kkcli && cargo build && target/debug/kkcli server
 
 rest:
 	cargo build --manifest-path keepkey-rest/Cargo.toml
 
+test-rest:
+	cargo test --manifest-path projects/keepkey-rest/Cargo.toml --all-features
+
 vault-ui:
-	cd vault-ui && npm install && npm run build
+	cd projects/vault-ui && bun install && bun run dev
 
 vault:
 	cd projects/vault && bun i && cargo tauri build

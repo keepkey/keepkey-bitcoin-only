@@ -2,7 +2,11 @@ pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
 
-mod device;
+pub mod device;
+pub mod routes {
+    pub mod bitcoin;
+}
+pub use routes::bitcoin::bitcoin_router;
 
 use axum::{Router, routing::get, Extension};
 use std::sync::Arc;
@@ -17,8 +21,11 @@ pub fn create_router<D: DeviceComm>(device: D) -> Router {
 
 async fn get_features(
     Extension(device): Extension<Arc<dyn DeviceComm>>,
-) -> String {
-    device.get_features().unwrap_or_else(|e| e.to_string())
+) -> axum::Json<crate::device::Features> {
+    match device.get_features() {
+        Ok(features) => axum::Json(features),
+        Err(e) => panic!("Failed to get features: {}", e),
+    }
 }
 
 #[cfg(test)]

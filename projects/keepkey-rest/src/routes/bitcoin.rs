@@ -1,126 +1,128 @@
-use crate::device::{DeviceComm, Address, TxInput, TxOutput, SignedTx, SignedMessage};
-use axum::{
-    extract::{Extension, Json, Path, Query},
-    response::{IntoResponse, Response},
-    http::StatusCode,
-};
+// --- Bitcoin-only REST endpoints for Vault/kkcli sharing ---
+use axum::{Json, routing::{get, post}, Router};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::collections::HashMap;
 
-// Request/response models
-#[derive(Debug, Deserialize)]
-pub struct GetAddressRequest {
-    pub coin_name: String,
-    pub address_n: Vec<u32>,
-    pub show_display: Option<bool>,
+// --- Networks ---
+#[derive(Debug, Serialize)]
+pub struct NetworksResponse {
+    pub networks: Vec<&'static str>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct GetAddressResponse {
-    pub address: String,
+pub async fn list_networks() -> Json<NetworksResponse> {
+    Json(NetworksResponse {
+        networks: vec!["bitcoin-mainnet", "bitcoin-testnet"],
+    })
+}
+
+// --- Parse Path ---
+#[derive(Debug, Deserialize)]
+pub struct ParsePathRequest {
     pub path: String,
 }
+#[derive(Debug, Serialize)]
+pub struct ParsePathResponse {
+    pub valid: bool,
+    pub normalized: Option<String>,
+    pub error: Option<String>,
+}
 
+pub async fn parse_path(Json(req): Json<ParsePathRequest>) -> Json<ParsePathResponse> {
+    // Minimal mock: accept m/44'/0'/0'/0/0, reject others
+    if req.path.starts_with("m/44'/0'") {
+        Json(ParsePathResponse {
+            valid: true,
+            normalized: Some(req.path.clone()),
+            error: None,
+        })
+    } else {
+        Json(ParsePathResponse {
+            valid: false,
+            normalized: None,
+            error: Some("Invalid or unsupported path".to_string()),
+        })
+    }
+}
+
+// --- Pubkey ---
+#[derive(Debug, Deserialize)]
+pub struct PubkeyRequest {
+    pub path: String,
+    pub network: String,
+}
+#[derive(Debug, Serialize)]
+pub struct PubkeyResponse {
+    pub xpub: String,
+    pub pubkey: String,
+}
+
+pub async fn get_pubkey(Json(req): Json<PubkeyRequest>) -> Json<PubkeyResponse> {
+    Json(PubkeyResponse {
+        xpub: format!("MOCK_XPUB_{}_{}", req.network, req.path),
+        pubkey: format!("MOCK_PUBKEY_{}_{}", req.network, req.path),
+    })
+}
+
+// --- Balance ---
+#[derive(Debug, Deserialize)]
+pub struct BalanceRequest {
+    pub address: String,
+    pub network: String,
+}
+#[derive(Debug, Serialize)]
+pub struct BalanceResponse {
+    pub balance: u64,
+}
+
+pub async fn get_balance(Json(_req): Json<BalanceRequest>) -> Json<BalanceResponse> {
+    Json(BalanceResponse { balance: 123456789 }) // mock sats
+}
+
+// --- Sign Tx ---
 #[derive(Debug, Deserialize)]
 pub struct SignTxRequest {
-    pub coin_name: String,
-    pub inputs: Vec<TxInput>,
-    pub outputs: Vec<TxOutput>,
+    pub inputs: Vec<String>,
+    pub outputs: Vec<String>,
+    pub path: String,
+    pub network: String,
 }
-
 #[derive(Debug, Serialize)]
 pub struct SignTxResponse {
-    pub signatures: Vec<String>,
-    pub serialized_tx: String,
+    pub signature: String,
 }
 
+pub async fn sign_tx(Json(req): Json<SignTxRequest>) -> Json<SignTxResponse> {
+    Json(SignTxResponse {
+        signature: format!("MOCK_SIG_TX_{}_{}", req.network, req.path),
+    })
+}
+
+// --- Sign Message ---
 #[derive(Debug, Deserialize)]
 pub struct SignMessageRequest {
-    pub coin_name: String,
-    pub address_n: Vec<u32>,
     pub message: String,
+    pub path: String,
+    pub network: String,
 }
-
 #[derive(Debug, Serialize)]
 pub struct SignMessageResponse {
-    pub address: String,
     pub signature: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct VerifyMessageRequest {
-    pub coin_name: String,
-    pub address: String,
-    pub signature: String,
-    pub message: String,
+pub async fn sign_message(Json(req): Json<SignMessageRequest>) -> Json<SignMessageResponse> {
+    Json(SignMessageResponse {
+        signature: format!("MOCK_SIG_MSG_{}_{}", req.network, req.path),
+    })
 }
 
-#[derive(Debug, Serialize)]
-pub struct VerifyMessageResponse {
-    pub verified: bool,
+// --- Router for Vault ---
+pub fn bitcoin_router() -> Router {
+    Router::new()
+        .route("/networks", get(list_networks))
+        .route("/parse-path", post(parse_path))
+        .route("/pubkey", post(get_pubkey))
+        .route("/balance", post(get_balance))
+        .route("/sign-tx", post(sign_tx))
+        .route("/sign-message", post(sign_message))
 }
 
-// Error handling
-#[derive(Debug, Serialize)]
-pub struct ApiError {
-    pub error: String,
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        (StatusCode::BAD_REQUEST, Json(self)).into_response()
-    }
-}
-
-// API Routes
-pub async fn get_address(
-    Extension(device): Extension<Arc<dyn DeviceComm>>,
-    Json(req): Json<GetAddressRequest>,
-) -> Result<Json<GetAddressResponse>, ApiError> {
-    let show_display = req.show_display.unwrap_or(false);
-    
-    match device.get_address(&req.coin_name, &req.address_n, show_display) {
-        Ok(address) => Ok(Json(GetAddressResponse {
-            address: address.address,
-            path: address.path,
-        })),
-        Err(e) => Err(ApiError { error: e.to_string() }),
-    }
-}
-
-pub async fn sign_tx(
-    Extension(device): Extension<Arc<dyn DeviceComm>>,
-    Json(req): Json<SignTxRequest>,
-) -> Result<Json<SignTxResponse>, ApiError> {
-    match device.sign_tx(&req.coin_name, &req.inputs, &req.outputs) {
-        Ok(result) => Ok(Json(SignTxResponse {
-            signatures: result.signatures,
-            serialized_tx: result.serialized_tx,
-        })),
-        Err(e) => Err(ApiError { error: e.to_string() }),
-    }
-}
-
-pub async fn sign_message(
-    Extension(device): Extension<Arc<dyn DeviceComm>>,
-    Json(req): Json<SignMessageRequest>,
-) -> Result<Json<SignMessageResponse>, ApiError> {
-    match device.sign_message(&req.coin_name, &req.address_n, &req.message) {
-        Ok(result) => Ok(Json(SignMessageResponse {
-            address: result.address,
-            signature: result.signature,
-        })),
-        Err(e) => Err(ApiError { error: e.to_string() }),
-    }
-}
-
-pub async fn verify_message(
-    Extension(device): Extension<Arc<dyn DeviceComm>>,
-    Json(req): Json<VerifyMessageRequest>,
-) -> Result<Json<VerifyMessageResponse>, ApiError> {
-    match device.verify_message(&req.coin_name, &req.address, &req.signature, &req.message) {
-        Ok(verified) => Ok(Json(VerifyMessageResponse { verified })),
-        Err(e) => Err(ApiError { error: e.to_string() }),
-    }
-}
+// --- TODO: Add robust tests for all endpoints ---
