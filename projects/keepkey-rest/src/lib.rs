@@ -5,8 +5,10 @@ pub fn add(left: u64, right: u64) -> u64 {
 pub mod device;
 pub mod routes {
     pub mod bitcoin;
+    pub mod v2;
 }
 pub use routes::bitcoin::bitcoin_router;
+pub use routes::v2::v2_router;
 
 use axum::{Router, routing::get, Extension};
 use std::sync::Arc;
