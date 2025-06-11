@@ -207,17 +207,33 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     <>
       <DialogRoot open={isOpen} onOpenChange={({ open }) => !open && onClose()}>
         <DialogContent 
-          maxW="lg" 
+          width="600px"
+          height="700px"
           bg="gray.900" 
           color="white"
-          borderColor="gray.700"
+          border="2px solid"
+          borderColor="gray.600"
+          boxShadow="0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 8px 16px -8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1)"
+          borderRadius="xl"
+          position="relative"
+          _before={{
+            content: '""',
+            position: "absolute",
+            top: "-1px",
+            left: "-1px",
+            right: "-1px",
+            bottom: "-1px",
+            background: "linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.1))",
+            borderRadius: "xl",
+            zIndex: -1,
+          }}
         >
           <DialogHeader borderBottomWidth="1px" borderColor="gray.700" pb={4}>
             <DialogTitle color="white">Settings</DialogTitle>
             <DialogCloseTrigger color="gray.400" _hover={{ color: "white" }} />
           </DialogHeader>
           
-          <DialogBody p={6}>
+          <DialogBody p={6} flex="1" overflowY="auto">
             <Tabs.Root defaultValue="general">
               <Tabs.List bg="gray.800" borderRadius="md" p={1} mb={6}>
                 <Tabs.Trigger 
@@ -266,19 +282,19 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                 </Tabs.Trigger>
               </Tabs.List>
 
-              <Tabs.Content value="general">
+              <Tabs.Content value="general" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
                   <VaultSetup />
                 </VStack>
               </Tabs.Content>
 
-              <Tabs.Content value="app">
+              <Tabs.Content value="app" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
                   <Text color="gray.300">App settings content coming soon...</Text>
                 </VStack>
               </Tabs.Content>
 
-              <Tabs.Content value="keepkey">
+              <Tabs.Content value="keepkey" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
                   <KeepKeyDeviceList 
                     onBootloaderUpdate={handleBootloaderUpdate}
@@ -289,7 +305,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                 </VStack>
               </Tabs.Content>
 
-              <Tabs.Content value="mcp">
+              <Tabs.Content value="mcp" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
                   <Text color="gray.300">MCP settings content coming soon...</Text>
                 </VStack>
