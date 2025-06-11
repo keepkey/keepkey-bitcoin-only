@@ -3,6 +3,7 @@ import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react
 import { FaTh, FaGlobe, FaLink, FaCog, FaQuestionCircle } from 'react-icons/fa';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
 import { AppsView, BrowserView, PairingsView } from './views';
 
@@ -110,7 +111,14 @@ export const VaultInterface = () => {
   };
 
   return (
-    <Box height="100vh" width="100vw" position="relative">
+    <Box 
+      height="100vh" 
+      width="100vw" 
+      position="relative"
+      backgroundImage={`url(${splashBg})`}
+      backgroundSize="cover"
+      backgroundPosition="center"
+    >
       {/* Main Vault Interface - Hidden when settings is open */}
       {!isSettingsOpen && (
         <Box height="100%" display="flex" flexDirection="column">
@@ -171,7 +179,9 @@ export const VaultInterface = () => {
           left="0"
           right="0"
           bottom="0"
-          bg="gray.900"
+          backgroundImage={`url(${splashBg})`}
+          backgroundSize="cover"
+          backgroundPosition="center"
           zIndex="modal"
           display="flex"
           alignItems="center"
