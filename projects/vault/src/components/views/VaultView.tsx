@@ -26,7 +26,7 @@ export const VaultView = () => {
   }
 
   return (
-    <Box height="100%" bg="rgba(0, 0, 0, 0.4)">
+    <Box height="100%" bg="gray.900">
       <Portfolio />
     </Box>
   );

@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "keepkey-desktop",
+        "title": "KeepKey Vault",
         "width": 1400,
         "height": 920
       }

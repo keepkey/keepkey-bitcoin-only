@@ -585,6 +585,15 @@ pub fn run() {
             // Capture an owned AppHandle immediately
             let app_handle = app.handle();
 
+            // Set dynamic window title with version
+            if let Some(window) = app.get_webview_window("main") {
+                let version = app.config().version.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "0.1.1".to_string());
+                let title = format!("KeepKey Vault v{} (Bitcoin Only)", version);
+                if let Err(e) = window.set_title(&title) {
+                    log::warn!("Failed to set window title: {}", e);
+                }
+            }
+
             // Create blocking actions state first
             let blocking_actions = blocking_actions::BlockingActionsState::new();
             app.manage(blocking_actions.clone());

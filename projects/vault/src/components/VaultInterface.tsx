@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react';
-import { FaTh, FaGlobe, FaLink, FaWallet, FaCog, FaQuestionCircle } from 'react-icons/fa';
+import { FaTh, FaGlobe, FaLink, FaWallet, FaCog, FaQuestionCircle, FaCoins } from 'react-icons/fa';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
-import { AppsView, BrowserView, PairingsView, VaultView } from './views';
+import { AppsView, BrowserView, PairingsView, VaultView, AssetView } from './views';
+import { AssetProvider } from '../contexts/AssetContext';
 
-type ViewType = 'apps' | 'browser' | 'pairings' | 'vault';
+type ViewType = 'apps' | 'browser' | 'pairings' | 'vault' | 'assets';
 
 interface NavItem {
   id: ViewType | 'settings' | 'support';
@@ -42,16 +43,22 @@ export const VaultInterface = () => {
 
   const navItems: NavItem[] = [
     {
+      id: 'vault',
+      label: 'Portfolio',
+      icon: <FaWallet />,
+      onClick: () => handleViewChange('vault'),
+    },
+    {
+      id: 'assets',
+      label: 'Assets',
+      icon: <FaCoins />,
+      onClick: () => handleViewChange('assets'),
+    },
+    {
       id: 'apps',
       label: 'Apps',
       icon: <FaTh />,
       onClick: () => handleViewChange('apps'),
-    },
-    {
-      id: 'vault',
-      label: 'Vault',
-      icon: <FaWallet />,
-      onClick: () => handleViewChange('vault'),
     },
     {
       id: 'browser',
@@ -64,12 +71,6 @@ export const VaultInterface = () => {
       label: 'Settings',
       icon: <FaCog />,
       onClick: openSettings,
-    },
-    {
-      id: 'support',
-      label: 'Support',
-      icon: <FaQuestionCircle />,
-      onClick: handleSupportClick,
     },
   ];
 
@@ -103,6 +104,8 @@ export const VaultInterface = () => {
         return <AppsView />;
       case 'vault':
         return <VaultView />;
+      case 'assets':
+        return <AssetView />;
       case 'browser':
         return <BrowserView />;
       case 'pairings':
@@ -113,14 +116,15 @@ export const VaultInterface = () => {
   };
 
   return (
-    <Box 
-      height="100vh" 
-      width="100vw" 
-      position="relative"
-      backgroundImage={`url(${splashBg})`}
-      backgroundSize="cover"
-      backgroundPosition="center"
-    >
+    <AssetProvider>
+      <Box 
+        height="100vh" 
+        width="100vw" 
+        position="relative"
+        backgroundImage={`url(${splashBg})`}
+        backgroundSize="cover"
+        backgroundPosition="center"
+      >
       {/* Main Vault Interface - Hidden when settings is open */}
       {!isSettingsOpen && (
         <Box height="100%" display="flex" flexDirection="column">
@@ -192,6 +196,7 @@ export const VaultInterface = () => {
           <SettingsDialog isOpen={isSettingsOpen} onClose={closeSettings} />
         </Box>
       )}
-    </Box>
+      </Box>
+    </AssetProvider>
   );
 }; 

@@ -1,16 +1,18 @@
+'use client';
+
 import React, { useState } from 'react';
 import { pie, arc, PieArcDatum } from 'd3';
 import AnimatedSlice from './AnimatedSlice';
 import { Box } from '@chakra-ui/react';
 import CountUp from 'react-countup';
 
-// Theme colors - matching dashboard theme
+// Theme colors - matching vault dark theme
 const theme = {
-  bg: '#000000',
-  cardBg: '#111111',
+  bg: 'gray.900',
+  cardBg: 'gray.800',
   gold: '#FFD700',
   goldHover: '#FFE135',
-  border: '#222222',
+  border: 'gray.700',
 };
 
 export interface DonutChartItem {
@@ -80,7 +82,7 @@ const DonutChart: React.FC<DonutChartProps> = ({
         viewBox={`-${radius} -${radius} ${radius * 2} ${radius * 2}`}
         width="100%"
         height="100%"
-        style={{ overflow: 'visible' }}
+        className="overflow-visible"
       >
         {/* Slices */}
         {arcs.map((d, i) => {
