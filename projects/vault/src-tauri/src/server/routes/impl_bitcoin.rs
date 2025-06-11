@@ -1,462 +1,482 @@
 use anyhow::{Result, anyhow};
-use tokio::time::{timeout, Duration};
+use tokio::time::{timeout};
 use tracing::{info, error, warn};
 use hex;
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::transport::{UsbTransport, ProtocolAdapter};
 use crate::messages::{self, Message};
 use crate::server::routes;
-use crate::server::{DEVICE_OPERATION_TIMEOUT, try_get_device, ServerState};
 
-// Bitcoin transaction signing implementation
-pub(crate) async fn bitcoin_sign_tx_impl(state: &ServerState, request: routes::BitcoinSignRequest) -> Result<routes::BitcoinSignResponse> {
-    // SECURITY: No transaction data or signing-related information is ever persisted to disk.
-    // All transaction data exists only in memory for the duration of this signing operation
-    // and is cleared when the function returns.
+// Local timeout constant since the vault project doesn't have DEVICE_OPERATION_TIMEOUT
+const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
+
+// Helper function to get the first available KeepKey device
+fn try_get_device() -> Result<rusb::Device<rusb::GlobalContext>, anyhow::Error> {
+    const DEVICE_IDS: &[(u16, u16)] = &[(0x2b24, 0x0001), (0x2b24, 0x0002)];
     
-    info!("🚀 Starting Bitcoin transaction signing");
-    info!("📋 Request: {} inputs, {} outputs", request.inputs.len(), request.outputs.len());
-    
-    // Wrap device communication in timeout
-    let result = timeout(DEVICE_OPERATION_TIMEOUT, async {
-        // Get a mutable reference to the active transport
-        let mut transport_guard = state.active_transport.lock().await;
-        let transport = transport_guard.as_mut().ok_or_else(|| {
-            error!("🚨 No active USB transport found in ServerState");
-            anyhow::anyhow!("No active USB transport available")
-        })?;
+    let devices = rusb::devices()?;
+    for device in devices.iter() {
+        let device_desc = device.device_descriptor()?;
+        let vid = device_desc.vendor_id();
+        let pid = device_desc.product_id();
         
-        // Create SignTx message to initiate Bitcoin signing
-        let sign_tx = messages::SignTx {
-            outputs_count: request.outputs.len() as u32,
-            inputs_count: request.inputs.len() as u32,
-            coin_name: Some("Bitcoin".to_string()),
-            version: Some(1),
-            lock_time: Some(0),
-            expiry: None,
-            overwintered: None,
-            version_group_id: None,
-            branch_id: None,
-        };
-        
-        // Track transaction state
-        let mut signatures = Vec::new();
-        let mut serialized_tx_parts = Vec::new();
-        
-
-        
-        // Start the signing process
-        let mut current_message: Message = sign_tx.into();
-        
-        info!("📤 Sending SignTx message to device");
-        
-        loop {
-            let response = transport
-                .with_standard_handler()
-                .handle(current_message)?;
-            
-            match response {
-                Message::TxRequest(tx_req) => {
-                    match tx_req.request_type {
-                        Some(rt) if rt == messages::RequestType::Txinput as i32 => {
-                            // Get the requested index from details
-                            let requested_index = if let Some(details) = &tx_req.details {
-                                details.request_index.unwrap_or(0) as usize
-                            } else {
-                                0
-                            };
-                            
-                            // Check if this is a request for a previous transaction input
-                            if let Some(details) = &tx_req.details {
-                                if let Some(tx_hash) = &details.tx_hash {
-                                    // This is asking for an input from a previous transaction
-                                    let tx_hash_hex = hex::encode(tx_hash);
-                                    info!("📥 Device requesting input #{} from previous tx: {}", requested_index, tx_hash_hex);
-                                    
-                                    // For previous transaction inputs, we need to parse the actual transaction
-                                    // to get the input at the requested index.
-                                    // Find the corresponding input in our request.inputs that uses this prev_tx_hash
-                                    // to get the prev_tx_hex data.
-                                    let mut found_prev_tx_hex: Option<&String> = None;
-                                    for input_param in &request.inputs {
-                                        if hex::encode(&input_param.prev_hash) == tx_hash_hex {
-                                            found_prev_tx_hex = input_param.hex.as_ref();
-                                            break;
-                                        }
-                                    }
-
-                                    if let Some(hex_data) = found_prev_tx_hex {
-                                        match parse_tx_input_from_hex(hex_data, requested_index) {
-                                            Ok((prev_hash_bytes, prev_index_val, script_sig_bytes, sequence_val)) => {
-                                                info!("📊 Found previous input {}: prev_hash={}, prev_index={}",
-                                                    requested_index, hex::encode(&prev_hash_bytes), prev_index_val);
-
-                                                let tx_ack_input = messages::TxInputType {
-                                                    address_n: vec![], // Empty for previous tx input
-                                                    prev_hash: prev_hash_bytes.into(),
-                                                    prev_index: prev_index_val,
-                                                    script_sig: Some(script_sig_bytes.into()),
-                                                    sequence: Some(sequence_val),
-                                                    script_type: None, // Not needed for prev input
-                                                    multisig: None,    // Not needed for prev input
-                                                    amount: None,      // Amount is not part of prev tx input for TxAck
-                                                    decred_tree: None,
-                                                    decred_script_version: None,
-                                                };
-                                                current_message = messages::TxAck { tx: Some(messages::TransactionType {
-                                                    inputs: vec![tx_ack_input],
-                                                    ..Default::default() // Only sending the input
-                                                })}.into();
-                                            }
-                                            Err(e) => {
-                                                error!("🚨 Failed to parse previous transaction input {}: {}", requested_index, e);
-                                                current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Failed to parse prev tx input: {}", e)) }.into();
-                                            }
-                                        }
-                                    } else {
-                                        error!("🚨 Previous transaction hex not found in request for hash: {}", tx_hash_hex);
-                                        current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Prev tx data not found for hash: {}", tx_hash_hex)) }.into();
-                                    }
-                                } else {
-                                    // This is asking for an input from the new transaction being signed
-                                    info!("📥 Device requesting input #{}", requested_index);
-                                    
-                                    if requested_index >= request.inputs.len() {
-                                        return Err(anyhow::anyhow!("Device requested input {} out of range (have {} inputs)", 
-                                            requested_index, request.inputs.len()));
-                                    }
-                                    
-                                    let input = &request.inputs[requested_index];
-                                    
-                                    // Parse the prev_hash from hex string
-                                    let prev_hash = hex::decode(&input.prev_hash)?;
-                                    
-                                    // Create TxInputType
-                                    let tx_input = messages::TxInputType {
-                                        address_n: input.address_n.clone(),
-                                        prev_hash: prev_hash.into(),
-                                        prev_index: input.prev_index,
-                                        script_sig: None,
-                                        sequence: Some(0xffffffff),
-                                        script_type: Some(parse_bitcoin_input_script_type(&input.script_type)? as i32),
-                                        multisig: None,
-                                        amount: Some(input.amount.parse()?),
-                                        decred_tree: None,
-                                        decred_script_version: None,
-                                    };
-                                    
-                                    // Create TxAck with the input
-                                    let tx_ack = messages::TxAck {
-                                        tx: Some(messages::TransactionType {
-                                            version: None,
-                                            inputs: vec![tx_input],
-                                            bin_outputs: vec![],
-                                            outputs: vec![],
-                                            lock_time: None,
-                                            inputs_cnt: None,
-                                            outputs_cnt: None,
-                                            extra_data: None,
-                                            extra_data_len: None,
-                                            expiry: None,
-                                            overwintered: None,
-                                            version_group_id: None,
-                                            branch_id: None,
-                                        }),
-                                    };
-                                    
-                                    current_message = tx_ack.into();
-                                }
-                            } else {
-                                return Err(anyhow::anyhow!("TXINPUT request missing details"));
-                            }
-                        },
-                        Some(rt) if rt == messages::RequestType::Txoutput as i32 => {
-                            if let Some(details) = &tx_req.details {
-                                let requested_index = details.request_index.unwrap_or(0) as usize;
-                                
-                                // Add detailed logging to understand the request
-                                info!("📥 Device requesting output #{}", requested_index);
-                                if let Some(tx_hash) = &details.tx_hash {
-                                    let tx_hash_hex = hex::encode(tx_hash);
-                                    info!("   🔍 TX Hash present: {} - This is a PREVIOUS transaction output request", tx_hash_hex);
-                                } else {
-                                    info!("   📌 No TX Hash - This is a NEW transaction output request");
-                                }
-                                
-                                // Check if this is a request for outputs from a previous transaction
-                                if let Some(tx_hash) = &details.tx_hash {
-                                    // This is asking for an output from a previous transaction
-                                    let tx_hash_hex = hex::encode(tx_hash);
-                                    info!("📥 Device requesting output #{} from previous tx: {}", requested_index, tx_hash_hex);
-                                    
-                                    // Get the hex_data from the request.inputs that matches the tx_hash_hex
-                                    let mut found_prev_tx_hex: Option<&String> = None;
-                                    for input_param in &request.inputs {
-                                        // A bit indirect: an input to the *current* tx uses an output from a *previous* tx.
-                                        // The prev_hash of the *current* input is the hash of the *previous* tx.
-                                        if input_param.prev_hash == tx_hash_hex {
-                                            found_prev_tx_hex = input_param.hex.as_ref();
-                                            break;
-                                        }
-                                    }
-
-                                    if let Some(hex_data) = found_prev_tx_hex {
-                                        match parse_tx_output_from_hex(hex_data, requested_index) {
-                                            Ok((amount, script_pubkey)) => {
-                                                info!("📊 Found previous output {}: {} satoshis", requested_index, amount);
-                                                let bin_output = messages::TxOutputBinType {
-                                                    amount,
-                                                    script_pubkey: script_pubkey.into(),
-                                                    decred_script_version: None, // Not applicable for standard BTC
-                                                };
-                                                current_message = messages::TxAck { tx: Some(messages::TransactionType {
-                                                    bin_outputs: vec![bin_output],
-                                                    ..Default::default() // Only sending this bin_output
-                                                })}.into();
-                                            }
-                                            Err(e) => {
-                                                error!("🚨 Failed to parse previous transaction output {}: {}", requested_index, e);
-                                                current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Failed to parse prev tx output: {}", e)) }.into();
-                                            }
-                                        }
-                                    } else {
-                                        error!("🚨 Previous transaction hex not found in request for hash: {}", tx_hash_hex);
-                                        current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Prev tx data not found for hash: {}", tx_hash_hex)) }.into();
-                                    }
-                                } else {
-                                    // This is asking for an output from the new transaction being signed
-                                    info!("📥 Device requesting output #{} for NEW transaction", requested_index);
-                                    info!("📊 We have {} outputs available in NEW transaction", request.outputs.len());
-                                    
-                                    if requested_index >= request.outputs.len() {
-                                        warn!("⚠️  Device requested output {} out of range (NEW transaction has {} outputs)", 
-                                            requested_index, request.outputs.len());
-                                        // Log all outputs for debugging
-                                        for (idx, out) in request.outputs.iter().enumerate() {
-                                            info!("   Output {}: {} satoshis to {:?}", idx, out.amount, out.address);
-                                        }
-                                        
-                                        // WORKAROUND: Send an empty output type to see what happens
-                                        info!("🔧 WORKAROUND: Sending empty TXOUTPUT response for out-of-range request");
-                                        
-                                        // Create an empty TxAck with no outputs
-                                        let tx_ack = messages::TxAck {
-                                            tx: Some(messages::TransactionType {
-                                                version: None,
-                                                inputs: vec![],
-                                                bin_outputs: vec![],
-                                                outputs: vec![], // Empty outputs array
-                                                lock_time: None,
-                                                inputs_cnt: None,
-                                                outputs_cnt: Some(0), // Indicate 0 outputs
-                                                extra_data: None,
-                                                extra_data_len: None,
-                                                expiry: None,
-                                                overwintered: None,
-                                                version_group_id: None,
-                                                branch_id: None,
-                                            }),
-                                        };
-                                        
-                                        current_message = tx_ack.into();
-                                        continue;
-                                    }
-                                    
-                                    let output = &request.outputs[requested_index];
-                                    
-                                    // Create TxOutputType
-                                    let tx_output = messages::TxOutputType {
-                                        address: output.address.clone(),
-                                        address_n: output.address_n.clone().unwrap_or_default(),
-                                        amount: output.amount.parse()?,
-                                        script_type: parse_bitcoin_output_script_type(&output.script_type)? as i32,
-                                        multisig: None,
-                                        op_return_data: None,
-                                        address_type: None,
-                                        decred_script_version: None,
-                                    };
-                                    
-                                    // Create TxAck with the output
-                                    let tx_ack = messages::TxAck {
-                                        tx: Some(messages::TransactionType {
-                                            version: None,
-                                            inputs: vec![],
-                                            bin_outputs: vec![],
-                                            outputs: vec![tx_output],
-                                            lock_time: None,
-                                            inputs_cnt: None,
-                                            outputs_cnt: Some(1), // Set output count to 1 like hdwallet does
-                                            extra_data: None,
-                                            extra_data_len: None,
-                                            expiry: None,
-                                            overwintered: None,
-                                            version_group_id: None,
-                                            branch_id: None,
-                                        }),
-                                    };
-                                    
-                                    current_message = tx_ack.into();
-                                }
-                            } else {
-                                return Err(anyhow::anyhow!("TXOUTPUT request missing details"));
-                            }
-                        },
-                        Some(rt) if rt == messages::RequestType::Txmeta as i32 => {
-                            info!("📥 Device requesting transaction metadata");
-                            
-                            // The device wants metadata about a previous transaction
-                            // Check if the request has tx_hash to know which transaction
-                            if let Some(details) = &tx_req.details {
-                                if let Some(tx_hash) = &details.tx_hash {
-                                    let tx_hash_hex = hex::encode(tx_hash);
-                                    info!("📋 Device wants metadata for tx: {}", tx_hash_hex);
-                                    
-                                    // Get the hex_data from the request.inputs that matches the tx_hash_hex
-                                    let mut found_prev_tx_hex: Option<&String> = None;
-                                    for input_param in &request.inputs {
-                                        // An input to the *current* tx uses an output from a *previous* tx.
-                                        // The prev_hash of the *current* input is the hash of the *previous* tx.
-                                        if input_param.prev_hash == tx_hash_hex {
-                                            found_prev_tx_hex = input_param.hex.as_ref();
-                                            break;
-                                        }
-                                    }
-
-                                    if let Some(hex_data) = found_prev_tx_hex {
-                                        match parse_tx_metadata_from_hex(hex_data) {
-                                            Ok((version, lock_time, inputs_count, outputs_count)) => {
-                                                info!("📋 Parsed metadata: v{}, lock_time={}, inputs={}, outputs={}", version, lock_time, inputs_count, outputs_count);
-                                                current_message = messages::TxAck { tx: Some(messages::TransactionType {
-                                                    version: Some(version),
-                                                    lock_time: Some(lock_time),
-                                                    inputs_cnt: Some(inputs_count),
-                                                    outputs_cnt: Some(outputs_count),
-                                                    ..Default::default() // Only sending metadata fields
-                                                })}.into();
-                                            }
-                                            Err(e) => {
-                                                error!("🚨 Failed to parse previous transaction metadata: {}", e);
-                                                current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Failed to parse prev tx metadata: {}", e)) }.into();
-                                            }
-                                        }
-                                    } else {
-                                        error!("🚨 Previous transaction hex not found in request for hash: {}", tx_hash_hex);
-                                        current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Prev tx data not found for hash: {}", tx_hash_hex)) }.into();
-                                    }
-                                } else {
-                                    // No tx_hash means it wants metadata for the unsigned transaction
-                                    let tx_meta = messages::TransactionType {
-                                        version: Some(1),
-                                        inputs: vec![],
-                                        bin_outputs: vec![],
-                                        outputs: vec![],
-                                        lock_time: Some(0),
-                                        inputs_cnt: Some(request.inputs.len() as u32),
-                                        outputs_cnt: Some(request.outputs.len() as u32),
-                                        extra_data: None,
-                                        extra_data_len: Some(0),
-                                        expiry: None,
-                                        overwintered: None,
-                                        version_group_id: None,
-                                        branch_id: None,
-                                    };
-                                    
-                                    let tx_ack = messages::TxAck {
-                                        tx: Some(tx_meta),
-                                    };
-                                    
-                                    current_message = tx_ack.into();
-                                }
-                            } else {
-                                return Err(anyhow::anyhow!("TXMETA request missing details"));
-                            }
-                        },
-                        Some(rt) if rt == messages::RequestType::Txextradata as i32 => {
-                            info!("📥 Device requesting extra data");
-                            // For Bitcoin, there's typically no extra data
-                            let tx_ack = messages::TxAck {
-                                tx: Some(messages::TransactionType {
-                                    version: None,
-                                    inputs: vec![],
-                                    bin_outputs: vec![],
-                                    outputs: vec![],
-                                    lock_time: None,
-                                    inputs_cnt: None,
-                                    outputs_cnt: None,
-                                    extra_data: Some(vec![].into()),
-                                    extra_data_len: None,
-                                    expiry: None,
-                                    overwintered: None,
-                                    version_group_id: None,
-                                    branch_id: None,
-                                }),
-                            };
-                            current_message = tx_ack.into();
-                        },
-                        Some(rt) if rt == messages::RequestType::Txfinished as i32 => {
-                            info!("✅ Device finished signing transaction");
-                            
-                            // Collect the serialized transaction if provided
-                            if let Some(serialized) = &tx_req.serialized {
-                                if let Some(serialized_tx) = &serialized.serialized_tx {
-                                    serialized_tx_parts.push(serialized_tx.clone());
-                                }
-                                if let Some(signature) = &serialized.signature {
-                                    if let Some(sig_index) = serialized.signature_index {
-                                        info!("📝 Got signature for input {}", sig_index);
-                                        signatures.push(hex::encode(signature));
-                                    }
-                                }
-                            }
-                            
-                            // Combine all serialized parts
-                            let mut serialized_tx = Vec::new();
-                            for part in serialized_tx_parts {
-                                serialized_tx.extend_from_slice(&part);
-                            }
-                            
-                            return Ok(routes::BitcoinSignResponse {
-                                signatures,
-                                serialized_tx: hex::encode(serialized_tx),
-                            });
-                        },
-                        _ => {
-                            error!("❌ Unknown request type: {:?}", tx_req.request_type);
-                            return Err(anyhow::anyhow!("Unknown request type from device"));
-                        }
-                    }
-                    
-                    // Check if we have serialized data in this response
-                    if let Some(serialized) = &tx_req.serialized {
-                        if let Some(serialized_tx) = &serialized.serialized_tx {
-                            serialized_tx_parts.push(serialized_tx.clone());
-                        }
-                        if let Some(signature) = &serialized.signature {
-                            if let Some(sig_index) = serialized.signature_index {
-                                info!("📝 Got signature for input {}", sig_index);
-                                signatures.push(hex::encode(signature));
-                            }
-                        }
-                    }
-                },
-                Message::Failure(failure) => {
-                    let error_msg = failure.message.unwrap_or_else(|| "Unknown error".to_string());
-                    error!("❌ Bitcoin signing failed: {}", error_msg);
-                    return Err(anyhow::anyhow!("Failure: {}", error_msg));
-                },
-                _ => {
-                    error!("❌ Unexpected message type during Bitcoin signing");
-                    return Err(anyhow::anyhow!("Unexpected message type"));
-                }
-            }
+        if DEVICE_IDS.contains(&(vid, pid)) {
+            return Ok(device);
         }
-    }).await??;
-    
-    Ok(result)
+    }
+    Err(anyhow::anyhow!("No KeepKey device found"))
 }
 
-// Helper function to parse transaction from hex
+// Bitcoin transaction signing implementation
+// pub(crate) async fn bitcoin_sign_tx_impl(state: &ServerState, request: routes::BitcoinSignRequest) -> Result<routes::BitcoinSignResponse> {
+//     // SECURITY: No transaction data or signing-related information is ever persisted to disk.
+//     // All transaction data exists only in memory for the duration of this signing operation
+//     // and is cleared when the function returns.
+//     
+//     info!("🚀 Starting Bitcoin transaction signing");
+//     info!("📋 Request: {} inputs, {} outputs", request.inputs.len(), request.outputs.len());
+//     
+//     // Wrap device communication in timeout
+//     let result = timeout(DEVICE_OPERATION_TIMEOUT, async {
+//         // Get a mutable reference to the active transport
+//         let mut transport_guard = state.active_transport.lock().await;
+//         let transport = transport_guard.as_mut().ok_or_else(|| {
+//             error!("🚨 No active USB transport found in ServerState");
+//             anyhow::anyhow!("No active USB transport available")
+//         })?;
+//         
+//         // Create SignTx message to initiate Bitcoin signing
+//         let sign_tx = messages::SignTx {
+//             outputs_count: request.outputs.len() as u32,
+//             inputs_count: request.inputs.len() as u32,
+//             coin_name: Some("Bitcoin".to_string()),
+//             version: Some(1),
+//             lock_time: Some(0),
+//             expiry: None,
+//             overwintered: None,
+//             version_group_id: None,
+//             branch_id: None,
+//         };
+//         
+//         // Track transaction state
+//         let mut signatures = Vec::new();
+//         let mut serialized_tx_parts = Vec::new();
+//         
+// 
+//         
+//         // Start the signing process
+//         let mut current_message: Message = sign_tx.into();
+//         
+//         info!("📤 Sending SignTx message to device");
+//         
+//         loop {
+//             let response = transport
+//                 .with_standard_handler()
+//                 .handle(current_message)?;
+//             
+//             match response {
+//                 Message::TxRequest(tx_req) => {
+//                     match tx_req.request_type {
+//                         Some(rt) if rt == messages::RequestType::Txinput as i32 => {
+//                             // Get the requested index from details
+//                             let requested_index = if let Some(details) = &tx_req.details {
+//                                 details.request_index.unwrap_or(0) as usize
+//                             } else {
+//                                 0
+//                             };
+//                             
+//                             // Check if this is a request for a previous transaction input
+//                             if let Some(details) = &tx_req.details {
+//                                 if let Some(tx_hash) = &details.tx_hash {
+//                                     // This is asking for an input from a previous transaction
+//                                     let tx_hash_hex = hex::encode(tx_hash);
+//                                     info!("📥 Device requesting input #{} from previous tx: {}", requested_index, tx_hash_hex);
+//                                     
+//                                     // For previous transaction inputs, we need to parse the actual transaction
+//                                     // to get the input at the requested index.
+//                                     // Find the corresponding input in our request.inputs that uses this prev_tx_hash
+//                                     // to get the prev_tx_hex data.
+//                                     let mut found_prev_tx_hex: Option<&String> = None;
+//                                     for input_param in &request.inputs {
+//                                         if hex::encode(&input_param.prev_hash) == tx_hash_hex {
+//                                             found_prev_tx_hex = input_param.hex.as_ref();
+//                                             break;
+//                                         }
+//                                     }
+// 
+//                                     if let Some(hex_data) = found_prev_tx_hex {
+//                                         match parse_tx_input_from_hex(hex_data, requested_index) {
+//                                             Ok((prev_hash_bytes, prev_index_val, script_sig_bytes, sequence_val)) => {
+//                                                 info!("📊 Found previous input {}: prev_hash={}, prev_index={}",
+//                                                     requested_index, hex::encode(&prev_hash_bytes), prev_index_val);
+// 
+//                                                 let tx_ack_input = messages::TxInputType {
+//                                                     address_n: vec![], // Empty for previous tx input
+//                                                     prev_hash: prev_hash_bytes.into(),
+//                                                     prev_index: prev_index_val,
+//                                                     script_sig: Some(script_sig_bytes.into()),
+//                                                     sequence: Some(sequence_val),
+//                                                     script_type: None, // Not needed for prev input
+//                                                     multisig: None,    // Not needed for prev input
+//                                                     amount: None,      // Amount is not part of prev tx input for TxAck
+//                                                     decred_tree: None,
+//                                                     decred_script_version: None,
+//                                                 };
+//                                                 current_message = messages::TxAck { tx: Some(messages::TransactionType {
+//                                                     inputs: vec![tx_ack_input],
+//                                                     ..Default::default() // Only sending the input
+//                                                 })}.into();
+//                                             }
+//                                             Err(e) => {
+//                                                 error!("🚨 Failed to parse previous transaction input {}: {}", requested_index, e);
+//                                                 current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Failed to parse prev tx input: {}", e)) }.into();
+//                                             }
+//                                         }
+//                                     } else {
+//                                         error!("🚨 Previous transaction hex not found in request for hash: {}", tx_hash_hex);
+//                                         current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Prev tx data not found for hash: {}", tx_hash_hex)) }.into();
+//                                     }
+//                                 } else {
+//                                     // This is asking for an input from the new transaction being signed
+//                                     info!("📥 Device requesting input #{}", requested_index);
+//                                     
+//                                     if requested_index >= request.inputs.len() {
+//                                         return Err(anyhow::anyhow!("Device requested input {} out of range (have {} inputs)", 
+//                                             requested_index, request.inputs.len()));
+//                                     }
+//                                     
+//                                     let input = &request.inputs[requested_index];
+//                                     
+//                                     // Parse the prev_hash from hex string
+//                                     let prev_hash = hex::decode(&input.prev_hash)?;
+//                                     
+//                                     // Create TxInputType
+//                                     let tx_input = messages::TxInputType {
+//                                         address_n: input.address_n.clone(),
+//                                         prev_hash: prev_hash.into(),
+//                                         prev_index: input.prev_index,
+//                                         script_sig: None,
+//                                         sequence: Some(0xffffffff),
+//                                         script_type: Some(parse_bitcoin_input_script_type(&input.script_type)? as i32),
+//                                         multisig: None,
+//                                         amount: Some(input.amount.parse()?),
+//                                         decred_tree: None,
+//                                         decred_script_version: None,
+//                                     };
+//                                     
+//                                     // Create TxAck with the input
+//                                     let tx_ack = messages::TxAck {
+//                                         tx: Some(messages::TransactionType {
+//                                             version: None,
+//                                             inputs: vec![tx_input],
+//                                             bin_outputs: vec![],
+//                                             outputs: vec![],
+//                                             lock_time: None,
+//                                             inputs_cnt: None,
+//                                             outputs_cnt: None,
+//                                             extra_data: None,
+//                                             extra_data_len: None,
+//                                             expiry: None,
+//                                             overwintered: None,
+//                                             version_group_id: None,
+//                                             branch_id: None,
+//                                         }),
+//                                     };
+//                                     
+//                                     current_message = tx_ack.into();
+//                                 }
+//                             } else {
+//                                 return Err(anyhow::anyhow!("TXINPUT request missing details"));
+//                             }
+//                         },
+//                         Some(rt) if rt == messages::RequestType::Txoutput as i32 => {
+//                             if let Some(details) = &tx_req.details {
+//                                 let requested_index = details.request_index.unwrap_or(0) as usize;
+//                                 
+//                                 // Add detailed logging to understand the request
+//                                 info!("📥 Device requesting output #{}", requested_index);
+//                                 if let Some(tx_hash) = &details.tx_hash {
+//                                     let tx_hash_hex = hex::encode(tx_hash);
+//                                     info!("   🔍 TX Hash present: {} - This is a PREVIOUS transaction output request", tx_hash_hex);
+//                                 } else {
+//                                     info!("   📌 No TX Hash - This is a NEW transaction output request");
+//                                 }
+//                                 
+//                                 // Check if this is a request for outputs from a previous transaction
+//                                 if let Some(tx_hash) = &details.tx_hash {
+//                                     // This is asking for an output from a previous transaction
+//                                     let tx_hash_hex = hex::encode(tx_hash);
+//                                     info!("📥 Device requesting output #{} from previous tx: {}", requested_index, tx_hash_hex);
+//                                     
+//                                     // Get the hex_data from the request.inputs that matches the tx_hash_hex
+//                                     let mut found_prev_tx_hex: Option<&String> = None;
+//                                     for input_param in &request.inputs {
+//                                         // A bit indirect: an input to the *current* tx uses an output from a *previous* tx.
+//                                         // The prev_hash of the *current* input is the hash of the *previous* tx.
+//                                         if input_param.prev_hash == tx_hash_hex {
+//                                             found_prev_tx_hex = input_param.hex.as_ref();
+//                                             break;
+//                                         }
+//                                     }
+// 
+//                                     if let Some(hex_data) = found_prev_tx_hex {
+//                                         match parse_tx_output_from_hex(hex_data, requested_index) {
+//                                             Ok((amount, script_pubkey)) => {
+//                                                 info!("📊 Found previous output {}: {} satoshis", requested_index, amount);
+//                                                 let bin_output = messages::TxOutputBinType {
+//                                                     amount,
+//                                                     script_pubkey: script_pubkey.into(),
+//                                                     decred_script_version: None, // Not applicable for standard BTC
+//                                                 };
+//                                                 current_message = messages::TxAck { tx: Some(messages::TransactionType {
+//                                                     bin_outputs: vec![bin_output],
+//                                                     ..Default::default() // Only sending this bin_output
+//                                                 })}.into();
+//                                             }
+//                                             Err(e) => {
+//                                                 error!("🚨 Failed to parse previous transaction output {}: {}", requested_index, e);
+//                                                 current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Failed to parse prev tx output: {}", e)) }.into();
+//                                             }
+//                                         }
+//                                     } else {
+//                                         error!("🚨 Previous transaction hex not found in request for hash: {}", tx_hash_hex);
+//                                         current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Prev tx data not found for hash: {}", tx_hash_hex)) }.into();
+//                                     }
+//                                 } else {
+//                                     // This is asking for an output from the new transaction being signed
+//                                     info!("📥 Device requesting output #{} for NEW transaction", requested_index);
+//                                     info!("📊 We have {} outputs available in NEW transaction", request.outputs.len());
+//                                     
+//                                     if requested_index >= request.outputs.len() {
+//                                         warn!("⚠️  Device requested output {} out of range (NEW transaction has {} outputs)", 
+//                                             requested_index, request.outputs.len());
+//                                         // Log all outputs for debugging
+//                                         for (idx, out) in request.outputs.iter().enumerate() {
+//                                             info!("   Output {}: {} satoshis to {:?}", idx, out.amount, out.address);
+//                                         }
+//                                         
+//                                         // WORKAROUND: Send an empty output type to see what happens
+//                                         info!("🔧 WORKAROUND: Sending empty TXOUTPUT response for out-of-range request");
+//                                         
+//                                         // Create an empty TxAck with no outputs
+//                                         let tx_ack = messages::TxAck {
+//                                             tx: Some(messages::TransactionType {
+//                                                 version: None,
+//                                                 inputs: vec![],
+//                                                 bin_outputs: vec![],
+//                                                 outputs: vec![], // Empty outputs array
+//                                                 lock_time: None,
+//                                                 inputs_cnt: None,
+//                                                 outputs_cnt: Some(0), // Indicate 0 outputs
+//                                                 extra_data: None,
+//                                                 extra_data_len: None,
+//                                                 expiry: None,
+//                                                 overwintered: None,
+//                                                 version_group_id: None,
+//                                                 branch_id: None,
+//                                             }),
+//                                         };
+//                                         
+//                                         current_message = tx_ack.into();
+//                                         continue;
+//                                     }
+//                                     
+//                                     let output = &request.outputs[requested_index];
+//                                     
+//                                     // Create TxOutputType
+//                                     let tx_output = messages::TxOutputType {
+//                                         address: output.address.clone(),
+//                                         address_n: output.address_n.clone().unwrap_or_default(),
+//                                         amount: output.amount.parse()?,
+//                                         script_type: parse_bitcoin_output_script_type(&output.script_type)? as i32,
+//                                         multisig: None,
+//                                         op_return_data: None,
+//                                         address_type: None,
+//                                         decred_script_version: None,
+//                                     };
+//                                     
+//                                     // Create TxAck with the output
+//                                     let tx_ack = messages::TxAck {
+//                                         tx: Some(messages::TransactionType {
+//                                             version: None,
+//                                             inputs: vec![],
+//                                             bin_outputs: vec![],
+//                                             outputs: vec![tx_output],
+//                                             lock_time: None,
+//                                             inputs_cnt: None,
+//                                             outputs_cnt: Some(1), // Set output count to 1 like hdwallet does
+//                                             extra_data: None,
+//                                             extra_data_len: None,
+//                                             expiry: None,
+//                                             overwintered: None,
+//                                             version_group_id: None,
+//                                             branch_id: None,
+//                                         }),
+//                                     };
+//                                     
+//                                     current_message = tx_ack.into();
+//                                 }
+//                             } else {
+//                                 return Err(anyhow::anyhow!("TXOUTPUT request missing details"));
+//                             }
+//                         },
+//                         Some(rt) if rt == messages::RequestType::Txmeta as i32 => {
+//                             info!("📥 Device requesting transaction metadata");
+//                             
+//                             // The device wants metadata about a previous transaction
+//                             // Check if the request has tx_hash to know which transaction
+//                             if let Some(details) = &tx_req.details {
+//                                 if let Some(tx_hash) = &details.tx_hash {
+//                                     let tx_hash_hex = hex::encode(tx_hash);
+//                                     info!("📋 Device wants metadata for tx: {}", tx_hash_hex);
+//                                     
+//                                     // Get the hex_data from the request.inputs that matches the tx_hash_hex
+//                                     let mut found_prev_tx_hex: Option<&String> = None;
+//                                     for input_param in &request.inputs {
+//                                         // An input to the *current* tx uses an output from a *previous* tx.
+//                                         // The prev_hash of the *current* input is the hash of the *previous* tx.
+//                                         if input_param.prev_hash == tx_hash_hex {
+//                                             found_prev_tx_hex = input_param.hex.as_ref();
+//                                             break;
+//                                         }
+//                                     }
+// 
+//                                     if let Some(hex_data) = found_prev_tx_hex {
+//                                         match parse_tx_metadata_from_hex(hex_data) {
+//                                             Ok((version, lock_time, inputs_count, outputs_count)) => {
+//                                                 info!("📋 Parsed metadata: v{}, lock_time={}, inputs={}, outputs={}", version, lock_time, inputs_count, outputs_count);
+//                                                 current_message = messages::TxAck { tx: Some(messages::TransactionType {
+//                                                     version: Some(version),
+//                                                     lock_time: Some(lock_time),
+//                                                     inputs_cnt: Some(inputs_count),
+//                                                     outputs_cnt: Some(outputs_count),
+//                                                     ..Default::default() // Only sending metadata fields
+//                                                 })}.into();
+//                                             }
+//                                             Err(e) => {
+//                                                 error!("🚨 Failed to parse previous transaction metadata: {}", e);
+//                                                 current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Failed to parse prev tx metadata: {}", e)) }.into();
+//                                             }
+//                                         }
+//                                     } else {
+//                                         error!("🚨 Previous transaction hex not found in request for hash: {}", tx_hash_hex);
+//                                         current_message = messages::Failure{ code: Some(messages::FailureType::FailureUnexpectedMessage as i32), message: Some(format!("Prev tx data not found for hash: {}", tx_hash_hex)) }.into();
+//                                     }
+//                                 } else {
+//                                     // No tx_hash means it wants metadata for the unsigned transaction
+//                                     let tx_meta = messages::TransactionType {
+//                                         version: Some(1),
+//                                         inputs: vec![],
+//                                         bin_outputs: vec![],
+//                                         outputs: vec![],
+//                                         lock_time: Some(0),
+//                                         inputs_cnt: Some(request.inputs.len() as u32),
+//                                         outputs_cnt: Some(request.outputs.len() as u32),
+//                                         extra_data: None,
+//                                         extra_data_len: Some(0),
+//                                         expiry: None,
+//                                         overwintered: None,
+//                                         version_group_id: None,
+//                                         branch_id: None,
+//                                     };
+//                                     
+//                                     let tx_ack = messages::TxAck {
+//                                         tx: Some(tx_meta),
+//                                     };
+//                                     
+//                                     current_message = tx_ack.into();
+//                                 }
+//                             } else {
+//                                 return Err(anyhow::anyhow!("TXMETA request missing details"));
+//                             }
+//                         },
+//                         Some(rt) if rt == messages::RequestType::Txextradata as i32 => {
+//                             info!("📥 Device requesting extra data");
+//                             // For Bitcoin, there's typically no extra data
+//                             let tx_ack = messages::TxAck {
+//                                 tx: Some(messages::TransactionType {
+//                                     version: None,
+//                                     inputs: vec![],
+//                                     bin_outputs: vec![],
+//                                     outputs: vec![],
+//                                     lock_time: None,
+//                                     inputs_cnt: None,
+//                                     outputs_cnt: None,
+//                                     extra_data: Some(vec![].into()),
+//                                     extra_data_len: None,
+//                                     expiry: None,
+//                                     overwintered: None,
+//                                     version_group_id: None,
+//                                     branch_id: None,
+//                                 }),
+//                             };
+//                             current_message = tx_ack.into();
+//                         },
+//                         Some(rt) if rt == messages::RequestType::Txfinished as i32 => {
+//                             info!("✅ Device finished signing transaction");
+//                             
+//                             // Collect the serialized transaction if provided
+//                             if let Some(serialized) = &tx_req.serialized {
+//                                 if let Some(serialized_tx) = &serialized.serialized_tx {
+//                                     serialized_tx_parts.push(serialized_tx.clone());
+//                                 }
+//                                 if let Some(signature) = &serialized.signature {
+//                                     if let Some(sig_index) = serialized.signature_index {
+//                                         info!("📝 Got signature for input {}", sig_index);
+//                                         signatures.push(hex::encode(signature));
+//                                     }
+//                                 }
+//                             }
+//                             
+//                             // Combine all serialized parts
+//                             let mut serialized_tx = Vec::new();
+//                             for part in serialized_tx_parts {
+//                                 serialized_tx.extend_from_slice(&part);
+//                             }
+//                             
+//                             return Ok(routes::BitcoinSignResponse {
+//                                 signatures,
+//                                 serialized_tx: hex::encode(serialized_tx),
+//                             });
+//                         },
+//                         _ => {
+//                             error!("❌ Unknown request type: {:?}", tx_req.request_type);
+//                             return Err(anyhow::anyhow!("Unknown request type from device"));
+//                         }
+//                     }
+//                     
+//                     // Check if we have serialized data in this response
+//                     if let Some(serialized) = &tx_req.serialized {
+//                         if let Some(serialized_tx) = &serialized.serialized_tx {
+//                             serialized_tx_parts.push(serialized_tx.clone());
+//                         }
+//                         if let Some(signature) = &serialized.signature {
+//                             if let Some(sig_index) = serialized.signature_index {
+//                                 info!("📝 Got signature for input {}", sig_index);
+//                                 signatures.push(hex::encode(signature));
+//                             }
+//                         }
+//                     }
+//                 },
+//                 Message::Failure(failure) => {
+//                     let error_msg = failure.message.unwrap_or_else(|| "Unknown error".to_string());
+//                     error!("❌ Bitcoin signing failed: {}", error_msg);
+//                     return Err(anyhow::anyhow!("Failure: {}", error_msg));
+//                 },
+//                 _ => {
+//                     error!("❌ Unexpected message type during Bitcoin signing");
+//                     return Err(anyhow::anyhow!("Unexpected message type"));
+//                 }
+//             }
+//         }
+//     }).await??;
+//     
+//     Ok(result)
+// }
+// 
+// // Helper function to parse transaction from hex
 fn parse_transaction_from_hex(hex_str: &str) -> Result<((u32, u32, u32, u32), Vec<messages::TxInputType>, Vec<messages::TxOutputBinType>)> {
     let tx_bytes = hex::decode(hex_str)?;
     let mut cursor = 0;
@@ -597,7 +617,7 @@ fn parse_bitcoin_input_script_type(script_type: &str) -> Result<messages::InputS
         "p2sh" => Ok(messages::InputScriptType::Spendmultisig),
         "p2wpkh" => Ok(messages::InputScriptType::Spendwitness),
         "p2sh-p2wpkh" => Ok(messages::InputScriptType::Spendp2shwitness),
-        "p2tr" => Ok(messages::InputScriptType::Spendtaproot),
+        "p2tr" => Err(anyhow::anyhow!("Taproot not supported")),
         _ => {
             warn!("Unknown input script type '{}', defaulting to p2pkh", script_type);
             Ok(messages::InputScriptType::Spendaddress)
@@ -612,7 +632,7 @@ fn parse_bitcoin_output_script_type(script_type: &str) -> Result<messages::Outpu
         "p2wpkh" => Ok(messages::OutputScriptType::Paytowitness),
         "p2sh" => Ok(messages::OutputScriptType::Paytoscripthash),
         "p2sh-p2wpkh" => Ok(messages::OutputScriptType::Paytop2shwitness),
-        "p2tr" => Ok(messages::OutputScriptType::Paytotaproot),
+        "p2tr" => Err(anyhow::anyhow!("Taproot not supported")),
         "multisig" => Ok(messages::OutputScriptType::Paytomultisig),
         "op_return" => Ok(messages::OutputScriptType::Paytoopreturn),
         _ => {
