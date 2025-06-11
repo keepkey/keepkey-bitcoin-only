@@ -110,56 +110,76 @@ export const VaultInterface = () => {
   };
 
   return (
-    <Box height="100vh" width="100vw" display="flex" flexDirection="column">
-      {/* Main Content Area */}
-      <Box flex="1" overflow="hidden">
-        {renderCurrentView()}
-      </Box>
+    <Box height="100vh" width="100vw" position="relative">
+      {/* Main Vault Interface - Hidden when settings is open */}
+      {!isSettingsOpen && (
+        <Box height="100%" display="flex" flexDirection="column">
+          {/* Main Content Area */}
+          <Box flex="1" overflow="hidden">
+            {renderCurrentView()}
+          </Box>
 
-      {/* Bottom Navigation */}
-      <Box
-        height="80px"
-        bg="gray.900"
-        borderTop="1px solid"
-        borderColor="gray.700"
-        px={4}
-        py={2}
-      >
-        <HStack justify="space-around" align="center" height="100%">
-          {navItems.map((item) => (
-            <Button
-              key={item.id}
-              variant="ghost"
-              size="sm"
-              height="60px"
-              minWidth="60px"
-              flexDirection="column"
-              gap={1}
-              color={
-                (item.id === currentView) 
-                  ? "blue.400" 
-                  : "gray.400"
-              }
-              _hover={{
-                color: "blue.300",
-                bg: "gray.800",
-              }}
-              _active={{
-                bg: "gray.700",
-              }}
-              onClick={item.onClick}
-            >
-              <Box fontSize="lg">{item.icon}</Box>
-              <Text fontSize="xs" fontWeight="medium">
-                {item.label}
-              </Text>
-            </Button>
-          ))}
-        </HStack>
-      </Box>
+          {/* Bottom Navigation */}
+          <Box
+            height="80px"
+            bg="gray.900"
+            borderTop="1px solid"
+            borderColor="gray.700"
+            px={4}
+            py={2}
+          >
+            <HStack justify="space-around" align="center" height="100%">
+              {navItems.map((item) => (
+                <Button
+                  key={item.id}
+                  variant="ghost"
+                  size="sm"
+                  height="60px"
+                  minWidth="60px"
+                  flexDirection="column"
+                  gap={1}
+                  color={
+                    (item.id === currentView) 
+                      ? "blue.400" 
+                      : "gray.400"
+                  }
+                  _hover={{
+                    color: "blue.300",
+                    bg: "gray.800",
+                  }}
+                  _active={{
+                    bg: "gray.700",
+                  }}
+                  onClick={item.onClick}
+                >
+                  <Box fontSize="lg">{item.icon}</Box>
+                  <Text fontSize="xs" fontWeight="medium">
+                    {item.label}
+                  </Text>
+                </Button>
+              ))}
+            </HStack>
+          </Box>
+        </Box>
+      )}
 
-      {/* Settings Modal */}
-      <SettingsDialog isOpen={isSettingsOpen} onClose={closeSettings} />
+      {/* Full-Screen Settings Overlay */}
+      {isSettingsOpen && (
+        <Box
+          position="absolute"
+          top="0"
+          left="0"
+          right="0"
+          bottom="0"
+          bg="gray.900"
+          zIndex="modal"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <SettingsDialog isOpen={isSettingsOpen} onClose={closeSettings} />
+        </Box>
+      )}
     </Box>
   );
 }; 
