@@ -2,7 +2,7 @@ use axum::{
     extract::State,
     http::StatusCode,
     Json,
-    routing::{get, post},
+    routing::post,
     Router,
     response::IntoResponse, // Import IntoResponse trait
 };

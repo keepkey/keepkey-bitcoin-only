@@ -34,7 +34,7 @@ async function testServerHealth() {
 async function testDeviceConnection() {
     try {
         console.log('🔍 Checking device connection...');
-        const response = await fetch('http://localhost:1646/api/v2/devices');
+        const response = await fetch('http://localhost:1646/api/devices');
         
         if (!response.ok) {
             throw new Error(`Devices API returned ${response.status}`);
@@ -52,17 +52,17 @@ async function testDeviceConnection() {
         // Check each device's readiness status
         for (let i = 0; i < devices.length; i++) {
             const device = devices[i];
-            console.log(`\n📱 Device ${i + 1}: ${device.device?.unique_id || 'UNKNOWN_ID'}`);
-            console.log(`   Model: ${device.features?.model || 'UNKNOWN'}`);
-            console.log(`   Firmware: ${device.features?.version || 'UNKNOWN'}`);
-            console.log(`   Initialized: ${device.features?.initialized ? '✅' : '❌'}`);
+            console.log(`\n📱 Device ${i + 1}: ${device.deviceId || 'UNKNOWN_ID'}`);
+            console.log(`   Model: ${device.keepkeyInfo?.label || device.product || 'UNKNOWN'}`);
+            console.log(`   Firmware: ${device.keepkeyInfo?.firmwareVersion || 'UNKNOWN'}`);
+            console.log(`   Initialized: ${device.keepkeyInfo?.initialized ? '✅' : '❌'}`);
             
-            if (!device.features?.initialized) {
+            if (!device.keepkeyInfo?.initialized) {
                 console.log('❌ CRITICAL FAILURE: Device not initialized');
                 throw new Error('DEVICE_NOT_INITIALIZED');
             }
             
-            if (!device.features?.version) {
+            if (!device.keepkeyInfo?.firmwareVersion) {
                 console.log('❌ CRITICAL FAILURE: No firmware version');
                 throw new Error('NO_FIRMWARE_VERSION');
             }

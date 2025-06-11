@@ -75,7 +75,7 @@ async function testServerHealth() {
 async function testDeviceConnection() {
     try {
         console.log('🔍 Checking for connected KeepKey devices...');
-        const response = await fetch('http://localhost:1646/api/v2/devices');
+        const response = await fetch('http://localhost:1646/api/devices');
         const devices = await response.json();
         
         if (!devices || devices.length === 0) {
@@ -224,7 +224,7 @@ async function testXPUBGeneration() {
     
     // First check if devices are connected
     try {
-        const deviceResponse = await fetch('http://localhost:1646/api/v2/devices');
+        const deviceResponse = await fetch('http://localhost:1646/api/devices');
         const devices = await deviceResponse.json();
         
         if (!devices || devices.length === 0) {

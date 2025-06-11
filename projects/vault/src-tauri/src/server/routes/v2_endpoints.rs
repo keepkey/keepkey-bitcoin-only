@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use tracing::{info, error, debug, warn};
 use anyhow::Result;
+use axum::routing::{get, post};
 
 // Import try_get_device directly from the server module (for future use)
 // use crate::server::try_get_device;
@@ -367,7 +368,7 @@ pub async fn get_pubkeys(
     debug!("{}: Getting pubkeys with params: {:?}", tag, params);
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let device_id = match app_state.device_cache.get_device_id() {
+    let _device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
             error!("{}: No device found in cache", tag);
@@ -539,7 +540,7 @@ pub async fn get_balances(
     debug!("{}: Getting balances with params: {:?}", tag, params);
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let device_id = match app_state.device_cache.get_device_id() {
+    let _device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
             error!("{}: No device found in cache", tag);
@@ -551,7 +552,7 @@ pub async fn get_balances(
     
     // Check if balances need refresh or force refresh is requested
     let force_refresh = params.force_refresh.unwrap_or(false);
-    let needs_refresh = match app_state.device_cache.balances_need_refresh(&device_id).await {
+    let needs_refresh = match app_state.device_cache.balances_need_refresh(&_device_id).await {
         Ok(needs) => needs || force_refresh,
         Err(e) => {
             error!("{}: Error checking refresh status: {}", tag, e);
@@ -561,7 +562,7 @@ pub async fn get_balances(
     
     if needs_refresh {
         info!("{}: Balances need refresh - fetching from Pioneer API", tag);
-        if let Err(e) = refresh_balances_from_pioneer(&*app_state.device_cache, &device_id).await {
+        if let Err(e) = refresh_balances_from_pioneer(&*app_state.device_cache, &_device_id).await {
             error!("{}: Failed to refresh balances - FAIL FAST: {}", tag, e);
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
                 "error": format!("Failed to refresh balances: {}", e)
@@ -570,7 +571,7 @@ pub async fn get_balances(
     }
     
     // Get cached balances
-    let balances = match app_state.device_cache.get_cached_balances(&device_id).await {
+    let balances = match app_state.device_cache.get_cached_balances(&_device_id).await {
         Ok(balances) => balances,
         Err(e) => {
             error!("{}: Failed to get cached balances: {}", tag, e);
@@ -627,7 +628,7 @@ pub async fn post_portfolio_balances(
     debug!("{}: Getting portfolio balances for {} requests", tag, requests.len());
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let device_id = match app_state.device_cache.get_device_id() {
+    let _device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
             error!("{}: No device found in cache", tag);
@@ -638,7 +639,7 @@ pub async fn post_portfolio_balances(
     };
     
     // Check if balances need refresh
-    let needs_refresh = match app_state.device_cache.balances_need_refresh(&device_id).await {
+    let needs_refresh = match app_state.device_cache.balances_need_refresh(&_device_id).await {
         Ok(needs) => needs,
         Err(e) => {
             error!("{}: Error checking refresh status: {}", tag, e);
@@ -648,7 +649,7 @@ pub async fn post_portfolio_balances(
     
     if needs_refresh {
         info!("{}: Balances need refresh - fetching from Pioneer API", tag);
-        if let Err(e) = refresh_balances_from_pioneer(&*app_state.device_cache, &device_id).await {
+        if let Err(e) = refresh_balances_from_pioneer(&*app_state.device_cache, &_device_id).await {
             error!("{}: Failed to refresh balances - FAIL FAST: {}", tag, e);
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
                 "error": format!("Failed to refresh balances: {}", e)
@@ -657,7 +658,7 @@ pub async fn post_portfolio_balances(
     }
     
     // Get all cached balances
-    let cached_balances = match app_state.device_cache.get_cached_balances(&device_id).await {
+    let cached_balances = match app_state.device_cache.get_cached_balances(&_device_id).await {
         Ok(balances) => balances,
         Err(e) => {
             error!("{}: Failed to get cached balances: {}", tag, e);
@@ -722,7 +723,7 @@ pub async fn get_portfolio_summary(State(app_state): State<Arc<AppState>>) -> im
     let tag = "get_portfolio_summary";
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let device_id = match app_state.device_cache.get_device_id() {
+    let _device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
             error!("{}: No device found in cache", tag);
@@ -732,11 +733,11 @@ pub async fn get_portfolio_summary(State(app_state): State<Arc<AppState>>) -> im
         }
     };
     
-    match app_state.device_cache.get_portfolio_summary(&device_id).await {
+    match app_state.device_cache.get_portfolio_summary(&_device_id).await {
         Ok(Some(summary)) => Json(summary).into_response(),
         Ok(None) => {
             // Generate summary from current balances
-            match app_state.device_cache.get_cached_balances(&device_id).await {
+            match app_state.device_cache.get_cached_balances(&_device_id).await {
                 Ok(balances) => {
                     let mut total_value_usd = 0.0;
                     let mut networks = std::collections::HashSet::new();
@@ -752,7 +753,7 @@ pub async fn get_portfolio_summary(State(app_state): State<Arc<AppState>>) -> im
                     
                     let summary = PortfolioSummary {
                         id: 0,
-                        device_id: device_id.to_string(),
+                        device_id: _device_id.to_string(),
                         total_value_usd: format!("{:.2}", total_value_usd),
                         network_count: networks.len() as i64,
                         asset_count: balances.len() as i64,
@@ -760,7 +761,7 @@ pub async fn get_portfolio_summary(State(app_state): State<Arc<AppState>>) -> im
                     };
                     
                     // Save the summary
-                    if let Err(e) = app_state.device_cache.save_portfolio_summary(&device_id, &summary).await {
+                    if let Err(e) = app_state.device_cache.save_portfolio_summary(&_device_id, &summary).await {
                         warn!("{}: Failed to save portfolio summary: {}", tag, e);
                     }
                     
@@ -1111,8 +1112,6 @@ fn format_age(timestamp: i64) -> String {
 
 /// Create the v2 router with all v2 endpoints (uses AppState as router state)
 pub fn v2_router() -> axum::Router<Arc<AppState>> {
-    use axum::routing::{get, post, put, delete};
-    
     axum::Router::new()
         .route("/networks", get(get_networks).post(post_network))
         .route("/paths", get(get_paths).post(post_path))

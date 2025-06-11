@@ -36,7 +36,6 @@ mod device_controller_ext; // Extension to DeviceController for update functiona
 // ---------- Std / 3rd‑party ----------
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, Emitter};
-use anyhow;
 
 // UI payload
 #[derive(serde::Serialize, Clone)]
@@ -185,61 +184,34 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                 }
                             };
                             
-                            if let Some(entry) = device_entry {
-                                // Create USB device handle and transport immediately
-                                let transport_result = {
-                                    // Wrap in closure so we can use ? for early returns
-                                    (|| -> anyhow::Result<_> {
-                                        let devices = rusb::devices()
-                                            .map_err(|e| anyhow::anyhow!("Failed to get USB devices: {e}"))?;
-                                        
-                                        // Find matching USB device
-                                        let device_obj = devices
-                                            .iter()
-                                            .find(|d| {
-                                                if let Ok(desc) = d.device_descriptor() {
-                                                    desc.vendor_id() == entry.device.vid
-                                                        && desc.product_id() == entry.device.pid
-                                                } else {
-                                                    false
-                                                }
-                                            })
-                                            .ok_or_else(|| {
-                                                anyhow::anyhow!("Could not find USB device for frontload")
-                                            })?;
-                                        
-                                        // Create transport with interface index 0 and map errors
-                                        let res = crate::transport::UsbTransport::new(&device_obj, 0)
-                                            .map_err(|e| anyhow::anyhow!("Transport init error: {e}"))?;
-                                        Ok(res)
-                                    })()
-                                };
+                            if let Some(_entry) = device_entry {
+                                // Use existing device connection instead of creating new transport
+                                // This avoids "Entity not found" errors from concurrent device access
+                                log::info!("🔗 Using existing device connection for frontload: {}", device_id_clone);
                                 
-                                // Now handle the transport result outside the scope
-                                match transport_result {
-                                    Ok((transport, _config_desc, _device_handle_arc)) => {
-                                        let transport_arc = Arc::new(tokio::sync::Mutex::new(Some(transport)));
-                                        
-                                        // Validate device cache before frontloading
-                                        // Check if the device wallet state has changed (wiped/reinitialized)
-                                        match crate::server::context::clear_device_cache_if_invalid(&device_id_clone).await {
-                                            Ok(cache_cleared) => {
-                                                if cache_cleared {
-                                                    log::info!("🧹 Device cache cleared for {} due to wallet state change", device_id_clone);
-                                                } else {
-                                                    log::info!("✅ Device cache is valid for {}", device_id_clone);
-                                                }
-                                            }
-                                            Err(e) => {
-                                                log::warn!("⚠️  Failed to validate device cache for {}: {}", device_id_clone, e);
-                                            }
+                                // Validate device cache before frontloading
+                                // Check if the device wallet state has changed (wiped/reinitialized)
+                                match crate::server::context::clear_device_cache_if_invalid(&device_id_clone).await {
+                                    Ok(cache_cleared) => {
+                                        if cache_cleared {
+                                            log::info!("🧹 Device cache cleared for {} due to wallet state change", device_id_clone);
+                                        } else {
+                                            log::info!("✅ Device cache is valid for {}", device_id_clone);
                                         }
+                                    }
+                                    Err(e) => {
+                                        log::warn!("⚠️  Failed to validate device cache for {}: {}", device_id_clone, e);
+                                    }
+                                }
 
-                                        // Create frontloader
-                                        let frontloader = cache::DeviceFrontloader::new(
-                                            cache,
-                                            transport_arc
-                                        );
+                                // Create frontloader using existing device manager connection
+                                // Note: We create an empty transport_arc since the frontloader will use 
+                                // the device manager's connection through the cache system
+                                let transport_arc = Arc::new(tokio::sync::Mutex::new(None));
+                                let frontloader = cache::DeviceFrontloader::new(
+                                    cache,
+                                    transport_arc
+                                );
                                             
                                             // Track progress for UI updates
                                                                         let _last_progress = 0;
@@ -312,11 +284,6 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                                     }
                                                 }
                                             }
-                                        }
-                                        Err(e) => {
-                                            log::error!("Failed to create transport for device {}: {}", device_id_clone, e);
-                                        }
-                                    }
                             } else {
                                 log::error!("Device {} not found in registry for frontload", device_id_clone);
                             }

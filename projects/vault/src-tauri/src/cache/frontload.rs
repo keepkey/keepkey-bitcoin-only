@@ -4,6 +4,7 @@ use hex;
 use serde_json;
 use crate::messages::{self, Message};
 use crate::transport::{UsbTransport, ProtocolAdapter};
+use crate::device_registry;
 
 use super::device_cache::{DeviceCache, CachedBalance};
 use rusb::GlobalContext;
@@ -63,11 +64,11 @@ impl DeviceFrontloader {
         
         total_addresses += self.populate_missing_addresses_with_progress(&device_id, &progress_callback).await?;
         
-        // CRITICAL: Fetch balances during frontload - FAIL FAST if Pioneer unavailable
-        info!("💰 Fetching balances from Pioneer API during frontload...");
+        // Try to fetch balances during frontload, but don't fail if Pioneer is unavailable 
+        info!("💰 Trying to fetch balances from Pioneer API during frontload...");
         if let Err(e) = self.frontload_balances(&device_id).await {
-            error!("❌ Failed to fetch balances during frontload - FAILING FAST: {}", e);
-            return Err(anyhow::anyhow!("Frontload failed: Cannot fetch balances from Pioneer API: {}", e));
+            warn!("⚠️  Failed to fetch balances during frontload: {}", e);
+            warn!("⚠️  Continuing without balance data - balances can be fetched later");
         }
         
         let elapsed = start_time.elapsed();
@@ -490,39 +491,97 @@ impl DeviceFrontloader {
         }
     }
     
-    /// Load device features
+    /// Get device features from transport or device registry with retry logic
     async fn frontload_features(&self) -> Result<(messages::Features, String)> {
-        info!("📱 Loading device features...");
+        let tag = "frontload_features";
         
-        let mut transport_opt_guard = self.transport_arc.lock().await;
-        let transport = transport_opt_guard.as_mut().ok_or_else(|| anyhow::anyhow!("Transport not available in frontload_features"))?;
-        
-        // Send GetFeatures message
-        let get_features_msg = messages::GetFeatures {};
-        let response = transport.with_standard_handler().handle(get_features_msg.into())?;
-        
-        match response {
-            Message::Features(features_msg) => {
-                // Extract device ID
-                let device_id = features_msg.device_id
-                    .as_ref()
-                    .map(|id| hex::encode(id))
-                    .unwrap_or_else(|| "unknown".to_string());
+        // First try to get features from active transport
+        {
+            let mut transport_guard = self.transport_arc.lock().await;
+            if let Some(transport) = transport_guard.as_mut() {
+                info!("{}: 🔗 Getting features from active transport", tag);
                 
-                info!("✅ Got device features - ID: {}, Label: {}", 
-                    device_id, 
-                    features_msg.label.as_deref().unwrap_or("Unnamed"));
-                
-                // Use the protobuf Features directly
-                let features = features_msg;
-                
-                Ok((features, device_id))
-            }
-            _ => {
-                error!("Unexpected response to GetFeatures");
-                Err(anyhow::anyhow!("Device did not return Features message"))
+                // Send GetFeatures message
+                let get_features_msg = messages::GetFeatures {};
+                match transport.with_standard_handler().handle(get_features_msg.into()) {
+                    Ok(Message::Features(features)) => {
+                        let device_id = features.device_id.clone().unwrap_or_else(|| "unknown".to_string());
+                        info!("✅ Got device features from transport - ID: {}, Label: {}", 
+                            device_id, 
+                            features.label.as_deref().unwrap_or("Unnamed"));
+                        return Ok((features, device_id));
+                    }
+                    Ok(_) => {
+                        warn!("{}: Unexpected response from GetFeatures", tag);
+                    }
+                    Err(e) => {
+                        warn!("{}: Failed to get features from transport: {}", tag, e);
+                    }
+                }
             }
         }
+        
+        // If no transport available, try to get from device registry with retry logic
+        info!("{}: 🔗 No transport available, using features from device registry", tag);
+        
+        // Retry up to 5 times with 1 second delay between attempts
+        for attempt in 1..=5 {
+            let entries = device_registry::get_all_device_entries()
+                .map_err(|e| anyhow::anyhow!("Failed to get device registry: {}", e))?;
+            info!("{}: Found {} device(s) in registry (attempt {}/5)", tag, entries.len(), attempt);
+            
+            // Look for any device that has features (prefer KeepKey devices)
+            let target_entry = entries.iter()
+                .filter(|entry| entry.device.is_keepkey)
+                .find(|entry| entry.features.is_some())
+                .or_else(|| entries.first()); // Fallback to first device if no KeepKey with features
+            
+            if let Some(entry) = target_entry {
+                let device_id = &entry.device.unique_id;
+                info!("{}: Checking device {} for features", tag, device_id);
+                
+                if let Some(registry_features) = &entry.features {
+                    // Convert device registry features to protobuf Features format
+                    let mut features = messages::Features::default();
+                    features.vendor = registry_features.vendor.clone();
+                    features.label = registry_features.label.clone();
+                    features.device_id = Some(device_id.clone());
+                    features.initialized = Some(registry_features.initialized);
+                    features.bootloader_mode = Some(false); // Assume not in bootloader mode
+                    features.pin_protection = Some(true); // Default assumption
+                    features.passphrase_protection = Some(false); // Default assumption
+                    
+                    // Parse version string into major.minor.patch
+                    let version_parts: Vec<&str> = registry_features.version.split('.').collect();
+                    if version_parts.len() >= 3 {
+                        features.major_version = version_parts[0].parse().ok();
+                        features.minor_version = version_parts[1].parse().ok();
+                        features.patch_version = version_parts[2].parse().ok();
+                    }
+                    
+                    features.model = registry_features.model.clone();
+                    features.revision = registry_features.firmware_hash.as_ref().map(|h| hex::decode(h).unwrap_or_default());
+                    features.bootloader_hash = registry_features.bootloader_hash.as_ref().map(|h| hex::decode(h).unwrap_or_default());
+                    
+                    info!("✅ Got device features from registry - ID: {}, Label: {}", 
+                        device_id, 
+                        features.label.as_deref().unwrap_or("Unnamed"));
+                    
+                    return Ok((features, device_id.clone()));
+                } else {
+                    warn!("{}: Device in registry has no features (attempt {}/5), retrying in 1 second...", tag, attempt);
+                    
+                    // If this is not the last attempt, wait before retrying
+                    if attempt < 5 {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        continue;
+                    }
+                }
+            }
+        }
+        
+        // If we get here, all retry attempts failed
+        Err(anyhow::anyhow!("Device in registry has no features after 5 attempts - device controller may not have finished processing"))
     }
     
     /// Get and cache a single Ethereum address
@@ -700,6 +759,12 @@ impl DeviceFrontloader {
         script_type: &str,
         path: &[u32],
     ) -> Result<String> {
+        let transport_opt_guard = self.transport_arc.lock().await;
+        if transport_opt_guard.is_none() {
+            drop(transport_opt_guard);
+            warn!("⚠️  No transport available for XPUB generation, skipping {} {} at path {:?}", coin_name, script_type, path);
+            return Err(anyhow::anyhow!("Transport not available - device communication required for XPUB generation"));
+        }
         let mut transport_opt_guard = self.transport_arc.lock().await;
         let transport = transport_opt_guard.as_mut().ok_or_else(|| anyhow::anyhow!("Transport not available in get_and_cache_xpub"))?;
         
