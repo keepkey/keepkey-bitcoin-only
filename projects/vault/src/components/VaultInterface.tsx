@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react';
-import { FaTh, FaGlobe, FaLink, FaWallet, FaCog, FaQuestionCircle, FaCoins } from 'react-icons/fa';
+import { FaTh, FaGlobe, FaWallet, FaCog, FaQuestionCircle } from 'react-icons/fa';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
 import { AppsView, BrowserView, PairingsView, VaultView, AssetView } from './views';
 import { AssetProvider } from '../contexts/AssetContext';
+import Send from './Send';
+import Receive from './Receive';
 
-type ViewType = 'apps' | 'browser' | 'pairings' | 'vault' | 'assets';
+type ViewType = 'apps' | 'browser' | 'pairings' | 'vault' | 'assets' | 'send' | 'receive';
 
 interface NavItem {
   id: ViewType | 'settings' | 'support';
@@ -41,18 +43,17 @@ export const VaultInterface = () => {
     }
   };
 
+  // Function to navigate to send/receive from portfolio
+  const navigateToSendReceive = (action: 'send' | 'receive') => {
+    setCurrentView(action);
+  };
+
   const navItems: NavItem[] = [
     {
       id: 'vault',
-      label: 'Portfolio',
+      label: 'Vault',
       icon: <FaWallet />,
       onClick: () => handleViewChange('vault'),
-    },
-    {
-      id: 'assets',
-      label: 'Assets',
-      icon: <FaCoins />,
-      onClick: () => handleViewChange('assets'),
     },
     {
       id: 'apps',
@@ -71,6 +72,12 @@ export const VaultInterface = () => {
       label: 'Settings',
       icon: <FaCog />,
       onClick: openSettings,
+    },
+    {
+      id: 'support',
+      label: 'Support',
+      icon: <FaQuestionCircle />,
+      onClick: handleSupportClick,
     },
   ];
 
@@ -103,15 +110,19 @@ export const VaultInterface = () => {
       case 'apps':
         return <AppsView />;
       case 'vault':
-        return <VaultView />;
+        return <VaultView onNavigate={navigateToSendReceive} />;
       case 'assets':
         return <AssetView />;
       case 'browser':
         return <BrowserView />;
       case 'pairings':
         return <PairingsView />;
+      case 'send':
+        return <Send onBack={() => setCurrentView('vault')} />;
+      case 'receive':
+        return <Receive onBack={() => setCurrentView('vault')} />;
       default:
-        return <VaultView />;
+        return <VaultView onNavigate={navigateToSendReceive} />;
     }
   };
 

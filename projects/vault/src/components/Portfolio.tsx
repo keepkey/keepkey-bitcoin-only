@@ -82,7 +82,11 @@ const theme = {
   border: 'gray.700',
 };
 
-export const Portfolio: React.FC = () => {
+interface PortfolioProps {
+  onNavigate?: (action: 'send' | 'receive') => void;
+}
+
+export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,8 +178,22 @@ export const Portfolio: React.FC = () => {
         </Box>
         {/* Send/Receive Buttons */}
         <HStack gap={8} mt={4}>
-          <Button colorScheme="blue" size="lg" fontWeight="bold">Send</Button>
-          <Button colorScheme="green" size="lg" fontWeight="bold">Receive</Button>
+          <Button 
+            colorScheme="blue" 
+            size="lg" 
+            fontWeight="bold"
+            onClick={() => onNavigate?.('send')}
+          >
+            Send
+          </Button>
+          <Button 
+            colorScheme="green" 
+            size="lg" 
+            fontWeight="bold"
+            onClick={() => onNavigate?.('receive')}
+          >
+            Receive
+          </Button>
         </HStack>
       </VStack>
     </Flex>
