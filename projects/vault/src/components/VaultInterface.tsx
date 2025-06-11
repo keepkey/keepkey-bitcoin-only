@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react';
-import { FaTh, FaGlobe, FaLink, FaCog, FaQuestionCircle } from 'react-icons/fa';
+import { FaTh, FaGlobe, FaLink, FaWallet, FaCog, FaQuestionCircle } from 'react-icons/fa';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
-import { AppsView, BrowserView, PairingsView } from './views';
+import { AppsView, BrowserView, PairingsView, VaultView } from './views';
 
-type ViewType = 'apps' | 'browser' | 'pairings';
+type ViewType = 'apps' | 'browser' | 'pairings' | 'vault';
 
 interface NavItem {
   id: ViewType | 'settings' | 'support';
@@ -17,7 +17,7 @@ interface NavItem {
 }
 
 export const VaultInterface = () => {
-  const [currentView, setCurrentView] = useState<ViewType>('browser');
+  const [currentView, setCurrentView] = useState<ViewType>('vault');
   const { open: isSettingsOpen, onOpen: openSettings, onClose: closeSettings } = useDisclosure();
 
   const handleViewChange = async (view: ViewType) => {
@@ -48,16 +48,16 @@ export const VaultInterface = () => {
       onClick: () => handleViewChange('apps'),
     },
     {
+      id: 'vault',
+      label: 'Vault',
+      icon: <FaWallet />,
+      onClick: () => handleViewChange('vault'),
+    },
+    {
       id: 'browser',
       label: 'Browser',
       icon: <FaGlobe />,
       onClick: () => handleViewChange('browser'),
-    },
-    {
-      id: 'pairings',
-      label: 'Pairings',
-      icon: <FaLink />,
-      onClick: () => handleViewChange('pairings'),
     },
     {
       id: 'settings',
@@ -101,12 +101,14 @@ export const VaultInterface = () => {
     switch (currentView) {
       case 'apps':
         return <AppsView />;
+      case 'vault':
+        return <VaultView />;
       case 'browser':
         return <BrowserView />;
       case 'pairings':
         return <PairingsView />;
       default:
-        return <AppsView />;
+        return <VaultView />;
     }
   };
 
