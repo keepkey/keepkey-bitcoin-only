@@ -12,6 +12,7 @@ import { SettingsDialog, SettingsButton } from './components/SettingsDialog';
 import { useCommonDialogs } from './hooks/useCommonDialogs';
 import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
+import { VaultInterface } from './components/VaultInterface';
 
 // Define the expected structure of DeviceFeatures from Rust
 interface DeviceFeatures {
@@ -118,10 +119,6 @@ function App() {
         };
     }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
 
-  // No need for separate fetchDeviceInfo effect since we're getting updates via events
-
-
-
     const mcpUrl = "http://127.0.0.1:1646/mcp";
     const [hasCopied, setHasCopied] = useState(false);
     
@@ -131,6 +128,12 @@ function App() {
       setTimeout(() => setHasCopied(false), 2000);
     };
 
+    // Show the main vault interface ONLY when device is ready (fully initialized and frontloaded)
+    if (loadingStatus === "Device ready") {
+        return <VaultInterface />;
+    }
+
+    // Show splash screen while connecting
     return (
       <Box
         height="100vh"
@@ -172,8 +175,6 @@ function App() {
 
           {/* Settings button in bottom left */}
           <SettingsButton onClick={() => setIsSettingsOpen(true)} />
-
-
 
           {/* Settings dialog */}
           <SettingsDialog 
