@@ -12,6 +12,7 @@ import {
   IconButton
 } from '@chakra-ui/react';
 import { FaArrowLeft, FaQrcode } from 'react-icons/fa';
+import { SiBitcoin } from 'react-icons/si';
 
 interface SendProps {
   onBack?: () => void;
@@ -38,9 +39,14 @@ const Send: React.FC<SendProps> = ({ onBack }) => {
           >
             <FaArrowLeft />
           </IconButton>
-          <Heading size="lg" color="white" flex="1" textAlign="center">
-            Send Bitcoin
-          </Heading>
+          <Flex align="center" justify="center" flex="1" gap={2}>
+            <Box color="orange.400" fontSize="xl">
+              <SiBitcoin />
+            </Box>
+            <Heading size="lg" color="white">
+              Send Bitcoin
+            </Heading>
+          </Flex>
           <Box w="40px" /> {/* Spacer for centering */}
         </HStack>
 

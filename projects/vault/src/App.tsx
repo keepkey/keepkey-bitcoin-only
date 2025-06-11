@@ -55,9 +55,27 @@ function App() {
     const [deviceConnected, setDeviceConnected] = useState<boolean>(false);
     const [, setDeviceInfo] = useState<DeviceInfoState | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isRestarting, setIsRestarting] = useState(false);
     const { showOnboarding } = useCommonDialogs();
     const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
     
+    // Function to restart backend startup process
+    const handleLogoClick = async () => {
+        if (isRestarting) return; // Prevent multiple clicks
+        
+        setIsRestarting(true);
+        try {
+            console.log("Logo clicked - restarting backend startup process");
+            await invoke('restart_backend_startup');
+            console.log("Backend restart initiated successfully");
+        } catch (error) {
+            console.error("Failed to restart backend startup:", error);
+        } finally {
+            // Reset the restarting flag after a delay
+            setTimeout(() => setIsRestarting(false), 2000);
+        }
+    };
+
     // Check onboarding status on startup
     useEffect(() => {
         if (onboardingLoading) {
@@ -150,8 +168,27 @@ function App() {
           alignItems="center"
           justifyContent="center"
         >
-          {/* Logo in the center */}
-          <Logo width="100px" />
+          {/* Clickable Logo in the center */}
+          <Logo 
+            width="100px" 
+            onClick={handleLogoClick}
+            style={{
+              filter: isRestarting ? 'brightness(1.3)' : 'none',
+              transition: 'filter 0.2s ease'
+            }}
+          />
+          
+          {/* Clickable hint */}
+          <Text 
+            fontSize="xs" 
+            color="gray.400" 
+            mt={2} 
+            textAlign="center"
+            opacity={isRestarting ? 0.5 : 0.7}
+            transition="opacity 0.2s ease"
+          >
+            {isRestarting ? "Restarting..." : ""}
+          </Text>
           
           {/* Loading text at the bottom */}
             <Box

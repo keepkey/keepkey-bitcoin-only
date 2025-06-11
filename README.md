@@ -4,8 +4,6 @@ This monorepo contains all core components for the KeepKey Bitcoin-only ecosyste
 
 - **firmware/**: Bitcoin-only firmware for KeepKey hardware wallets.
 - **kkcli/**: Command-line interface for Bitcoin-only KeepKey operations.
-- **keepkey-rest/**: Shared REST API crate (Rust) used by both kkcli and Vault.
-- **vault-ui/**: Vite-based UI, shared between kkcli (web) and Vault (Tauri).
 - **vault/**: Tauri desktop app for KeepKey.
 
 ## Development
@@ -13,7 +11,6 @@ This monorepo contains all core components for the KeepKey Bitcoin-only ecosyste
 ### Prerequisites
 
 - Rust (latest stable)
-- Node.js (for `vault-ui`)
 - Tauri prerequisites (see [docs/tauri.md](docs/tauri.md))
 - GNU Make
 
@@ -29,7 +26,6 @@ make all
 make firmware
 make kkcli
 make rest
-make vault-ui
 make vault
 ```
 

@@ -8,9 +8,11 @@ import {
   Button, 
   Input,
   IconButton,
+  Flex,
   Spinner
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaCopy, FaCheck } from 'react-icons/fa';
+import { FaArrowLeft, FaCopy, FaCheck, FaEye } from 'react-icons/fa';
+import { SiBitcoin } from 'react-icons/si';
 import QRCode from 'react-qr-code';
 
 interface ReceiveProps {
@@ -19,7 +21,34 @@ interface ReceiveProps {
 
 // API service for Bitcoin addresses
 const bitcoinService = {
-  async getAddress(): Promise<string> {
+  // Helper to get the correct BIP number and derivation path for script type
+  getScriptTypeInfo(scriptType: string) {
+    switch (scriptType) {
+      case 'p2pkh':
+        return { bip: 44, pathPrefix: "m/44'/0'/0'" };
+      case 'p2sh-p2wpkh':
+        return { bip: 49, pathPrefix: "m/49'/0'/0'" };
+      case 'p2wpkh':
+        return { bip: 84, pathPrefix: "m/84'/0'/0'" };
+      default:
+        return { bip: 84, pathPrefix: "m/84'/0'/0'" }; // Default to native SegWit
+    }
+  },
+
+  // Helper to create derivation path array
+  createDerivationPath(scriptType: string, index: number): number[] {
+    const { bip } = this.getScriptTypeInfo(scriptType);
+    const hardened = 0x80000000;
+    return [
+      hardened + bip,    // BIP number (44'/49'/84')
+      hardened + 0,      // Coin type (0' for Bitcoin)
+      hardened + 0,      // Account (0')
+      0,                 // External chain (0)
+      index              // Address index
+    ];
+  },
+
+  async getAddress(scriptType: string = 'p2wpkh', index: number = 0): Promise<string> {
     try {
       const response = await fetch('http://localhost:1646/api/v1/addresses/utxo', {
         method: 'POST',
@@ -28,8 +57,8 @@ const bitcoinService = {
         },
         body: JSON.stringify({
           coin: 'Bitcoin',
-          address_n: [2147483692, 2147483648, 2147483648, 0, 0], // m/44'/0'/0'/0/0
-          script_type: 'p2wpkh', // Native SegWit
+          address_n: this.createDerivationPath(scriptType, index),
+          script_type: scriptType,
           show_display: false
         })
       });
@@ -47,32 +76,8 @@ const bitcoinService = {
     }
   },
 
-  async generateNewAddress(index: number = 0): Promise<string> {
-    try {
-      const response = await fetch('http://localhost:1646/api/v1/addresses/utxo', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          coin: 'Bitcoin',
-          address_n: [2147483692, 2147483648, 2147483648, 0, index], // m/44'/0'/0'/0/{index}
-          script_type: 'p2wpkh', // Native SegWit
-          show_display: false
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      return data.address;
-    } catch (error) {
-      console.error('Failed to generate new Bitcoin address:', error);
-      // Fallback to mock address for development
-      return `bc1q${Math.random().toString(36).substring(2, 32)}`;
-    }
+  async generateNewAddress(scriptType: string = 'p2wpkh', index: number = 0): Promise<string> {
+    return this.getAddress(scriptType, index);
   }
 };
 
@@ -81,6 +86,14 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const [loading, setLoading] = useState(true);
   const [hasCopied, setHasCopied] = useState(false);
   const [addressIndex, setAddressIndex] = useState(0);
+  const [scriptType] = useState('p2wpkh'); // Default to native SegWit
+  const [isViewingOnDevice, setIsViewingOnDevice] = useState(false);
+
+  // Helper function to get the correct derivation path format
+  const formatDerivationPath = (scriptType: string, index: number) => {
+    const { pathPrefix } = bitcoinService.getScriptTypeInfo(scriptType);
+    return `${pathPrefix}/0/${index}`;
+  };
 
   const onCopy = () => {
     navigator.clipboard.writeText(bitcoinAddress);
@@ -88,12 +101,46 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     setTimeout(() => setHasCopied(false), 2000);
   };
 
+  // View address on device
+  const viewOnDevice = async () => {
+    setIsViewingOnDevice(true);
+    try {
+      console.log("Displaying address on KeepKey device...");
+      
+      // Make API call with show_display: true
+      const response = await fetch('http://localhost:1646/api/v1/addresses/utxo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          coin: 'Bitcoin',
+          address_n: bitcoinService.createDerivationPath(scriptType, addressIndex),
+          script_type: scriptType,
+          show_display: true // This will display the address on the device
+        })
+      });
+
+      if (response.ok) {
+        console.log("Address successfully displayed on device");
+        alert("Check your KeepKey device - the address is now displayed on the screen. Please verify it matches!");
+      } else {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Failed to display address on device:', error);
+      alert("Failed to display address on device. Please ensure your KeepKey is connected and try again.");
+    } finally {
+      setIsViewingOnDevice(false);
+    }
+  };
+
   // Load initial address
   useEffect(() => {
     const fetchAddress = async () => {
       setLoading(true);
       try {
-        const address = await bitcoinService.getAddress();
+        const address = await bitcoinService.getAddress(scriptType, addressIndex);
         setBitcoinAddress(address);
       } catch (error) {
         console.error('Failed to fetch address:', error);
@@ -102,14 +149,14 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
       }
     };
     fetchAddress();
-  }, []);
+  }, [scriptType, addressIndex]);
 
   const generateNewAddress = async () => {
     setLoading(true);
     setHasCopied(false);
     try {
       const newIndex = addressIndex + 1;
-      const address = await bitcoinService.generateNewAddress(newIndex);
+      const address = await bitcoinService.generateNewAddress(scriptType, newIndex);
       setBitcoinAddress(address);
       setAddressIndex(newIndex);
     } catch (error) {
@@ -130,14 +177,29 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
           >
             <FaArrowLeft />
           </IconButton>
-          <Heading size="lg" color="white" flex="1" textAlign="center">
-            Receive Bitcoin
-          </Heading>
+          <Flex align="center" justify="center" flex="1" gap={2}>
+            <Box color="orange.400" fontSize="xl">
+              <SiBitcoin />
+            </Box>
+            <Heading size="lg" color="white">
+              Receive Bitcoin
+            </Heading>
+          </Flex>
           <Box w="40px" /> {/* Spacer for centering */}
         </HStack>
 
         {/* QR Code Area */}
         <VStack gap={4} bg="gray.800" p={6} borderRadius="lg">
+          {/* Derivation Path */}
+          <Box textAlign="center">
+            <Text fontSize="xs" color="gray.500" mb={1}>
+              Derivation Path
+            </Text>
+                         <Text fontSize="sm" color="gray.300" fontFamily="mono">
+               {formatDerivationPath(scriptType, addressIndex)}
+             </Text>
+          </Box>
+          
           <Box
             w="200px"
             h="200px"
@@ -210,15 +272,36 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
 
         {/* Action Buttons */}
         <VStack gap={3}>
-          <Button
-            colorScheme="blue"
-            size="lg"
-            width="100%"
-            onClick={generateNewAddress}
-            disabled={loading}
-          >
-            {loading ? <Spinner size="sm" /> : "Generate New Address"}
-          </Button>
+          <HStack gap={3} width="100%">
+            <Button
+              colorScheme="blue"
+              size="lg"
+              onClick={generateNewAddress}
+              disabled={loading}
+              flex="1"
+            >
+              {loading ? <Spinner size="sm" /> : "Generate New"}
+            </Button>
+            <Button
+              colorScheme="purple"
+              size="lg"
+              onClick={viewOnDevice}
+              disabled={loading || isViewingOnDevice}
+              flex="1"
+            >
+              {isViewingOnDevice ? (
+                <HStack gap={2}>
+                  <Spinner size="sm" />
+                  <Text>Viewing...</Text>
+                </HStack>
+              ) : (
+                <HStack gap={2}>
+                  <FaEye />
+                  <Text>View on Device</Text>
+                </HStack>
+              )}
+            </Button>
+          </HStack>
           <Button
             variant="ghost"
             color="gray.400"

@@ -8,6 +8,8 @@ import {
   VStack,
   Spinner
 } from '@chakra-ui/react';
+import { FaPaperPlane, FaDownload } from 'react-icons/fa';
+import { SiBitcoin } from 'react-icons/si';
 
 // Types (we'll need to create these or import from the backend)
 interface Dashboard {
@@ -158,6 +160,11 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   return (
     <Flex align="center" justify="center" h="100%" bg={theme.bg}>
       <VStack gap={6} align="center" bg={theme.cardBg} p={10} borderRadius="xl" boxShadow="lg" minW="340px">
+        {/* Bitcoin Logo */}
+        <Box color="orange.400" fontSize="4xl">
+          <SiBitcoin />
+        </Box>
+        
         {/* USD Balance */}
         <Box textAlign="center">
           <Text fontSize="3xl" fontWeight="bold" color="white">
@@ -183,16 +190,24 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
             size="lg" 
             fontWeight="bold"
             onClick={() => onNavigate?.('send')}
+            minW="120px"
           >
-            Send
+            <HStack gap={2}>
+              <FaPaperPlane />
+              <Text>Send</Text>
+            </HStack>
           </Button>
           <Button 
             colorScheme="green" 
             size="lg" 
             fontWeight="bold"
             onClick={() => onNavigate?.('receive')}
+            minW="120px"
           >
-            Receive
+            <HStack gap={2}>
+              <FaDownload />
+              <Text>Receive</Text>
+            </HStack>
           </Button>
         </HStack>
       </VStack>

@@ -1,4 +1,4 @@
-import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex } from '@chakra-ui/react'
+import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex, Link, Stack } from '@chakra-ui/react'
 import { 
   DialogRoot,
   DialogContent,
@@ -8,7 +8,7 @@ import {
   DialogCloseTrigger
 } from './ui/dialog'
 import { LuSettings, LuMonitor, LuCpu, LuNetwork } from 'react-icons/lu'
-import { FaCog, FaLink } from 'react-icons/fa'
+import { FaCog, FaLink, FaCopy, FaCheck } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
 import { VaultSetup } from './VaultSetup'
 import { KeepKeyDeviceList } from './KeepKeyDeviceList'
@@ -31,6 +31,10 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [showFirmwareUpdate, setShowFirmwareUpdate] = useState(false)
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null)
   
+  // Copy state for URLs
+  const [hasCopiedMcp, setHasCopiedMcp] = useState(false)
+  const [hasCopiedRest, setHasCopiedRest] = useState(false)
+  
   // Seed verification wizard state
   const [verificationWizardOpen, setVerificationWizardOpen] = useState(false)
   const [verificationDeviceId, setVerificationDeviceId] = useState<string | null>(null)
@@ -38,6 +42,19 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   
   const firmwareWizard = useFirmwareUpdateWizard()
   const walletCreationWizard = useWalletCreationWizard()
+  
+  // URL copy handlers
+  const handleCopyMcp = () => {
+    navigator.clipboard.writeText("http://127.0.0.1:1646/mcp");
+    setHasCopiedMcp(true);
+    setTimeout(() => setHasCopiedMcp(false), 2000);
+  };
+
+  const handleCopyRest = () => {
+    navigator.clipboard.writeText("http://127.0.0.1:1646/docs");
+    setHasCopiedRest(true);
+    setTimeout(() => setHasCopiedRest(false), 2000);
+  };
   
   // Define fetchDeviceStatus function outside of useEffect
   const fetchDeviceStatus = async (deviceId = selectedDeviceId) => {
@@ -347,7 +364,127 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
 
               <Tabs.Content value="mcp" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
-                  <Text color="gray.300">MCP settings content coming soon...</Text>
+                  <Text color="white" fontSize="lg" fontWeight="semibold">MCP & API Access</Text>
+                  
+                  {/* API URLs Section */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                    <VStack align="stretch" gap={4}>
+                      <Text color="white" fontWeight="medium">API Endpoints</Text>
+                      
+                      {/* REST API */}
+                      <Box bg="gray.900" p={3} borderRadius="md">
+                        <VStack align="stretch" gap={2}>
+                          <Text color="gray.300" fontSize="sm" fontWeight="medium">REST API Documentation</Text>
+                          <HStack justify="space-between" align="center">
+                            <Link 
+                              href="http://127.0.0.1:1646/docs" 
+                              target="_blank" 
+                              fontSize="sm" 
+                              color="blue.300"
+                              _hover={{ color: "blue.200", textDecoration: "underline" }}
+                              flex="1"
+                            >
+                              http://127.0.0.1:1646/docs
+                            </Link>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              colorScheme={hasCopiedRest ? "green" : "blue"}
+                              aria-label="Copy REST URL to clipboard"
+                              onClick={handleCopyRest}
+                              minW="60px"
+                            >
+                              {hasCopiedRest ? (
+                                <HStack gap={1}>
+                                  <FaCheck size="10px" />
+                                  <Text fontSize="xs">Copied</Text>
+                                </HStack>
+                              ) : (
+                                <HStack gap={1}>
+                                  <FaCopy size="10px" />
+                                  <Text fontSize="xs">Copy</Text>
+                                </HStack>
+                              )}
+                            </Button>
+                          </HStack>
+                          <Text color="gray.500" fontSize="xs">
+                            Interactive API documentation and testing interface
+                          </Text>
+                        </VStack>
+                      </Box>
+
+                      {/* MCP Endpoint */}
+                      <Box bg="gray.900" p={3} borderRadius="md">
+                        <VStack align="stretch" gap={2}>
+                          <Text color="gray.300" fontSize="sm" fontWeight="medium">MCP (Model Context Protocol)</Text>
+                          <HStack justify="space-between" align="center">
+                            <Link 
+                              href="http://127.0.0.1:1646/mcp" 
+                              target="_blank" 
+                              fontSize="sm" 
+                              color="blue.300"
+                              _hover={{ color: "blue.200", textDecoration: "underline" }}
+                              flex="1"
+                            >
+                              http://127.0.0.1:1646/mcp
+                            </Link>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              colorScheme={hasCopiedMcp ? "green" : "blue"}
+                              aria-label="Copy MCP URL to clipboard"
+                              onClick={handleCopyMcp}
+                              minW="60px"
+                            >
+                              {hasCopiedMcp ? (
+                                <HStack gap={1}>
+                                  <FaCheck size="10px" />
+                                  <Text fontSize="xs">Copied</Text>
+                                </HStack>
+                              ) : (
+                                <HStack gap={1}>
+                                  <FaCopy size="10px" />
+                                  <Text fontSize="xs">Copy</Text>
+                                </HStack>
+                              )}
+                            </Button>
+                          </HStack>
+                          <Text color="gray.500" fontSize="xs">
+                            AI assistant integration endpoint for Claude and other LLMs
+                          </Text>
+                        </VStack>
+                      </Box>
+                    </VStack>
+                  </Box>
+
+                  {/* Status Section */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                    <VStack align="stretch" gap={3}>
+                      <Text color="white" fontWeight="medium">Service Status</Text>
+                      <HStack justify="space-between" align="center">
+                        <Text color="gray.300" fontSize="sm">Backend Server</Text>
+                        <HStack gap={2}>
+                          <Box w={2} h={2} bg="green.400" borderRadius="full" />
+                          <Text color="green.400" fontSize="sm" fontWeight="medium">Running</Text>
+                        </HStack>
+                      </HStack>
+                      <HStack justify="space-between" align="center">
+                        <Text color="gray.300" fontSize="sm">API Port</Text>
+                        <Text color="gray.400" fontSize="sm" fontFamily="mono">1646</Text>
+                      </HStack>
+                    </VStack>
+                  </Box>
+
+                  {/* Information Section */}
+                  <Box bg="blue.900" p={4} borderRadius="md" border="1px solid" borderColor="blue.700">
+                    <VStack align="stretch" gap={2}>
+                      <Text color="blue.200" fontSize="sm" fontWeight="medium">About MCP</Text>
+                      <Text color="blue.100" fontSize="xs">
+                        The Model Context Protocol (MCP) enables AI assistants like Claude to securely interact with your KeepKey device. 
+                        Use the MCP endpoint to connect external AI tools for enhanced Bitcoin management capabilities.
+                      </Text>
+                    </VStack>
+                  </Box>
                 </VStack>
               </Tabs.Content>
             </Tabs.Root>

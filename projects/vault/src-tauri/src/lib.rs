@@ -88,22 +88,41 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                     let _ = emitter.emit("device:disconnected", &device_id);
                 }
                 device_controller::DeviceControllerEvent::FeaturesFetched { device_id, features, status } => {
+                    // AGGRESSIVE DEBUG LOGGING FOR FRONTLOAD TRIGGER
+                    log::info!("🔍 [FRONTLOAD DEBUG] Device features fetched for {}", device_id);
+                    log::info!("🔍 [FRONTLOAD DEBUG] Device version: {}", features.version);
+                    log::info!("🔍 [FRONTLOAD DEBUG] Device initialized: {}", features.initialized);
+                    
+                    // Get latest firmware version for comparison
+                    let latest_firmware_result = device_update::get_latest_firmware_version();
+                    log::info!("🔍 [FRONTLOAD DEBUG] Latest firmware result: {:?}", latest_firmware_result);
+                    
                     // Check if device is ready (on latest firmware and initialized)
                     let is_device_ready = {
-                        if let Ok(latest_firmware) = device_update::get_latest_firmware_version() {
-                            if let Ok(is_outdated) = utils::is_version_older(&features.version, &latest_firmware) {
-                                !is_outdated && features.initialized
+                        if let Ok(latest_firmware) = latest_firmware_result {
+                            log::info!("🔍 [FRONTLOAD DEBUG] Latest firmware: {}", latest_firmware);
+                            
+                            let version_check_result = utils::is_version_older(&features.version, &latest_firmware);
+                            log::info!("🔍 [FRONTLOAD DEBUG] Version check result: {:?}", version_check_result);
+                            
+                            if let Ok(is_outdated) = version_check_result {
+                                log::info!("🔍 [FRONTLOAD DEBUG] Is outdated: {}", is_outdated);
+                                let ready = !is_outdated && features.initialized;
+                                log::info!("🔍 [FRONTLOAD DEBUG] Device ready: {}", ready);
+                                ready
                             } else {
+                                log::error!("🔍 [FRONTLOAD DEBUG] VERSION CHECK FAILED - THIS IS THE BUG");
                                 false
                             }
                         } else {
+                            log::error!("🔍 [FRONTLOAD DEBUG] FAILED TO GET LATEST FIRMWARE - THIS IS THE BUG");
                             false
                         }
                     };
                     
                     // If device is ready, set context first, then trigger frontload
                     if is_device_ready {
-                        log::info!("Device {} is ready (firmware v{}, initialized), setting context and starting frontload...", 
+                        log::info!("🚀 [FRONTLOAD TRIGGER] Device {} is ready (firmware v{}, initialized), starting frontload...", 
                             device_id, features.version);
                         
                         // Clone what we need for context setting
@@ -506,6 +525,82 @@ fn greet(name: &str) -> String {
     }
 }
 
+#[tauri::command]
+async fn restart_backend_startup(app_handle: AppHandle) -> Result<(), String> {
+    log::info!("Restart backend startup requested via logo click");
+    
+    // Reset status to starting
+    let starting_payload = ApplicationState {
+        status: "Restarting...".to_string(),
+        connected: false,
+        devices: vec![],
+        blocking_actions_count: 0,
+    };
+    app_handle.emit("application:state", &starting_payload)
+        .map_err(|e| format!("Failed to emit restart state: {}", e))?;
+    
+    // Give a moment for the UI to update
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    
+    // Force a device scan and state update
+    let scan_handle = app_handle.clone();
+    tauri::async_runtime::spawn(async move {
+        // Wait a bit for the restart message to be processed
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        
+        // Update status to scanning
+        let scanning_payload = ApplicationState {
+            status: "Scanning for devices...".to_string(),
+            connected: false,
+            devices: vec![],
+            blocking_actions_count: 0,
+        };
+        let _ = scan_handle.emit("application:state", &scanning_payload);
+        
+        // Give some time for device detection
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        
+        // Poll current device state and emit
+        if let Ok(entries) = device_registry::get_all_device_entries() {
+            let status = if entries.is_empty() {
+                "No devices connected".to_string()
+            } else {
+                // Check if any device is ready (on latest firmware and initialized)
+                let ready_devices = entries.iter().filter(|entry| {
+                    if let Some(features) = &entry.features {
+                        // Check if firmware is up to date
+                        if let Ok(latest_firmware) = device_update::get_latest_firmware_version() {
+                            if let Ok(is_outdated) = utils::is_version_older(&features.version, &latest_firmware) {
+                                if !is_outdated && features.initialized {
+                                    // Device is on latest firmware and initialized
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                }).count();
+                
+                if ready_devices > 0 {
+                    "Device ready".to_string()
+                } else {
+                    format!("{} device(s) connected", entries.len())
+                }
+            };
+            
+            let payload = ApplicationState {
+                status,
+                connected: !entries.is_empty(),
+                devices: entries,
+                blocking_actions_count: 0,
+            };
+            let _ = scan_handle.emit("application:state", &payload);
+        }
+    });
+    
+    Ok(())
+}
+
 // Vault UI control commands
 #[tauri::command]
 async fn vault_change_view(app_handle: AppHandle, view: String) -> Result<(), String> {
@@ -641,6 +736,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
+            restart_backend_startup,
             // Vault UI control commands
             vault_change_view,
             vault_open_app,
