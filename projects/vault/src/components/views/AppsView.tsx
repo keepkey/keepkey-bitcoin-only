@@ -1,5 +1,6 @@
 import { Box, Grid, GridItem, Text, Button, Stack, Icon, Flex } from '@chakra-ui/react';
 import { FaTh, FaPlus, FaRocket, FaExchangeAlt, FaWallet } from 'react-icons/fa';
+import { invoke } from '@tauri-apps/api/core';
 
 interface App {
   id: string;
@@ -38,9 +39,20 @@ const defaultApps: App[] = [
 ];
 
 export const AppsView = () => {
-  const handleAppClick = (app: App) => {
+  const handleAppClick = async (app: App) => {
     if (app.url) {
-      window.open(app.url, '_blank');
+      try {
+        // Tell backend to switch to browser and navigate to app URL
+        await invoke('vault_open_app', { 
+          appId: app.id, 
+          appName: app.name, 
+          url: app.url 
+        });
+      } catch (error) {
+        console.error('Failed to open app via backend:', error);
+        // Fallback to direct open
+        window.open(app.url, '_blank');
+      }
     }
   };
 

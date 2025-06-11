@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react';
 import { FaTh, FaGlobe, FaLink, FaCog, FaQuestionCircle } from 'react-icons/fa';
+import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { SettingsDialog } from './SettingsDialog';
 import { AppsView, BrowserView, PairingsView } from './views';
 
@@ -17,8 +19,24 @@ export const VaultInterface = () => {
   const [currentView, setCurrentView] = useState<ViewType>('browser');
   const { open: isSettingsOpen, onOpen: openSettings, onClose: closeSettings } = useDisclosure();
 
-  const handleSupportClick = () => {
-    window.open('https://support.keepkey.com', '_blank');
+  const handleViewChange = async (view: ViewType) => {
+    try {
+      await invoke('vault_change_view', { view });
+    } catch (error) {
+      console.error('Failed to notify backend of view change:', error);
+      // Fallback to direct change if backend fails
+      setCurrentView(view);
+    }
+  };
+
+  const handleSupportClick = async () => {
+    try {
+      await invoke('vault_open_support');
+    } catch (error) {
+      console.error('Failed to open support via backend:', error);
+      // Fallback to direct open
+      window.open('https://support.keepkey.com', '_blank');
+    }
   };
 
   const navItems: NavItem[] = [
@@ -26,19 +44,19 @@ export const VaultInterface = () => {
       id: 'apps',
       label: 'Apps',
       icon: <FaTh />,
-      onClick: () => setCurrentView('apps'),
+      onClick: () => handleViewChange('apps'),
     },
     {
       id: 'browser',
       label: 'Browser',
       icon: <FaGlobe />,
-      onClick: () => setCurrentView('browser'),
+      onClick: () => handleViewChange('browser'),
     },
     {
       id: 'pairings',
       label: 'Pairings',
       icon: <FaLink />,
-      onClick: () => setCurrentView('pairings'),
+      onClick: () => handleViewChange('pairings'),
     },
     {
       id: 'settings',
@@ -53,6 +71,30 @@ export const VaultInterface = () => {
       onClick: handleSupportClick,
     },
   ];
+
+  // Listen for backend view change commands
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupEventListeners = async () => {
+      try {
+        // Listen for backend view change commands
+        unlisten = await listen('vault:change_view', (event) => {
+          const { view } = event.payload as { view: ViewType };
+          console.log('Received backend view change command:', view);
+          setCurrentView(view);
+        });
+      } catch (error) {
+        console.error('Failed to set up vault event listeners:', error);
+      }
+    };
+
+    setupEventListeners();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   const renderCurrentView = () => {
     switch (currentView) {

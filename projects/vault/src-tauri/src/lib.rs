@@ -506,6 +506,65 @@ fn greet(name: &str) -> String {
     }
 }
 
+// Vault UI control commands
+#[tauri::command]
+async fn vault_change_view(app_handle: AppHandle, view: String) -> Result<(), String> {
+    log::info!("Vault view change requested: {}", view);
+    
+    // Emit event to frontend to change view
+    app_handle.emit("vault:change_view", serde_json::json!({
+        "view": view
+    })).map_err(|e| format!("Failed to emit view change event: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn vault_open_app(app_handle: AppHandle, app_id: String, app_name: String, url: String) -> Result<(), String> {
+    log::info!("Vault app open requested: {} ({}) -> {}", app_name, app_id, url);
+    
+    // First switch to browser view
+    app_handle.emit("vault:change_view", serde_json::json!({
+        "view": "browser"
+    })).map_err(|e| format!("Failed to emit view change event: {}", e))?;
+    
+    // Then navigate to the app URL
+    app_handle.emit("browser:navigate", serde_json::json!({
+        "url": url
+    })).map_err(|e| format!("Failed to emit navigation event: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn vault_open_support(app_handle: AppHandle) -> Result<(), String> {
+    log::info!("Vault support requested");
+    
+    // Switch to browser view and navigate to support
+    app_handle.emit("vault:change_view", serde_json::json!({
+        "view": "browser"
+    })).map_err(|e| format!("Failed to emit view change event: {}", e))?;
+    
+    app_handle.emit("browser:navigate", serde_json::json!({
+        "url": "https://support.keepkey.com"
+    })).map_err(|e| format!("Failed to emit navigation event: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn browser_navigate(app_handle: AppHandle, url: String) -> Result<(), String> {
+    log::info!("Browser navigation requested: {}", url);
+    
+    // Store current URL in backend state if needed
+    // For now, just emit the navigation event back to frontend
+    app_handle.emit("browser:navigate", serde_json::json!({
+        "url": url
+    })).map_err(|e| format!("Failed to emit navigation event: {}", e))?;
+    
+    Ok(())
+}
+
 // =============================================================
 //  Application bootstrap
 // =============================================================
@@ -573,6 +632,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
+            // Vault UI control commands
+            vault_change_view,
+            vault_open_app,
+            vault_open_support,
+            browser_navigate,
             commands::get_device_info,
             commands::get_device_info_by_id,
             commands::get_all_devices,
