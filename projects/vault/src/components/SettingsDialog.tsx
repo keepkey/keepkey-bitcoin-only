@@ -1,4 +1,4 @@
-import { Tabs, VStack, Text, Button, Icon, Box } from '@chakra-ui/react'
+import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex } from '@chakra-ui/react'
 import { 
   DialogRoot,
   DialogContent,
@@ -8,7 +8,7 @@ import {
   DialogCloseTrigger
 } from './ui/dialog'
 import { LuSettings, LuMonitor, LuCpu, LuNetwork } from 'react-icons/lu'
-import { FaCog } from 'react-icons/fa'
+import { FaCog, FaLink } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
 import { VaultSetup } from './VaultSetup'
 import { KeepKeyDeviceList } from './KeepKeyDeviceList'
@@ -202,6 +202,19 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     setVerificationDeviceId(null)
     setVerificationDeviceLabel(null)
   }
+
+  const handleOpenPairings = async () => {
+    try {
+      // First close the settings dialog
+      onClose()
+      
+      // Then notify backend to open pairings view
+      await invoke('vault_change_view', { view: 'pairings' })
+    } catch (error) {
+      console.error('Failed to open pairings view:', error)
+      // Fallback - could emit an event or handle differently
+    }
+  }
   
   return (
     <>
@@ -290,7 +303,34 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
 
               <Tabs.Content value="app" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
-                  <Text color="gray.300">App settings content coming soon...</Text>
+                  <Text color="white" fontSize="lg" fontWeight="semibold">Application Settings</Text>
+                  
+                  {/* Pairings Section */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                    <VStack align="stretch" gap={3}>
+                      <HStack justify="space-between" align="center">
+                        <VStack align="start" gap={1}>
+                          <Text color="white" fontWeight="medium">Device Pairings</Text>
+                          <Text color="gray.400" fontSize="sm">
+                            Manage connected applications and services
+                          </Text>
+                        </VStack>
+                        <Button
+                          colorScheme="blue"
+                          size="sm"
+                          onClick={handleOpenPairings}
+                        >
+                          <HStack gap={2}>
+                            <FaLink />
+                            <Text>Open Pairings</Text>
+                          </HStack>
+                        </Button>
+                      </HStack>
+                    </VStack>
+                  </Box>
+
+                  {/* Future app settings can go here */}
+                  <Text color="gray.400" fontSize="sm">More app settings coming soon...</Text>
                 </VStack>
               </Tabs.Content>
 
