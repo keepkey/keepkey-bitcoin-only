@@ -1,10 +1,11 @@
 use anyhow::Result;
-use tracing::{info, debug, error, warn};
+use tracing::{info, debug, error, warn, instrument};
 use hex;
 use serde_json;
 use crate::messages::{self, Message};
 use crate::transport::{UsbTransport, ProtocolAdapter};
 use crate::device_registry;
+use crate::usb_manager::FriendlyUsbDevice;
 
 use super::device_cache::{DeviceCache, CachedBalance};
 use rusb::GlobalContext;
@@ -14,24 +15,193 @@ use tokio::sync::Mutex;
 pub struct DeviceFrontloader {
     cache: DeviceCache,
     transport_arc: Arc<Mutex<Option<UsbTransport<GlobalContext>>>>,
+    device_info: Option<FriendlyUsbDevice>,
 }
 
 impl DeviceFrontloader {
     pub fn new(cache: DeviceCache, transport_arc: Arc<Mutex<Option<UsbTransport<GlobalContext>>>>) -> Self {
-        Self { cache, transport_arc }
+        Self { 
+            cache, 
+            transport_arc,
+            device_info: None,
+        }
+    }
+
+    /// Create a DeviceFrontloader with device info for better transport creation
+    pub fn new_with_device(cache: DeviceCache, device_info: FriendlyUsbDevice) -> Self {
+        Self { 
+            cache, 
+            transport_arc: Arc::new(Mutex::new(None)),
+            device_info: Some(device_info),
+        }
+    }
+
+    /// Create transport on-demand using the factory pattern (Phase 1 implementation)
+    #[instrument(level = "info", skip(self))]
+    fn create_device_transport(&self) -> Result<Box<dyn ProtocolAdapter>> {
+        // Try to get device from device_info first
+        if let Some(ref device_info) = self.device_info {
+            info!("🔗 Creating transport using device factory for {}", device_info.unique_id);
+            return self.create_transport_from_device_info(device_info);
+        }
+
+        // Fallback: Try to find device from registry
+        info!("🔍 Searching for device in registry...");
+        match device_registry::get_all_device_entries() {
+            Ok(entries) if !entries.is_empty() => {
+                let device_entry = &entries[0]; // Use first available device
+                info!("📱 Found device in registry: {}", device_entry.device.unique_id);
+                self.create_transport_from_device_info(&device_entry.device)
+            }
+            Ok(_) => {
+                error!("❌ No devices found in registry");
+                Err(anyhow::anyhow!("No devices available for transport creation"))
+            }
+            Err(e) => {
+                error!("❌ Failed to get device entries: {}", e);
+                Err(anyhow::anyhow!("Failed to access device registry: {}", e))
+            }
+        }
+    }
+
+    /// Create transport from device info with USB/HID fallback
+    #[instrument(level = "info", skip(self, device_info))]
+    fn create_transport_from_device_info(&self, device_info: &FriendlyUsbDevice) -> Result<Box<dyn ProtocolAdapter>> {
+        // Find physical device for transport
+        let devices = crate::features::list_devices();
+        
+        info!("🔍 Looking for device with unique_id: {}", device_info.unique_id);
+        info!("   Serial number: {:?}", device_info.serial_number);
+        info!("   Found {} USB devices to search", devices.len());
+        
+        // First, try to match by unique_id directly as serial number
+        let physical_device = devices.iter().find(|d| {
+            if let Ok(handle) = d.open() {
+                let timeout = std::time::Duration::from_millis(100);
+                if let Ok(langs) = handle.read_languages(timeout) {
+                    if let Some(lang) = langs.first() {
+                        if let Ok(desc) = d.device_descriptor() {
+                            if let Ok(device_serial) = handle.read_serial_number_string(*lang, &desc, timeout) {
+                                let matches = device_serial == device_info.unique_id || 
+                                             device_info.serial_number.as_ref().map_or(false, |s| device_serial == *s);
+                                if matches {
+                                    info!("✅ Found device by serial number match: {}", device_serial);
+                                }
+                                return matches;
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }).cloned()
+        .or_else(|| {
+            // Try to parse bus and address from unique_id
+            let parts: Vec<&str> = device_info.unique_id.split('_').collect();
+            if parts.len() >= 2 {
+                let bus_str = parts[0].strip_prefix("bus").unwrap_or("");
+                let addr_str = parts[1].strip_prefix("addr").unwrap_or("");
+                
+                if let (Ok(bus), Ok(addr)) = (bus_str.parse::<u8>(), addr_str.parse::<u8>()) {
+                    info!("🔍 Looking for device with bus {} and address {}", bus, addr);
+                    devices.iter().find(|d| d.bus_number() == bus && d.address() == addr).cloned()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            // Last resort: If this is a KeepKey device, just use the first available KeepKey
+            if device_info.is_keepkey {
+                warn!("⚠️  Could not match device by ID, using first available KeepKey device");
+                devices.iter().find(|d| {
+                    if let Ok(desc) = d.device_descriptor() {
+                        desc.vendor_id() == 0x2B24 // KEEPKEY_VID
+                    } else {
+                        false
+                    }
+                }).cloned()
+            } else {
+                None
+            }
+        });
+
+        match physical_device {
+            Some(device) => {
+                // Try USB transport first
+                match crate::transport::UsbTransport::new(&device, 0) {
+                    Ok((transport, _, _)) => {
+                        info!("✅ Created USB transport for device {}", device_info.unique_id);
+                        Ok(Box::new(transport))
+                    }
+                    Err(usb_err) => {
+                        warn!("⚠️  USB transport failed for device {}: {}, trying HID fallback", device_info.unique_id, usb_err);
+                        
+                        // Try HID fallback - try with unique_id first, then serial number
+                        let hid_result = crate::transport::HidTransport::new_for_device(Some(&device_info.unique_id))
+                            .or_else(|_| {
+                                if let Some(serial) = &device_info.serial_number {
+                                    crate::transport::HidTransport::new_for_device(Some(serial))
+                                } else {
+                                    Err(anyhow::anyhow!("No serial number for HID fallback"))
+                                }
+                            })
+                            .or_else(|_| {
+                                // Last resort: try without serial number (will use first available)
+                                warn!("⚠️  Trying HID without serial number filter");
+                                crate::transport::HidTransport::new_for_device(None)
+                            });
+                        
+                        match hid_result {
+                            Ok(hid_transport) => {
+                                info!("✅ Created HID transport for device {}", device_info.unique_id);
+                                Ok(Box::new(hid_transport))
+                            }
+                            Err(hid_err) => {
+                                error!("❌ Both USB and HID transports failed for device {}", device_info.unique_id);
+                                error!("   USB error: {}", usb_err);
+                                error!("   HID error: {}", hid_err);
+                                
+                                // DEVELOPMENT MODE: Return error to prevent going to "device ready" state
+                                error!("🚨 FAILING FAST: No transport available, preventing device ready state");
+                                Err(anyhow::anyhow!("Failed with both USB ({}) and HID ({})", usb_err, hid_err))
+                            }
+                        }
+                    }
+                }
+            }
+            None => {
+                error!("❌ Physical device not found for {}", device_info.unique_id);
+                error!("   Available devices:");
+                for (i, d) in devices.iter().enumerate() {
+                    if let Ok(desc) = d.device_descriptor() {
+                        error!("   [{}] VID:{:04x} PID:{:04x} Bus:{} Addr:{}", 
+                               i, desc.vendor_id(), desc.product_id(), d.bus_number(), d.address());
+                    }
+                }
+                
+                // DEVELOPMENT MODE: Return error to prevent going to "device ready" state
+                error!("🚨 FAILING FAST: Physical device not found, preventing device ready state");
+                Err(anyhow::anyhow!("Physical device not found for {}", device_info.unique_id))
+            }
+        }
     }
 
     /// Frontload all device data - but only populate what's missing
+    #[instrument(level = "info", skip(self))]
     pub async fn frontload_all(&self) -> Result<()> {
         self.frontload_all_with_progress::<fn(String)>(None).await
     }
     
     /// Frontload all device data with optional progress callback
+    #[instrument(level = "info", skip(self, progress_callback))]
     pub async fn frontload_all_with_progress<F>(&self, progress_callback: Option<F>) -> Result<()> 
     where
         F: Fn(String) + Send + Sync + 'static,
     {
-        info!("🔄 Starting device frontload process...");
+        info!("🔄 Starting device frontload process with transport factory...");
         let start_time = std::time::Instant::now();
         
         // Send initial progress
@@ -263,6 +433,7 @@ impl DeviceFrontloader {
         F: Fn(String) + Send + Sync + 'static,
     {
         let mut count = 0;
+        let mut transport_failures = 0;
         
         // Get paths from database
         let paths = self.cache.get_paths().await?;
@@ -303,6 +474,9 @@ impl DeviceFrontloader {
                             Err(e) => {
                                 warn!("❌ Failed to cache {} {} xpub at {:?} for network {}: {}", 
                                       coin_name, script_type, account_path, network, e);
+                                if e.to_string().contains("Physical device not found") || e.to_string().contains("Transport creation failed") {
+                                    transport_failures += 1;
+                                }
                                 // Continue with other paths instead of stopping
                             },
                         }
@@ -324,6 +498,9 @@ impl DeviceFrontloader {
                                 },
                                 Err(e) => {
                                     warn!("❌ Failed to cache {} {} address at {:?} for network {}: {}", coin_name, script_type, address_path, network, e);
+                                    if e.to_string().contains("Physical device not found") || e.to_string().contains("Transport creation failed") {
+                                        transport_failures += 1;
+                                    }
                                     // Continue with other addresses instead of stopping
                                 },
                             }
@@ -350,6 +527,9 @@ impl DeviceFrontloader {
                             },
                             Err(e) => {
                                 warn!("❌ Failed to cache {} {} address at {:?} for network {}: {}", coin_name, script_type, address_path, network, e);
+                                if e.to_string().contains("Physical device not found") || e.to_string().contains("Transport creation failed") {
+                                    transport_failures += 1;
+                                }
                                 // Continue with other addresses instead of stopping
                             },
                         }
@@ -361,6 +541,14 @@ impl DeviceFrontloader {
         }
         
         info!("📍 Populated {} missing addresses and xpubs from database paths", count);
+        
+        // DEVELOPMENT MODE: Fail if we had transport failures to prevent "device ready" state
+        if transport_failures > 0 {
+            error!("🚨 FAILING FRONTLOAD: Had {} transport failures - device is not accessible", transport_failures);
+            error!("🚨 This prevents the device from going to 'ready' state when it can't actually be used");
+            return Err(anyhow::anyhow!("Frontload failed due to {} transport failures - device not accessible", transport_failures));
+        }
+        
         Ok(count)
     }
     
@@ -492,14 +680,12 @@ impl DeviceFrontloader {
     }
     
     /// Get device features from transport or device registry with retry logic
+    #[instrument(level = "debug", skip(self))]
     async fn frontload_features(&self) -> Result<(messages::Features, String)> {
-        let tag = "frontload_features";
-        
-        // First try to get features from active transport
-        {
-            let mut transport_guard = self.transport_arc.lock().await;
-            if let Some(transport) = transport_guard.as_mut() {
-                info!("{}: 🔗 Getting features from active transport", tag);
+        // First try to get features using the transport factory
+        match self.create_device_transport() {
+            Ok(mut transport) => {
+                info!("🔗 Getting device features from transport");
                 
                 // Send GetFeatures message
                 let get_features_msg = messages::GetFeatures {};
@@ -512,23 +698,26 @@ impl DeviceFrontloader {
                         return Ok((features, device_id));
                     }
                     Ok(_) => {
-                        warn!("{}: Unexpected response from GetFeatures", tag);
+                        warn!("⚠️  Unexpected response from GetFeatures, trying device registry fallback");
                     }
                     Err(e) => {
-                        warn!("{}: Failed to get features from transport: {}", tag, e);
+                        warn!("⚠️  Failed to get features from transport: {}, trying device registry fallback", e);
                     }
                 }
             }
+            Err(e) => {
+                warn!("⚠️  Failed to create transport: {}, trying device registry fallback", e);
+            }
         }
         
-        // If no transport available, try to get from device registry with retry logic
-        info!("{}: 🔗 No transport available, using features from device registry", tag);
+        // Fallback: try to get from device registry with retry logic
+        info!("🔗 Using features from device registry fallback");
         
         // Retry up to 5 times with 1 second delay between attempts
         for attempt in 1..=5 {
             let entries = device_registry::get_all_device_entries()
                 .map_err(|e| anyhow::anyhow!("Failed to get device registry: {}", e))?;
-            info!("{}: Found {} device(s) in registry (attempt {}/5)", tag, entries.len(), attempt);
+            info!("🔍 Found {} device(s) in registry (attempt {}/5)", entries.len(), attempt);
             
             // Look for any device that has features (prefer KeepKey devices)
             let target_entry = entries.iter()
@@ -538,7 +727,7 @@ impl DeviceFrontloader {
             
             if let Some(entry) = target_entry {
                 let device_id = &entry.device.unique_id;
-                info!("{}: Checking device {} for features", tag, device_id);
+                info!("🔍 Checking device {} for features", device_id);
                 
                 if let Some(registry_features) = &entry.features {
                     // Convert device registry features to protobuf Features format
@@ -569,7 +758,7 @@ impl DeviceFrontloader {
                     
                     return Ok((features, device_id.clone()));
                 } else {
-                    warn!("{}: Device in registry has no features (attempt {}/5), retrying in 1 second...", tag, attempt);
+                    warn!("⚠️  Device in registry has no features (attempt {}/5), retrying in 1 second...", attempt);
                     
                     // If this is not the last attempt, wait before retrying
                     if attempt < 5 {
@@ -585,46 +774,60 @@ impl DeviceFrontloader {
     }
     
     /// Get and cache a single Ethereum address
+    #[instrument(level = "debug", skip(self))]
     async fn get_and_cache_ethereum_address(
         &self,
         device_id: &str,
         path: &[u32],
     ) -> Result<()> {
-        let mut transport_opt_guard = self.transport_arc.lock().await;
-        let transport = transport_opt_guard.as_mut().ok_or_else(|| anyhow::anyhow!("Transport not available in get_and_cache_ethereum_address"))?;
-        
-        // Create EthereumGetAddress message for proper hex format
-        let ethereum_get_address_msg = messages::EthereumGetAddress {
-            address_n: path.to_vec(),
-            show_display: Some(false),
-        };
-        
-        // Send message and get response
-        let response = transport.with_standard_handler().handle(ethereum_get_address_msg.into())?;
-        
-        match response {
-            Message::EthereumAddress(addr_msg) => {
-                if !addr_msg.address.is_empty() {
-                    // Convert bytes to hex string with 0x prefix
-                    let address = format!("0x{}", hex::encode(&addr_msg.address));
-                    
-                    self.cache.save_address(
-                        device_id,
-                        "Ethereum",
-                        "ethereum",
-                        path,
-                        &address,
-                        None,
-                    ).await?;
-                    debug!("Cached Ethereum address: {}", address);
+        // Step 1: Get address from device (synchronous, no async boundaries)
+        let address = {
+            let mut transport = match self.create_device_transport() {
+                Ok(transport) => transport,
+                Err(e) => {
+                    warn!("⚠️  Failed to create transport for Ethereum address generation: {}", e);
+                    return Err(anyhow::anyhow!("Transport creation failed: {}", e));
                 }
-                Ok(())
+            };
+            
+            // Create EthereumGetAddress message for proper hex format
+            let ethereum_get_address_msg = messages::EthereumGetAddress {
+                address_n: path.to_vec(),
+                show_display: Some(false),
+            };
+            
+            // Send message and get response
+            let response = transport.with_standard_handler().handle(ethereum_get_address_msg.into())?;
+            
+            match response {
+                Message::EthereumAddress(addr_msg) => {
+                    if !addr_msg.address.is_empty() {
+                        // Convert bytes to hex string with 0x prefix
+                        Ok(format!("0x{}", hex::encode(&addr_msg.address)))
+                    } else {
+                        Err(anyhow::anyhow!("Empty Ethereum address received"))
+                    }
+                }
+                _ => Err(anyhow::anyhow!("Unexpected response to EthereumGetAddress")),
             }
-            _ => Err(anyhow::anyhow!("Unexpected response to EthereumGetAddress")),
-        }
+        }?; // Transport is dropped here, before async calls
+        
+        // Step 2: Cache the address (async call after transport is dropped)
+        self.cache.save_address(
+            device_id,
+            "Ethereum",
+            "ethereum",
+            path,
+            &address,
+            None,
+        ).await?;
+        debug!("Cached Ethereum address: {}", address);
+        
+        Ok(())
     }
     
     /// Get and cache a single Bitcoin address
+    #[instrument(level = "debug", skip(self))]
     async fn get_and_cache_bitcoin_address(
         &self,
         device_id: &str,
@@ -632,46 +835,61 @@ impl DeviceFrontloader {
         script_type: &str,
         path: &[u32],
     ) -> Result<()> {
-        let mut transport_opt_guard = self.transport_arc.lock().await;
-        let transport = transport_opt_guard.as_mut().ok_or_else(|| anyhow::anyhow!("Transport not available in get_and_cache_bitcoin_address"))?;
-        
-        // Create GetAddress message
-        let mut msg = messages::GetAddress::default();
-        msg.address_n = path.to_vec();
-        msg.coin_name = Some(coin_name.to_string());
-        msg.show_display = Some(false);
-        
-        // Set script type
-        match script_type {
-            "p2pkh" => msg.script_type = Some(messages::InputScriptType::Spendaddress as i32),
-            "p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendwitness as i32),
-            "p2sh-p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendp2shwitness as i32),
-            _ => return Err(anyhow::anyhow!("Unknown script type: {}", script_type)),
-        }
-        
-        // Send message and get response
-        let response = transport.with_standard_handler().handle(msg.into())?;
-        
-        match response {
-            Message::Address(addr_msg) => {
-                if !addr_msg.address.is_empty() {
-                    self.cache.save_address(
-                        device_id,
-                        coin_name,
-                        script_type,
-                        path,
-                        &addr_msg.address,
-                        None, // We're not storing pubkeys for now
-                    ).await?;
-                    debug!("Cached {} {} address: {}", coin_name, script_type, addr_msg.address);
+        // Step 1: Get address from device (synchronous, no async boundaries)
+        let address = {
+            let mut transport = match self.create_device_transport() {
+                Ok(transport) => transport,
+                Err(e) => {
+                    warn!("⚠️  Failed to create transport for Bitcoin address generation: {}", e);
+                    return Err(anyhow::anyhow!("Transport creation failed: {}", e));
                 }
-                Ok(())
+            };
+            
+            // Create GetAddress message
+            let mut msg = messages::GetAddress::default();
+            msg.address_n = path.to_vec();
+            msg.coin_name = Some(coin_name.to_string());
+            msg.show_display = Some(false);
+            
+            // Set script type
+            match script_type {
+                "p2pkh" => msg.script_type = Some(messages::InputScriptType::Spendaddress as i32),
+                "p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendwitness as i32),
+                "p2sh-p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendp2shwitness as i32),
+                _ => return Err(anyhow::anyhow!("Unknown script type: {}", script_type)),
             }
-            _ => Err(anyhow::anyhow!("Unexpected response to GetAddress")),
-        }
+            
+            // Send message and get response
+            let response = transport.with_standard_handler().handle(msg.into())?;
+            
+            match response {
+                Message::Address(addr_msg) => {
+                    if !addr_msg.address.is_empty() {
+                        Ok(addr_msg.address)
+                    } else {
+                        Err(anyhow::anyhow!("Empty Bitcoin address received"))
+                    }
+                }
+                _ => Err(anyhow::anyhow!("Unexpected response to GetAddress")),
+            }
+        }?; // Transport is dropped here, before async calls
+        
+        // Step 2: Cache the address (async call after transport is dropped)
+        self.cache.save_address(
+            device_id,
+            coin_name,
+            script_type,
+            path,
+            &address,
+            None, // We're not storing pubkeys for now
+        ).await?;
+        debug!("Cached {} {} address: {}", coin_name, script_type, address);
+        
+        Ok(())
     }
     
     /// Get and cache a single Cosmos-based address
+    #[instrument(level = "debug", skip(self))]
     async fn get_and_cache_cosmos_address(
         &self,
         device_id: &str,
@@ -679,79 +897,113 @@ impl DeviceFrontloader {
         _network: &str,
         path: &[u32],
     ) -> Result<()> {
-        let mut transport_opt_guard = self.transport_arc.lock().await;
-        let transport = transport_opt_guard.as_mut().ok_or_else(|| anyhow::anyhow!("Transport not available in get_and_cache_cosmos_address"))?;
-        
-        // Create CosmosGetAddress message
-        let cosmos_get_address_msg = messages::CosmosGetAddress {
-            address_n: path.to_vec(),
-            show_display: Some(false),
-        };
-        
-        // Send message and get response
-        let response = transport.with_standard_handler().handle(cosmos_get_address_msg.into())?;
-        
-        match response {
-            Message::CosmosAddress(addr_msg) => {
-                if let Some(address) = &addr_msg.address {
-                    if !address.is_empty() {
-                        self.cache.save_address(
-                            device_id,
-                            coin_name,
-                            "cosmos",
-                            path,
-                            address,
-                            None,
-                        ).await?;
-                        debug!("Cached {} cosmos address: {}", coin_name, address);
+        // Step 1: Get address from device (synchronous, no async boundaries)
+        let address = {
+            let mut transport = match self.create_device_transport() {
+                Ok(transport) => transport,
+                Err(e) => {
+                    warn!("⚠️  Failed to create transport for Cosmos address generation: {}", e);
+                    return Err(anyhow::anyhow!("Transport creation failed: {}", e));
+                }
+            };
+            
+            // Create CosmosGetAddress message
+            let cosmos_get_address_msg = messages::CosmosGetAddress {
+                address_n: path.to_vec(),
+                show_display: Some(false),
+            };
+            
+            // Send message and get response
+            let response = transport.with_standard_handler().handle(cosmos_get_address_msg.into())?;
+            
+            match response {
+                Message::CosmosAddress(addr_msg) => {
+                    if let Some(address) = &addr_msg.address {
+                        if !address.is_empty() {
+                            Ok(address.clone())
+                        } else {
+                            Err(anyhow::anyhow!("Empty Cosmos address received"))
+                        }
+                    } else {
+                        Err(anyhow::anyhow!("No address in Cosmos response"))
                     }
                 }
-                Ok(())
+                _ => Err(anyhow::anyhow!("Unexpected response to CosmosGetAddress")),
             }
-            _ => Err(anyhow::anyhow!("Unexpected response to CosmosGetAddress")),
-        }
+        }?; // Transport is dropped here, before async calls
+        
+        // Step 2: Cache the address (async call after transport is dropped)
+        self.cache.save_address(
+            device_id,
+            coin_name,
+            "cosmos",
+            path,
+            &address,
+            None,
+        ).await?;
+        debug!("Cached {} cosmos address: {}", coin_name, address);
+        
+        Ok(())
     }
     
     /// Get and cache a single Ripple address
+    #[instrument(level = "debug", skip(self))]
     async fn get_and_cache_ripple_address(
         &self,
         device_id: &str,
         path: &[u32],
     ) -> Result<()> {
-        let mut transport_opt_guard = self.transport_arc.lock().await;
-        let transport = transport_opt_guard.as_mut().ok_or_else(|| anyhow::anyhow!("Transport not available in get_and_cache_ripple_address"))?;
-        
-        // Create RippleGetAddress message
-        let ripple_get_address_msg = messages::RippleGetAddress {
-            address_n: path.to_vec(),
-            show_display: Some(false),
-        };
-        
-        // Send message and get response
-        let response = transport.with_standard_handler().handle(ripple_get_address_msg.into())?;
-        
-        match response {
-            Message::RippleAddress(addr_msg) => {
-                if let Some(address) = &addr_msg.address {
-                    if !address.is_empty() {
-                        self.cache.save_address(
-                            device_id,
-                            "Ripple",
-                            "ripple",
-                            path,
-                            address,
-                            None,
-                        ).await?;
-                        debug!("Cached Ripple address: {}", address);
+        // Step 1: Get address from device (synchronous, no async boundaries)
+        let address = {
+            let mut transport = match self.create_device_transport() {
+                Ok(transport) => transport,
+                Err(e) => {
+                    warn!("⚠️  Failed to create transport for Ripple address generation: {}", e);
+                    return Err(anyhow::anyhow!("Transport creation failed: {}", e));
+                }
+            };
+            
+            // Create RippleGetAddress message
+            let ripple_get_address_msg = messages::RippleGetAddress {
+                address_n: path.to_vec(),
+                show_display: Some(false),
+            };
+            
+            // Send message and get response
+            let response = transport.with_standard_handler().handle(ripple_get_address_msg.into())?;
+            
+            match response {
+                Message::RippleAddress(addr_msg) => {
+                    if let Some(address) = &addr_msg.address {
+                        if !address.is_empty() {
+                            Ok(address.clone())
+                        } else {
+                            Err(anyhow::anyhow!("Empty Ripple address received"))
+                        }
+                    } else {
+                        Err(anyhow::anyhow!("No address in Ripple response"))
                     }
                 }
-                Ok(())
+                _ => Err(anyhow::anyhow!("Unexpected response to RippleGetAddress")),
             }
-            _ => Err(anyhow::anyhow!("Unexpected response to RippleGetAddress")),
-        }
+        }?; // Transport is dropped here, before async calls
+        
+        // Step 2: Cache the address (async call after transport is dropped)
+        self.cache.save_address(
+            device_id,
+            "Ripple",
+            "ripple",
+            path,
+            &address,
+            None,
+        ).await?;
+        debug!("Cached Ripple address: {}", address);
+        
+        Ok(())
     }
     
     /// Get and cache extended public key (xpub) for UTXO networks
+    #[instrument(level = "debug", skip(self))]
     async fn get_and_cache_xpub(
         &self,
         device_id: &str,
@@ -759,57 +1011,61 @@ impl DeviceFrontloader {
         script_type: &str,
         path: &[u32],
     ) -> Result<String> {
-        let transport_opt_guard = self.transport_arc.lock().await;
-        if transport_opt_guard.is_none() {
-            drop(transport_opt_guard);
-            warn!("⚠️  No transport available for XPUB generation, skipping {} {} at path {:?}", coin_name, script_type, path);
-            return Err(anyhow::anyhow!("Transport not available - device communication required for XPUB generation"));
-        }
-        let mut transport_opt_guard = self.transport_arc.lock().await;
-        let transport = transport_opt_guard.as_mut().ok_or_else(|| anyhow::anyhow!("Transport not available in get_and_cache_xpub"))?;
-        
-        // Create GetPublicKey message to get xpub
-        let mut msg = messages::GetPublicKey::default();
-        msg.address_n = path.to_vec();
-        msg.coin_name = Some(coin_name.to_string());
-        msg.show_display = Some(false);
-        
-        // Set script type for xpub format
-        match script_type {
-            "p2pkh" => msg.script_type = Some(messages::InputScriptType::Spendaddress as i32), // xpub
-            "p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendwitness as i32), // zpub
-            "p2sh-p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendp2shwitness as i32), // ypub
-            _ => return Err(anyhow::anyhow!("Unknown script type for xpub: {}", script_type)),
-        }
-        
-        // Send message and get response
-        let response = transport.with_standard_handler().handle(msg.into())?;
-        
-        match response {
-            Message::PublicKey(pubkey_msg) => {
-                if let Some(xpub) = &pubkey_msg.xpub {
-                    if !xpub.is_empty() {
-                        // Save xpub to cache (we'll use the address field to store the xpub)
-                        self.cache.save_address(
-                            device_id,
-                            coin_name,
-                            &format!("{}_xpub", script_type), // Mark as xpub variant
-                            path,
-                            xpub,
-                            None,
-                        ).await?;
-                        
-                        info!("✅ Cached {} {} xpub: {}", coin_name, script_type, xpub);
-                        Ok(xpub.clone())
-                    } else {
-                        Err(anyhow::anyhow!("Empty xpub returned from device"))
-                    }
-                } else {
-                    Err(anyhow::anyhow!("No xpub returned from device"))
+        // Step 1: Get XPUB from device (synchronous, no async boundaries)
+        let xpub = {
+            let mut transport = match self.create_device_transport() {
+                Ok(transport) => transport,
+                Err(e) => {
+                    warn!("⚠️  Failed to create transport for XPUB generation of {} {} at path {:?}: {}", coin_name, script_type, path, e);
+                    return Err(anyhow::anyhow!("Transport creation failed for XPUB generation: {}", e));
                 }
+            };
+            
+            // Create GetPublicKey message to get xpub
+            let mut msg = messages::GetPublicKey::default();
+            msg.address_n = path.to_vec();
+            msg.coin_name = Some(coin_name.to_string());
+            msg.show_display = Some(false);
+            
+            // Set script type for xpub format
+            match script_type {
+                "p2pkh" => msg.script_type = Some(messages::InputScriptType::Spendaddress as i32), // xpub
+                "p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendwitness as i32), // zpub
+                "p2sh-p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendp2shwitness as i32), // ypub
+                _ => return Err(anyhow::anyhow!("Unknown script type for xpub: {}", script_type)),
             }
-            _ => Err(anyhow::anyhow!("Unexpected response to GetPublicKey")),
-        }
+            
+            // Send message and get response
+            let response = transport.with_standard_handler().handle(msg.into())?;
+            
+            match response {
+                Message::PublicKey(pubkey_msg) => {
+                    if let Some(xpub) = &pubkey_msg.xpub {
+                        if !xpub.is_empty() {
+                            Ok(xpub.clone())
+                        } else {
+                            Err(anyhow::anyhow!("Empty xpub returned from device"))
+                        }
+                    } else {
+                        Err(anyhow::anyhow!("No xpub returned from device"))
+                    }
+                }
+                _ => Err(anyhow::anyhow!("Unexpected response to GetPublicKey")),
+            }
+        }?; // Transport is dropped here, before async calls
+        
+        // Step 2: Cache the XPUB (async call after transport is dropped)
+        self.cache.save_address(
+            device_id,
+            coin_name,
+            &format!("{}_xpub", script_type), // Mark as xpub variant
+            path,
+            &xpub,
+            None,
+        ).await?;
+        
+        info!("✅ Cached {} {} xpub: {}", coin_name, script_type, xpub);
+        Ok(xpub)
     }
     
     /// Frontload balances from Pioneer API during startup

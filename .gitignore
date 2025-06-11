@@ -36,7 +36,7 @@
 **/*.sqlite3
 
 # Logs
-**/logs/
+docs/startupasdasd/
 **/*.log
 
 # Firmware binaries

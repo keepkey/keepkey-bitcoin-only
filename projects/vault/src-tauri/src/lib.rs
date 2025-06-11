@@ -184,7 +184,7 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                 }
                             };
                             
-                            if let Some(_entry) = device_entry {
+                            if let Some(ref _entry) = device_entry {
                                 // Use existing device connection instead of creating new transport
                                 // This avoids "Entity not found" errors from concurrent device access
                                 log::info!("🔗 Using existing device connection for frontload: {}", device_id_clone);
@@ -204,13 +204,11 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                     }
                                 }
 
-                                // Create frontloader using existing device manager connection
-                                // Note: We create an empty transport_arc since the frontloader will use 
-                                // the device manager's connection through the cache system
-                                let transport_arc = Arc::new(tokio::sync::Mutex::new(None));
-                                let frontloader = cache::DeviceFrontloader::new(
+                                // Create frontloader using the new factory pattern with device info
+                                // This ensures proper transport creation with USB/HID fallback
+                                let frontloader = cache::DeviceFrontloader::new_with_device(
                                     cache,
-                                    transport_arc
+                                    device_entry.as_ref().unwrap().device.clone()
                                 );
                                             
                                             // Track progress for UI updates
