@@ -46,6 +46,8 @@ pub struct AppState {
         // === auth endpoints ===
         routes::auth::auth_verify,
         routes::auth::auth_pair,
+        // === frontload endpoint ===
+        bitcoin::frontload,
         // === v1 endpoints (legacy protocol compatibility) ===
         routes::utxo_get_address,
         // === v2 endpoints ===
@@ -178,6 +180,8 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
         // Auth endpoints
         .route("/auth/pair", get(routes::auth::auth_verify))
         .route("/auth/pair", post(routes::auth::auth_pair))
+        // Frontload endpoint
+        .route("/api/frontload", post(bitcoin::frontload))
         // Mount v1 API router (legacy protocol compatibility)
         .merge(routes::v1_router())
         // Mount v2 API router under /api/v2 (modular endpoints)
@@ -197,7 +201,7 @@ pub async fn start_server(device_manager: Arc<Mutex<DeviceManager>>) -> anyhow::
     info!("  🔐 Authentication: http://{}/auth/pair", addr);
     info!("  🔑 V1 API (Legacy): http://{}/addresses/utxo", addr);
     info!("  🔑 V2 API (Modern): http://{}/api/v2", addr);
-    info!("  💾 Frontload: POST http://{}/api/v2/frontload", addr);
+    info!("  💾 Frontload: POST http://{}/api/frontload", addr);
     
     // Spawn the server
     tokio::spawn(async move {

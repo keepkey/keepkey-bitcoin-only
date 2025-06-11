@@ -73,7 +73,7 @@ console.log('');
 // Check if the server is running
 async function testServerHealth() {
     try {
-        const response = await fetch('http://localhost:1646/health');
+        const response = await fetch('http://localhost:1646/api/health');
         if (response.ok) {
             console.log('✅ Server is running');
             return true;
@@ -92,7 +92,7 @@ async function testServerHealth() {
 async function testPathsEndpoint() {
     try {
         console.log('🔍 Testing /v2/paths endpoint for Bitcoin...');
-        const response = await fetch('http://localhost:1646/v2/paths');
+        const response = await fetch('http://localhost:1646/api/v2/paths');
         const data = await response.json();
         
         console.log(`📊 Total paths in database: ${data.length}`);
@@ -147,7 +147,7 @@ async function testPathsEndpoint() {
 async function testPubkeysEndpoint() {
     try {
         console.log('🔍 Testing /v2/pubkeys endpoint for Bitcoin...');
-        const response = await fetch('http://localhost:1646/v2/pubkeys');
+        const response = await fetch('http://localhost:1646/api/v2/pubkeys');
         const data = await response.json();
         
         console.log(`📊 Total pubkeys in API: ${data.length}`);
@@ -218,7 +218,7 @@ async function testPubkeysEndpoint() {
 async function testBalancesEndpoint() {
     try {
         console.log('🔍 Testing /v2/balances endpoint for Bitcoin...');
-        const response = await fetch('http://localhost:1646/v2/balances');
+        const response = await fetch('http://localhost:1646/api/v2/balances');
         const data = await response.json();
         
         console.log(`📊 Total balances in API: ${data.length}`);

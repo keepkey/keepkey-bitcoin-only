@@ -1159,6 +1159,14 @@ impl DeviceCache {
         info!("🔍 DEBUG: Final result - loaded {} addresses", addresses.len());
         Ok(addresses)
     }
+
+    /// Manually set device features in memory cache (workaround for frontload failures)
+    pub fn force_set_device_features(&self, device_id: String, features: CachedFeatures) {
+        let mut cache = self.memory_cache.write().unwrap();
+        cache.device_id = Some(device_id.clone());
+        cache.features = Some(features);
+        info!("Force-set device {} in memory cache", device_id);
+    }
 }
 
 #[cfg(test)]

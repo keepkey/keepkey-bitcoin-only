@@ -1,11 +1,11 @@
 import axios from 'axios';
 
-// Use port 1646 directly to connect to kkcli server
-const KKCLI_SERVER_URL = 'http://localhost:1646';
+// Use port 1646 to connect to vault backend (tauri server)
+const VAULT_SERVER_URL = 'http://localhost:1646';
 
 // Create axios instance with default configuration
 const api = axios.create({
-  baseURL: KKCLI_SERVER_URL,
+  baseURL: VAULT_SERVER_URL,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -79,7 +79,7 @@ export const apiService = {
   // Get portfolio summary from V2 API
   async getDashboard(): Promise<Dashboard> {
     try {
-      const response = await api.get('/v2/portfolio/summary');
+      const response = await api.get('/api/v2/portfolio/summary');
       return response.data;
     } catch (error) {
       console.error('Failed to fetch dashboard:', error);
@@ -90,7 +90,7 @@ export const apiService = {
   // Get all balances from V2 API
   async getBalances(): Promise<Balance[]> {
     try {
-      const response = await api.get('/v2/balances');
+      const response = await api.get('/api/v2/balances');
       return response.data;
     } catch (error) {
       console.error('Failed to fetch balances:', error);
@@ -101,7 +101,7 @@ export const apiService = {
   // Get all networks from V2 API
   async getNetworks(): Promise<Network[]> {
     try {
-      const response = await api.get('/v2/networks');
+      const response = await api.get('/api/v2/networks');
       return response.data;
     } catch (error) {
       console.error('Failed to fetch networks:', error);
@@ -133,7 +133,7 @@ export const apiService = {
   // Health check
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await api.get('/api/v1/health');
+      const response = await api.get('/api/health');
       return response.status === 200;
     } catch (error) {
       console.error('Health check failed:', error);

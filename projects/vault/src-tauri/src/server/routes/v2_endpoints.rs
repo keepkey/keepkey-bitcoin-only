@@ -1121,4 +1121,76 @@ pub fn v2_router() -> axum::Router<Arc<AppState>> {
         .route("/balances", get(get_balances))
         .route("/portfolio", post(post_portfolio_balances))
         .route("/portfolio/summary", get(get_portfolio_summary))
+        .route("/debug/cache", get(debug_device_cache))
+        .route("/sync-device", post(sync_device_to_cache))
+}
+
+/// Debug endpoint to check what device is in cache
+pub async fn debug_device_cache(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
+    let device_id = app_state.device_cache.get_device_id();
+    let cached_features = app_state.device_cache.get_cached_features();
+    
+    Json(serde_json::json!({
+        "device_id_in_cache": device_id,
+        "has_cached_features": cached_features.is_some(),
+        "features_device_id": cached_features.as_ref().map(|f| &f.device_id),
+        "cache_address": format!("{:p}", &*app_state.device_cache),
+    })).into_response()
+}
+
+/// Manual device sync endpoint - force sync device from registry to cache
+pub async fn sync_device_to_cache(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
+    let tag = "sync_device_to_cache";
+    
+    // Get device from registry
+    let entries = match crate::device_registry::get_all_device_entries() {
+        Ok(entries) => entries,
+        Err(e) => {
+            error!("{}: Failed to get device registry: {}", tag, e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "error": format!("Failed to get device registry: {}", e)
+            }))).into_response();
+        }
+    };
+    
+    if entries.is_empty() {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": "No devices found in registry"
+        }))).into_response();
+    }
+    
+    let device_entry = &entries[0]; // Use first device
+    let device_id = &device_entry.device.unique_id;
+    
+    if let Some(features) = &device_entry.features {
+        // Convert device registry features to cache features format
+        let cache_features = crate::cache::device_cache::CachedFeatures {
+    device_id: device_id.clone(),
+    label: features.label.clone(),
+    vendor: features.vendor.clone(),
+    major_version: None, // No longer present in DeviceFeatures
+    minor_version: None, // No longer present in DeviceFeatures
+    patch_version: None, // No longer present in DeviceFeatures
+    revision: features.version.clone().into(), // Use version string as revision
+    firmware_hash: features.firmware_hash.clone(),
+    bootloader_hash: features.bootloader_hash.clone(),
+    features_json: serde_json::to_string(features).unwrap_or_else(|_| "{}".to_string()),
+    last_seen: chrono::Utc::now().timestamp(),
+};
+        
+        // Force-set device in memory cache using the new method
+        app_state.device_cache.force_set_device_features(device_id.clone(), cache_features);
+        
+        info!("{}: Successfully synced device {} to cache", tag, device_id);
+        
+        Json(serde_json::json!({
+            "success": true,
+            "device_id": device_id,
+            "message": "Device synced to cache successfully"
+        })).into_response()
+    } else {
+        (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error": "Device has no features in registry"
+        }))).into_response()
+    }
 }
