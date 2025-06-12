@@ -37,6 +37,7 @@ mod device_controller_ext; // Extension to DeviceController for update functiona
 // ---------- Std / 3rd‑party ----------
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, Emitter};
+use futures::executor::block_on;
 
 // UI payload
 #[derive(serde::Serialize, Clone)]
@@ -107,7 +108,18 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                             
                             if let Ok(is_outdated) = version_check_result {
                                 log::info!("🔍 [FRONTLOAD DEBUG] Is outdated: {}", is_outdated);
-                                let ready = !is_outdated && features.initialized;
+                                let cache_ready = {
+                                    match cache::DeviceCache::open() {
+                                        Ok(c) => {
+                                            match tokio::task::block_in_place(|| block_on(c.has_cached_addresses(&device_id))) {
+                                                Ok(has) => has,
+                                                Err(e) => { log::warn!("Cache readiness check failed: {}", e); false }
+                                            }
+                                        }
+                                        Err(e) => { log::warn!("Failed to open cache: {}", e); false }
+                                    }
+                                };
+                                let ready = !is_outdated && features.initialized && cache_ready;
                                 log::info!("🔍 [FRONTLOAD DEBUG] Device ready: {}", ready);
                                 ready
                             } else {
@@ -394,12 +406,16 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                     // Check if any device is ready (on latest firmware and no blocking actions)
                     let ready_devices = entries.iter().filter(|entry| {
                         if let Some(features) = &entry.features {
-                            // Check if firmware is up to date
+                            // Check if firmware is up to date AND cache ready
                             if let Ok(latest_firmware) = device_update::get_latest_firmware_version() {
                                 if let Ok(is_outdated) = utils::is_version_older(&features.version, &latest_firmware) {
                                     if !is_outdated && features.initialized {
-                                        // Device is on latest firmware and initialized
-                                        return true;
+                                        // Check cached addresses synchronously
+                                        if let Ok(cache) = cache::DeviceCache::open() {
+                                            if let Ok(all_cached) = tokio::task::block_in_place(|| block_on(cache.has_cached_addresses(&entry.device.unique_id))) {
+                                                return all_cached;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -438,12 +454,16 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                 // Check if any device is ready (on latest firmware and no blocking actions)
                 let ready_devices = entries.iter().filter(|entry| {
                     if let Some(features) = &entry.features {
-                        // Check if firmware is up to date
+                        // Check if firmware is up to date AND cache ready
                         if let Ok(latest_firmware) = device_update::get_latest_firmware_version() {
                             if let Ok(is_outdated) = utils::is_version_older(&features.version, &latest_firmware) {
                                 if !is_outdated && features.initialized {
-                                    // Device is on latest firmware and initialized
-                                    return true;
+                                    // Check cached addresses synchronously
+                                    if let Ok(cache) = cache::DeviceCache::open() {
+                                        if let Ok(all_cached) = tokio::task::block_in_place(|| block_on(cache.has_cached_addresses(&entry.device.unique_id))) {
+                                            return all_cached;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -462,7 +482,7 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                 status,
                 connected: !entries.is_empty(),
                 devices: entries.iter().map(|e| e.into()).collect(),
-                blocking_actions_count: 0, // Default count until we implement tracking
+                blocking_actions_count: 0,
             };
             let _ = poll_handle.emit("application:state", &payload);
         }

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use rusqlite::{Connection, params, OptionalExtension};
 use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
@@ -309,6 +309,30 @@ impl DeviceCache {
         let mut missing_addresses = 0;
         let mut total_required = 0;
         
+        // Build in-memory set of cached (coin, script_type, derivation_path json) from DB
+        let mut cached_set: HashSet<(String,String,String)> = HashSet::new();
+        {
+            let db = self.db.lock().await;
+            let mut stmt = db.prepare("SELECT coin, script_type, derivation_path FROM cached_addresses WHERE device_id = ?1")?;
+            let rows = stmt.query_map(params![clean_device_id], |row| {
+                let coin: String = row.get(0)?;
+                let script_type: String = row.get(1)?;
+                let path_json: String = row.get(2)?;
+                Ok((coin.clone(), script_type.clone(), path_json.clone()))
+            })?;
+            for row_result in rows {
+                match row_result {
+                    Ok((coin, script_type, path_json)) => {
+                        cached_set.insert((coin, script_type, path_json));
+                    }
+                    Err(e) => {
+                        error!("Failed to parse cached address row: {}", e);
+                        // Continue processing other addresses instead of failing
+                    }
+                }
+            }
+        }
+        
         // Check each path to see if its required addresses are cached
         for path in &paths {
             for network in &path.networks {
@@ -326,35 +350,18 @@ impl DeviceCache {
                     let xpub_script_type = format!("{}_xpub", script_type);
                     total_required += 1;
                     
-                    if self.get_cached_address(&coin_name, &xpub_script_type, account_path).is_none() {
+                    let account_path_json = serde_json::to_string(account_path)?;
+                    if !cached_set.contains(&(coin_name.clone(), xpub_script_type.clone(), account_path_json.clone())) {
                         missing_addresses += 1;
                         debug!("❌ Missing xpub for {} {} at path {:?}", coin_name, script_type, account_path);
-                    }
-                    
-                    // Also need first 5 individual addresses (generated from account path)
-                    for i in 0..5 {
-                        let mut address_path = account_path.to_vec();
-                        // Account path is always 3 elements for UTXO networks
-                        if address_path.len() == 3 {
-                            address_path.push(0); // change = 0 (receiving)
-                            address_path.push(i); // address_index
-                        } else {
-                            warn!("Unexpected account path length {} for UTXO network {}", address_path.len(), network);
-                            continue;
-                        }
-                        total_required += 1;
-                        
-                        if self.get_cached_address(&coin_name, &script_type, &address_path).is_none() {
-                            missing_addresses += 1;
-                            debug!("❌ Missing address for {} {} at path {:?}", coin_name, script_type, address_path);
-                        }
                     }
                 } else {
                     // Account-based networks need master address cached (use addressNListMaster)
                     let address_path = &path.address_n_list_master;
                     total_required += 1;
                     
-                    if self.get_cached_address(&coin_name, &script_type, address_path).is_none() {
+                    let addr_json = serde_json::to_string(address_path)?;
+                    if !cached_set.contains(&(coin_name.clone(), script_type.clone(), addr_json.clone())) {
                         missing_addresses += 1;
                         debug!("❌ Missing address for {} {} at path {:?}", coin_name, script_type, address_path);
                     }
@@ -687,10 +694,54 @@ impl DeviceCache {
         cache.features.clone()
     }
     
-    /// Get the current device ID from memory
+    /// Get currently loaded device ID (with database fallback)
+    /// 
+    /// ✅ FIXED: Now uses database fallback when memory cache is empty
+    /// This fixes the "No device found in cache" errors that occur during startup.
     pub fn get_device_id(&self) -> Option<String> {
-        let cache = self.memory_cache.read().unwrap();
-        cache.device_id.clone()
+        // First try memory cache (fast path)
+        {
+            let cache = self.memory_cache.read().unwrap();
+            if let Some(device_id) = &cache.device_id {
+                return Some(device_id.clone());
+            }
+        }
+        
+        // Memory cache empty - try database fallback (slower but reliable)
+        match self.get_first_device_from_db() {
+            Ok(Some(device_id)) => {
+                info!("💾 Using database fallback for device ID: {}", device_id);
+                
+                // Populate memory cache for next time
+                {
+                    let mut cache = self.memory_cache.write().unwrap();
+                    cache.device_id = Some(device_id.clone());
+                }
+                
+                Some(device_id)
+            },
+            Ok(None) => {
+                debug!("📭 No device found in database");
+                None
+            },
+            Err(e) => {
+                warn!("❌ Database fallback failed: {}", e);
+                None
+            }
+        }
+    }
+    
+    /// Get first device ID from database (fallback method)
+    pub fn get_first_device_from_db(&self) -> Result<Option<String>> {
+        let db = self.db.blocking_lock();
+        
+        let device_id: Option<String> = db.query_row(
+            "SELECT device_id FROM devices LIMIT 1",
+            [],
+            |row| Ok(row.get::<_, String>(0)?),
+        ).optional()?;
+        
+        Ok(device_id)
     }
     
     /// Clear all caches for a device

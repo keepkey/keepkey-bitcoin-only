@@ -688,10 +688,54 @@ impl DeviceCache {
         cache.features.clone()
     }
     
-    /// Get the current device ID from memory
+    /// Get currently loaded device ID (with database fallback)
+    /// 
+    /// ✅ FIXED: Now uses database fallback when memory cache is empty
+    /// This fixes the "No device found in cache" errors that occur during startup.
     pub fn get_device_id(&self) -> Option<String> {
-        let cache = self.memory_cache.read().unwrap();
-        cache.device_id.clone()
+        // First try memory cache (fast path)
+        {
+            let cache = self.memory_cache.read().unwrap();
+            if let Some(device_id) = &cache.device_id {
+                return Some(device_id.clone());
+            }
+        }
+        
+        // Memory cache empty - try database fallback (slower but reliable)
+        match self.get_first_device_from_db() {
+            Ok(Some(device_id)) => {
+                info!("💾 Using database fallback for device ID: {}", device_id);
+                
+                // Populate memory cache for next time
+                {
+                    let mut cache = self.memory_cache.write().unwrap();
+                    cache.device_id = Some(device_id.clone());
+                }
+                
+                Some(device_id)
+            },
+            Ok(None) => {
+                debug!("📭 No device found in database");
+                None
+            },
+            Err(e) => {
+                warn!("❌ Database fallback failed: {}", e);
+                None
+            }
+        }
+    }
+    
+    /// Get first device ID from database (fallback method)
+    pub fn get_first_device_from_db(&self) -> Result<Option<String>> {
+        let db = self.db.blocking_lock();
+        
+        let device_id: Option<String> = db.query_row(
+            "SELECT device_id FROM devices LIMIT 1",
+            [],
+            |row| Ok(row.get::<_, String>(0)?),
+        ).optional()?;
+        
+        Ok(device_id)
     }
     
     /// Clear all caches for a device
@@ -1247,23 +1291,88 @@ impl DeviceCache {
         cache.features = Some(features);
         info!("Force-set device {} in memory cache", device_id);
     }
-    
-    /// Get first device ID from database (for auto-loading when memory cache is empty)
-    pub async fn get_first_device_from_db(&self) -> Result<Option<String>> {
+
+    /// Debug: Get all devices from database
+    pub async fn debug_get_all_devices(&self) -> Result<Vec<serde_json::Value>> {
         let db = self.db.lock().await;
-        let device_id: Option<String> = db.query_row(
-            "SELECT device_id FROM devices ORDER BY last_seen DESC LIMIT 1",
-            [],
-            |row| row.get(0),
-        ).optional()?;
+        let mut stmt = db.prepare("SELECT device_id, label, firmware_version, last_seen FROM devices")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "device_id": row.get::<_, String>(0)?,
+                "label": row.get::<_, Option<String>>(1)?,
+                "firmware_version": row.get::<_, Option<String>>(2)?,
+                "last_seen": row.get::<_, i64>(3)?,
+            }))
+        })?;
         
-        if let Some(ref id) = device_id {
-            debug!("Found first device in database: {}", id);
-        } else {
-            debug!("No devices found in database");
+        let mut devices = Vec::new();
+        for row in rows {
+            devices.push(row?);
         }
+        Ok(devices)
+    }
+    
+    /// Debug: Get all cached addresses from database
+    pub async fn debug_get_all_addresses(&self) -> Result<Vec<serde_json::Value>> {
+        let db = self.db.lock().await;
+        let mut stmt = db.prepare("SELECT device_id, coin, script_type, derivation_path, address FROM cached_addresses LIMIT 100")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "device_id": row.get::<_, String>(0)?,
+                "coin": row.get::<_, String>(1)?,
+                "script_type": row.get::<_, String>(2)?,
+                "derivation_path": row.get::<_, String>(3)?,
+                "address": row.get::<_, String>(4)?,
+            }))
+        })?;
         
-        Ok(device_id)
+        let mut addresses = Vec::new();
+        for row in rows {
+            addresses.push(row?);
+        }
+        Ok(addresses)
+    }
+    
+    /// Debug: Get all cached balances from database
+    pub async fn debug_get_all_balances(&self) -> Result<Vec<serde_json::Value>> {
+        let db = self.db.lock().await;
+        let mut stmt = db.prepare("SELECT device_id, symbol, balance, value_usd, last_updated FROM cached_balances")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "device_id": row.get::<_, String>(0)?,
+                "symbol": row.get::<_, String>(1)?,
+                "balance": row.get::<_, String>(2)?,
+                "value_usd": row.get::<_, f64>(3)?,
+                "last_updated": row.get::<_, i64>(4)?,
+            }))
+        })?;
+        
+        let mut balances = Vec::new();
+        for row in rows {
+            balances.push(row?);
+        }
+        Ok(balances)
+    }
+    
+    /// Debug: Get all portfolio summaries from database
+    pub async fn debug_get_all_portfolio_summaries(&self) -> Result<Vec<serde_json::Value>> {
+        let db = self.db.lock().await;
+        let mut stmt = db.prepare("SELECT device_id, total_value_usd, network_count, balance_count, last_updated FROM portfolio_summaries")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "device_id": row.get::<_, String>(0)?,
+                "total_value_usd": row.get::<_, String>(1)?,
+                "network_count": row.get::<_, i32>(2)?,
+                "balance_count": row.get::<_, i32>(3)?,
+                "last_updated": row.get::<_, i64>(4)?,
+            }))
+        })?;
+        
+        let mut summaries = Vec::new();
+        for row in rows {
+            summaries.push(row?);
+        }
+        Ok(summaries)
     }
 }
 

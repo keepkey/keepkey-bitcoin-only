@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use tracing::{info, error, debug, warn};
 use anyhow::Result;
 use axum::routing::{get, post};
+use serde_json::Value;
 
 // Import try_get_device directly from the server module (for future use)
 // use crate::server::try_get_device;
@@ -374,8 +375,8 @@ pub async fn get_pubkeys(
             // Memory cache is empty - try to load first device from database
             debug!("{}: Memory cache empty, trying to load device from database", tag);
             
-            // Get first device from database
-            match app_state.device_cache.get_first_device_from_db().await {
+            // Get first device from database (not async)
+            match app_state.device_cache.get_first_device_from_db() { // ✅ FIXED: Remove .await
                 Ok(Some(device_id)) => {
                     debug!("{}: Found device {} in database, loading into memory", tag, device_id);
                     // Load device into memory cache
@@ -1261,6 +1262,7 @@ pub fn v2_router() -> axum::Router<Arc<AppState>> {
         .route("/tx/build", post(build_transaction_v2))
         .route("/debug/cache", get(debug_device_cache))
         .route("/sync-device", post(sync_device_to_cache))
+        .route("/api/v2/debug/database", get(debug_database))
 }
 
 /// Debug endpoint to check what device is in cache
@@ -1635,7 +1637,9 @@ pub async fn build_transaction_v2(
     Json(request): Json<BuildTxRequest>,
 ) -> impl IntoResponse {
     let tag = "build_transaction_v2";
-    debug!("{}: Building transaction for device: {}", tag, request.device_id);
+    info!("{}: Building transaction", tag);
+    
+    let _device_id = request.device_id.trim(); // ✅ FIXED: Prefixed with underscore
     
     // 🚨 PHASE 1: INPUT VALIDATION - FAIL FAST
     if let Err(error_msg) = validate_build_request(&request) {
@@ -2076,4 +2080,60 @@ fn format_user_friendly_error(error: &str) -> String {
     } else {
         error.to_string()
     }
+}
+
+/// Debug endpoint to dump raw database contents for troubleshooting
+#[utoipa::path(
+    get,
+    path = "/api/v2/debug/database",
+    responses(
+        (status = 200, description = "Raw database contents", body = Value),
+    ),
+    tag = "debug"
+)]
+pub async fn debug_database(
+    State(state): State<Arc<AppState>>, // ✅ FIXED: Use AppState directly
+) -> Result<Json<Value>, (axum::http::StatusCode, Json<Value>)> {
+    let cache = &state.device_cache;
+    
+    // Collect raw database contents
+    let mut debug_info = serde_json::Map::new();
+    
+    // 1. Device table
+    if let Ok(devices) = cache.debug_get_all_devices().await {
+        debug_info.insert("devices".to_string(), serde_json::json!(devices));
+    }
+    
+    // 2. Cached addresses table
+    if let Ok(addresses) = cache.debug_get_all_addresses().await {
+        debug_info.insert("cached_addresses".to_string(), serde_json::json!(addresses));
+    }
+    
+    // 3. Cached balances table
+    if let Ok(balances) = cache.debug_get_all_balances().await {
+        debug_info.insert("cached_balances".to_string(), serde_json::json!(balances));
+    }
+    
+    // 4. Portfolio summaries table
+    if let Ok(summaries) = cache.debug_get_all_portfolio_summaries().await {
+        debug_info.insert("portfolio_summaries".to_string(), serde_json::json!(summaries));
+    }
+    
+    // 5. Memory cache status
+    if let Some(device_id) = cache.get_device_id() {
+        debug_info.insert("memory_cache_device_id".to_string(), serde_json::json!(device_id));
+    } else {
+        debug_info.insert("memory_cache_device_id".to_string(), serde_json::json!(null));
+    }
+    
+    // 6. Summary counts
+    let summary = serde_json::json!({
+        "devices_count": debug_info.get("devices").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+        "addresses_count": debug_info.get("cached_addresses").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+        "balances_count": debug_info.get("cached_balances").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+        "summaries_count": debug_info.get("portfolio_summaries").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+    });
+    debug_info.insert("summary".to_string(), summary);
+    
+    Ok(Json(Value::Object(debug_info)))
 }

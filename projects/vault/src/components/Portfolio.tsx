@@ -119,40 +119,85 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
     });
   };
 
-  // Sync device and refresh data
-  const syncDeviceAndRefresh = async () => {
+  // Calculate total USD value from balances (bypass stale cache)
+  const calculateTotalUsd = () => {
+    if (!balances || balances.length === 0) return 0;
+    
+    const total = balances.reduce((sum, balance) => {
+      const usdValue = parseFloat(String(balance.value_usd || '0'));
+      return sum + usdValue;
+    }, 0);
+    
+    console.log(`💰 Calculated total USD from ${balances.length} balances: $${total.toFixed(2)}`);
+    return total;
+  };
+
+  // Debug function to inspect USD values
+  const debugUsdValues = () => {
+    console.group('🔍 DEBUG: USD Values Analysis');
+    
+    console.log('📊 Dashboard object:', dashboard);
+    console.log('📈 Balances array:', balances);
+    
+    if (dashboard) {
+      console.log('💰 Dashboard total_value_usd:', dashboard.total_value_usd, typeof dashboard.total_value_usd);
+    }
+    
+    if (balances && balances.length > 0) {
+      console.log('💵 Individual balance USD values:');
+      balances.forEach((balance, index) => {
+        console.log(`  [${index}] ${balance.symbol}: balance="${balance.balance}", value_usd=${balance.value_usd} (${typeof balance.value_usd})`);
+      });
+      
+      const totalFromBalances = calculateTotalUsd();
+      console.log('🧮 Calculated total from balances:', totalFromBalances);
+    }
+    
+    console.groupEnd();
+  };
+
+  // Load portfolio data from API
+  const loadPortfolioData = async () => {
+    console.log('📊 Portfolio: Loading data from API...');
+    
     try {
-      setSyncStatus('Syncing device...');
-      console.log('🔄 Portfolio: Starting device sync...');
+      const [dashboardData, balancesData] = await Promise.all([
+        apiService.getDashboard(),
+        apiService.getBalances()
+      ]);
       
+      console.log('📊 Portfolio: Dashboard data:', JSON.stringify(dashboardData, null, 2));
+      console.log('📊 Portfolio: Balances data:', JSON.stringify(balancesData, null, 2));
+      
+      setDashboard(dashboardData);
+      setBalances(balancesData);
+      setError(null);
+      
+      console.log('✅ Portfolio: Data refreshed successfully');
+      
+      // Debug USD values after setting data
+      setTimeout(debugUsdValues, 100);
+    } catch (err) {
+      console.error('❌ Portfolio: Failed to load data:', err);
+      setError(`Failed to load portfolio data: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // Sync device and refresh data
+  const syncDevice = async () => {
+    console.log('🔄 Portfolio: Starting device sync...');
+    try {
       const syncResult = await apiService.syncDevice();
-      console.log('✅ Portfolio: Device sync result:', syncResult);
+      console.log('✅ Portfolio: Device sync result:', JSON.stringify(syncResult, null, 2));
       
-      if (syncResult.success) {
-        setSyncStatus('Refreshing data...');
-        console.log('🔄 Portfolio: Refreshing portfolio data...');
-        
-        // Refresh both dashboard and balances after sync
-        const [dashboardData, balancesData] = await Promise.all([
-          apiService.getDashboard(),
-          apiService.getBalances()
-        ]);
-        
-        setDashboard(dashboardData);
-        setBalances(balancesData);
-        setSyncStatus(`Synced! ${syncResult.balances_cached || 0} balances cached`);
-        
-        console.log('✅ Portfolio: Data refreshed successfully');
-        
-        // Clear sync status after 3 seconds
-        setTimeout(() => setSyncStatus(null), 3000);
-      } else {
-        throw new Error('Sync failed');
-      }
+      console.log('🔄 Portfolio: Refreshing portfolio data...');
+      await loadPortfolioData();
+      
+      return { success: true };
     } catch (error) {
       console.error('❌ Portfolio: Sync failed:', error);
-      setSyncStatus('Sync failed');
-      setTimeout(() => setSyncStatus(null), 3000);
+      setError(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   };
 
@@ -166,7 +211,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
         console.log('🏁 Portfolio: Initializing with auto-sync...');
         
         // First try to sync device to ensure fresh data
-        await syncDeviceAndRefresh();
+        await syncDevice();
         
         // If sync fails, still try to load existing data
         const [dashboardData, balancesData] = await Promise.all([
@@ -259,7 +304,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
         {/* USD Balance */}
         <Box textAlign="center">
           <Text fontSize="3xl" fontWeight="bold" color="white">
-            ${dashboard ? formatUsd(dashboard.total_value_usd) : '0.00'}
+            ${formatUsd(calculateTotalUsd())}
           </Text>
           <Text fontSize="md" color="gray.400" mt={1}>
             Total USD Value
@@ -312,6 +357,17 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
             </HStack>
           </Button>
         </HStack>
+        
+        {/* Debug Button - Remove this in production */}
+        <Button 
+          size="sm" 
+          colorScheme="gray" 
+          variant="outline"
+          onClick={debugUsdValues}
+          mt={2}
+        >
+          🔍 Debug USD Values
+        </Button>
       </VStack>
     </Flex>
   );

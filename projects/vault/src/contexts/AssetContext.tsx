@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 
 // Types
 export interface Asset {
@@ -46,8 +46,16 @@ const assetApiService = {
         balancesRes.json()
       ]);
 
+      // Calculate total USD from individual balances (bypass stale cache)
+      const calculatedTotalUsd = balances.reduce((sum: number, balance: any) => {
+        const usdValue = parseFloat(String(balance.value_usd || '0'));
+        return sum + usdValue;
+      }, 0);
+
+      console.log('🔄 [AssetContext] Calculated total USD from balances:', calculatedTotalUsd.toFixed(2));
+
       return {
-        total_value_usd: dashboard.total_value_usd,
+        total_value_usd: calculatedTotalUsd.toFixed(2), // Use calculated value instead of dashboard
         assets: balances.map((balance: any) => ({
           symbol: balance.symbol,
           name: balance.symbol, // We could enhance this with full names
@@ -128,23 +136,24 @@ export const AssetProvider: React.FC<AssetProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshPortfolio = async () => {
+  const refreshPortfolio = useCallback(async () => {
     console.log('🔄 [AssetContext] Refreshing portfolio data');
     setLoading(true);
-    setError(null);
-
+    
     try {
-      const portfolioData = await assetApiService.getPortfolio();
+      const response = await fetch('http://localhost:1646/api/v2/portfolio/summary');
+      if (!response.ok) throw new Error('Failed to fetch portfolio summary');
+      
+      const portfolioData = await response.json();
+      console.log('✅ [AssetContext] Portfolio updated:', JSON.stringify(portfolioData, null, 2));
+      
       setPortfolio(portfolioData);
-      console.log('✅ [AssetContext] Portfolio updated:', portfolioData);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch portfolio';
-      setError(errorMessage);
-      console.error('❌ [AssetContext] Error refreshing portfolio:', err);
+    } catch (error) {
+      console.error('❌ [AssetContext] Failed to refresh portfolio:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const selectAsset = (asset: Asset | null) => {
     setSelectedAsset(asset);
@@ -192,7 +201,7 @@ export const AssetProvider: React.FC<AssetProviderProps> = ({ children }) => {
   // Initial load
   useEffect(() => {
     refreshPortfolio();
-  }, []);
+  }, [refreshPortfolio]);
 
   const contextValue: AssetContextType = {
     portfolio,
