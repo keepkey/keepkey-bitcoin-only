@@ -13,8 +13,7 @@ use crate::cache::device_cache::DeviceCache;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 use tracing::info;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 

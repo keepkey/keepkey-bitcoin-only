@@ -6,7 +6,8 @@ use tokio::time::interval;
 use tauri::{AppHandle, Emitter};
 use crate::features::{DeviceFeatures, get_device_features_with_fallback};
 use crate::usb_manager::FriendlyUsbDevice;
-use crate::device_registry::{DeviceEntry, add_or_update_device, remove_device};
+use crate::device_registry::{DeviceEntry, add_or_update_device, add_or_update_device_with_queue, remove_device};
+use crate::device_queue::{DeviceQueueFactory};
 use crate::index_db::IndexDb;
 use crate::device_update::{evaluate_device_status, DeviceStatus};
 use crate::blocking_actions::{BlockingActionsState, BlockingAction};
@@ -202,9 +203,20 @@ impl DeviceController {
                                     Ok(Ok(Ok(features))) => {
                                         log::info!("Successfully fetched features for device {}", device_id_clone);
                                         
-                                        // Update registry
-                                        if let Err(e) = add_or_update_device(device_for_update, Some(features.clone())) {
-                                            log::error!("Failed to update device registry: {}", e);
+                                        // Create device queue worker
+                                        log::info!("🚀 Creating device queue worker for {}", device_id_clone);
+                                        let queue_handle = DeviceQueueFactory::spawn_worker(
+                                            device_id_clone.clone(),
+                                            device_for_update.clone()
+                                        );
+                                        
+                                        // Update registry with queue handle
+                                        if let Err(e) = add_or_update_device_with_queue(
+                                            device_for_update, 
+                                            Some(features.clone()),
+                                            queue_handle
+                                        ) {
+                                            log::error!("Failed to update device registry with queue: {}", e);
                                         }
                                         
                                         // Update database with features

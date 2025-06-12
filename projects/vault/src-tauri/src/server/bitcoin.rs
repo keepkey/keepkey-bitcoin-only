@@ -97,14 +97,14 @@ pub struct FrontloadResponse {
 // === Server State ===
 
 pub struct BitcoinState {
-    pub device_manager: Arc<tokio::sync::Mutex<DeviceManager>>,
+    pub device_manager: Arc<std::sync::Mutex<DeviceManager>>,
     pub indexdb: Arc<tokio::sync::Mutex<rusqlite::Connection>>,
     pub default_paths: Vec<DefaultPath>,
 }
 
 impl BitcoinState {
     pub async fn new(
-        device_manager: Arc<tokio::sync::Mutex<DeviceManager>>,
+        device_manager: Arc<std::sync::Mutex<DeviceManager>>,
         indexdb: Arc<tokio::sync::Mutex<rusqlite::Connection>>,
     ) -> Result<Self> {
         let default_paths = load_default_paths().await?;
@@ -222,11 +222,24 @@ pub async fn pubkey(
 )]
 pub async fn frontload(State(state): State<Arc<super::AppState>>) -> Result<Json<FrontloadResponse>, axum::http::StatusCode> {
     let bitcoin_state = &state.bitcoin_state;
-    let device_manager = bitcoin_state.device_manager.lock().await;
-    let devices = device_manager.get_connected_devices();
+    
+    // Use the same device data source as /api/devices (the global registry)
+    let registry_entries = match crate::device_registry::get_all_device_entries() {
+        Ok(entries) => entries,
+        Err(e) => {
+            error!("Failed to get devices from registry: {}", e);
+            return Ok(Json(FrontloadResponse {
+                success: false,
+                addresses_loaded: 0,
+                networks: vec![],
+                message: "Failed to access device registry".to_string(),
+            }));
+        }
+    };
+    
     // Check for any KeepKey device (normal mode 0x0001 or bootloader 0x0002)
-    let keepkey_devices: Vec<_> = devices.into_iter()
-        .filter(|d| d.is_keepkey || (d.vid == 0x2B24 && (d.pid == 0x0001 || d.pid == 0x0002)))
+    let keepkey_devices: Vec<_> = registry_entries.into_iter()
+        .filter(|entry| entry.device.is_keepkey || (entry.device.vid == 0x2B24 && (entry.device.pid == 0x0001 || entry.device.pid == 0x0002)))
         .collect();
     
     if keepkey_devices.is_empty() {
@@ -239,7 +252,7 @@ pub async fn frontload(State(state): State<Arc<super::AppState>>) -> Result<Json
     }
     
     // Check if device is in bootloader mode (can't get addresses from bootloader)
-    let in_bootloader = keepkey_devices.iter().any(|d| d.pid == 0x0002);
+    let in_bootloader = keepkey_devices.iter().any(|entry| entry.device.pid == 0x0002);
     if in_bootloader {
         return Ok(Json(FrontloadResponse {
             success: false,
@@ -248,8 +261,6 @@ pub async fn frontload(State(state): State<Arc<super::AppState>>) -> Result<Json
             message: "KeepKey is in bootloader mode - please install firmware first".to_string(),
         }));
     }
-    
-    drop(device_manager); // Release lock before async operations
     
     // Frontload all paths from default-paths.json
     match frontload_all_paths(bitcoin_state).await {

@@ -24,6 +24,7 @@ pub mod error;
 pub mod utils;        // REST + MCP server layer
 pub mod device_registry;  // Multi-device registry
 pub mod device_controller;  // Background device management
+pub mod device_queue;      // Device request queue for serialized device communication
 pub mod device_update; // Device update workflow and version checking
 pub mod vault;         // SQLCipher encrypted vault
 pub mod index_db;      // SQLite index database for metadata and onboarding
@@ -42,7 +43,7 @@ use tauri::{AppHandle, Manager, Emitter};
 struct ApplicationState {
     status: String,
     connected: bool,
-    devices: Vec<device_registry::DeviceEntry>,
+    devices: Vec<device_registry::DeviceEntrySerializable>,
     blocking_actions_count: usize, // Count of blocking actions across all devices
 }
 
@@ -155,7 +156,7 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                             let payload = ApplicationState {
                                 status: "Registering device...".to_string(),
                                 connected: !entries.is_empty(),
-                                devices: entries,
+                                devices: entries.iter().map(|e| e.into()).collect(),
                                 blocking_actions_count: 0,
                             };
                             let _ = emitter_clone.emit("application:state", &payload);
@@ -165,77 +166,75 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                         tokio::spawn(async move {
                             log::info!("Device {} is ready for frontload", device_id_clone);
                             
-                            // Wrap entire frontload in panic protection to prevent app crash
-                            let frontload_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                tokio::runtime::Handle::current().block_on(async {
-                                    // Find the device entry in the registry
-                                    let device_entry = match device_registry::get_all_device_entries() {
-                                        Ok(entries) => entries.into_iter()
-                                            .find(|e| e.device.unique_id == device_id_clone),
+                            // Wrap frontload in proper async error handling instead of panic catch
+                            let frontload_result = async {
+                                // Find the device entry in the registry
+                                let device_entry = match device_registry::get_all_device_entries() {
+                                    Ok(entries) => entries.into_iter()
+                                        .find(|e| e.device.unique_id == device_id_clone),
+                                    Err(e) => {
+                                        log::error!("Failed to get device entries from registry: {}", e);
+                                        return Err(anyhow::anyhow!("Registry access failed: {}", e));
+                                    }
+                                };
+                                
+                                if let Some(device_entry) = device_entry {
+                                    log::info!("Found device entry for frontload: {}", device_id_clone);
+
+                                    // Get cache from device manager if available
+                                    let cache = match cache::DeviceCache::open() {
+                                        Ok(cache) => cache,
                                         Err(e) => {
-                                            log::error!("Failed to get device entries from registry: {}", e);
-                                            return Err(anyhow::anyhow!("Registry access failed: {}", e));
+                                            log::error!("Failed to open device cache for frontload: {}", e);
+                                            return Err(anyhow::anyhow!("Cache open failed: {}", e));
+                                        }
+                                    };
+
+                                    // Validate device cache before frontload
+                                    let cache_valid = crate::server::context::validate_device_cache(&device_id_clone).await;
+                                    if cache_valid {
+                                        log::info!("✅ Device cache validated for {}", device_id_clone);
+                                    } else {
+                                        log::warn!("⚠️  Device cache validation failed for {}", device_id_clone);
+                                    }
+
+                                    // Create frontloader using the new factory pattern with device info
+                                    // This ensures proper transport creation with USB/HID fallback
+                                    let frontloader = cache::DeviceFrontloader::new_with_device(
+                                        cache,
+                                        device_entry.device.clone()
+                                    );
+                                                        
+                                    // Track progress for UI updates
+                                    let _last_progress = 0;
+                                    let _total_steps = 50; // Approximate number of addresses to load
+                                                        
+                                    // Create progress callback that emits to frontend
+                                    let emitter_for_progress = emitter_clone.clone();
+                                    let progress_callback = move |msg: String| {
+                                        log::info!("Frontload progress: {}", msg);
+                                        if let Ok(entries) = device_registry::get_all_device_entries() {
+                                            let payload = ApplicationState {
+                                                status: msg,
+                                                connected: !entries.is_empty(),
+                                                devices: entries.iter().map(|e| e.into()).collect(),
+                                                blocking_actions_count: 0,
+                                            };
+                                            let _ = emitter_for_progress.emit("application:state", &payload);
                                         }
                                     };
                                     
-                                    if let Some(device_entry) = device_entry {
-                                        log::info!("Found device entry for frontload: {}", device_id_clone);
-
-                                        // Get cache from device manager if available
-                                        let cache = match cache::DeviceCache::open() {
-                                            Ok(cache) => cache,
-                                            Err(e) => {
-                                                log::error!("Failed to open device cache for frontload: {}", e);
-                                                return Err(anyhow::anyhow!("Cache open failed: {}", e));
-                                            }
-                                        };
-
-                                        // Validate device cache before frontload
-                                        let cache_valid = crate::server::context::validate_device_cache(&device_id_clone).await;
-                                        if cache_valid {
-                                            log::info!("✅ Device cache validated for {}", device_id_clone);
-                                        } else {
-                                            log::warn!("⚠️  Device cache validation failed for {}", device_id_clone);
-                                        }
-
-                                        // Create frontloader using the new factory pattern with device info
-                                        // This ensures proper transport creation with USB/HID fallback
-                                        let frontloader = cache::DeviceFrontloader::new_with_device(
-                                            cache,
-                                            device_entry.device.clone()
-                                        );
-                                                    
-                                        // Track progress for UI updates
-                                        let _last_progress = 0;
-                                        let _total_steps = 50; // Approximate number of addresses to load
-                                                    
-                                        // Create progress callback that emits to frontend
-                                        let emitter_for_progress = emitter_clone.clone();
-                                        let progress_callback = move |msg: String| {
-                                            log::info!("Frontload progress: {}", msg);
-                                            if let Ok(entries) = device_registry::get_all_device_entries() {
-                                                let payload = ApplicationState {
-                                                    status: msg,
-                                                    connected: !entries.is_empty(),
-                                                    devices: entries,
-                                                    blocking_actions_count: 0,
-                                                };
-                                                let _ = emitter_for_progress.emit("application:state", &payload);
-                                            }
-                                        };
-                                        
-                                        // Start frontload with progress tracking
-                                        frontloader.frontload_all_with_progress(Some(progress_callback)).await
-                                    } else {
-                                        log::error!("Device {} not found in registry for frontload", device_id_clone);
-                                        Err(anyhow::anyhow!("Device not found in registry"))
-                                    }
-                                })
-                            }));
+                                    // Start frontload with progress tracking
+                                    frontloader.frontload_all_with_progress(Some(progress_callback)).await
+                                } else {
+                                    log::error!("Device {} not found in registry for frontload", device_id_clone);
+                                    Err(anyhow::anyhow!("Device not found in registry"))
+                                }
+                            }.await;
                             
-                            // Handle the result of frontload (whether successful, failed, or panicked)
+                            // Handle the result of frontload (successful or failed)
                             match frontload_result {
-                                Ok(Ok(_)) => {
+                                Ok(_) => {
                                     log::info!("Frontload completed successfully for device {}", device_id_clone);
                                     
                                     // Automatically set device context for the successfully frontloaded device
@@ -264,13 +263,13 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                         let payload = ApplicationState {
                                             status: "Device ready".to_string(),
                                             connected: !entries.is_empty(),
-                                            devices: entries,
+                                            devices: entries.iter().map(|e| e.into()).collect(),
                                             blocking_actions_count: 0,
                                         };
                                         let _ = emitter_clone.emit("application:state", &payload);
                                     }
                                 }
-                                Ok(Err(e)) => {
+                                Err(e) => {
                                     log::error!("Frontload failed for device {}: {}", device_id_clone, e);
                                     
                                     // Check if this is a transport/device access error that requires troubleshooting
@@ -304,7 +303,7 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                             let payload = ApplicationState {
                                                 status: "Device needs troubleshooting - click for help".to_string(),
                                                 connected: !entries.is_empty(),
-                                                devices: entries,
+                                                devices: entries.iter().map(|e| e.into()).collect(),
                                                 blocking_actions_count: 0,
                                             };
                                             let _ = emitter_clone.emit("application:state", &payload);
@@ -315,38 +314,11 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                             let payload = ApplicationState {
                                                 status: format!("Device registration failed: {}", e),
                                                 connected: !entries.is_empty(),
-                                                devices: entries,
+                                                devices: entries.iter().map(|e| e.into()).collect(),
                                                 blocking_actions_count: 0,
                                             };
                                             let _ = emitter_clone.emit("application:state", &payload);
                                         }
-                                    }
-                                }
-                                Err(panic_info) => {
-                                    log::error!("Frontload process panicked for device {}: {:?}", device_id_clone, panic_info);
-                                    log::error!("This is a critical bug that needs investigation");
-                                    
-                                    // Even on panic, don't crash the app - just show error state
-                                    let troubleshoot_payload = serde_json::json!({
-                                        "device_id": device_id_clone,
-                                        "error_type": "internal_error", 
-                                        "error_message": "Internal error during device setup",
-                                        "suggested_actions": [
-                                            "Restart the application",
-                                            "Check device connection",
-                                            "Contact support if issue persists"
-                                        ]
-                                    });
-                                    let _ = emitter_clone.emit("device:troubleshooter_needed", &troubleshoot_payload);
-                                    
-                                    if let Ok(entries) = device_registry::get_all_device_entries() {
-                                        let payload = ApplicationState {
-                                            status: "Device setup failed - restart may help".to_string(),
-                                            connected: !entries.is_empty(),
-                                            devices: entries,
-                                            blocking_actions_count: 0,
-                                        };
-                                        let _ = emitter_clone.emit("application:state", &payload);
                                     }
                                 }
                             }
@@ -478,7 +450,7 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                 let payload = ApplicationState {
                     status,
                     connected: !entries.is_empty(),
-                    devices: entries,
+                    devices: entries.iter().map(|e| e.into()).collect(),
                     blocking_actions_count: 0, // Will need to get actual count in the future
                 };
                 let _ = emitter.emit("application:state", &payload);
@@ -522,7 +494,7 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
             let payload = ApplicationState {
                 status,
                 connected: !entries.is_empty(),
-                devices: entries,
+                devices: entries.iter().map(|e| e.into()).collect(),
                 blocking_actions_count: 0, // Default count until we implement tracking
             };
             let _ = poll_handle.emit("application:state", &payload);
@@ -621,7 +593,7 @@ async fn restart_backend_startup(app_handle: AppHandle) -> Result<(), String> {
             let payload = ApplicationState {
                 status,
                 connected: !entries.is_empty(),
-                devices: entries,
+                devices: entries.iter().map(|e| e.into()).collect(),
                 blocking_actions_count: 0,
             };
             let _ = scan_handle.emit("application:state", &payload);
@@ -741,14 +713,10 @@ pub fn run() {
 
             // 3️⃣  Start REST / MCP server in background
             let server_handle = app_handle.clone();
+            let server_dm = dm.clone(); // Use the same device manager instance instead of creating a new one
             tauri::async_runtime::spawn(async move {
                 log::info!("{TAG} Starting server...");
                 
-                // For now we spin up **a fresh** DeviceManager for the server
-                let server_dm = Arc::new(tokio::sync::Mutex::new(
-                    usb_manager::DeviceManager::new(server_handle.clone())
-                ));
-
                 if let Err(e) = server::start_server(server_dm).await {
                     log::error!("{TAG} Server error: {e}");
                     let err_payload = ApplicationState {

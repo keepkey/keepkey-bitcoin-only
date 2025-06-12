@@ -67,18 +67,20 @@ impl<T: UsbContext> UsbTransport<T> {
         let mut endpoint_descriptors = interface_descriptor.endpoint_descriptors();
 
         let in_endpoint_descriptor = endpoint_descriptors.next().ok_or(rusb::Error::NotFound)?;
-        assert_eq!(in_endpoint_descriptor.direction(), rusb::Direction::In);
-        assert_eq!(
-            in_endpoint_descriptor.transfer_type(),
-            rusb::TransferType::Interrupt
-        );
+        if in_endpoint_descriptor.direction() != rusb::Direction::In {
+            return Err(rusb::Error::InvalidParam);
+        }
+        if in_endpoint_descriptor.transfer_type() != rusb::TransferType::Interrupt {
+            return Err(rusb::Error::InvalidParam);
+        }
 
         let out_endpoint_descriptor = endpoint_descriptors.next().ok_or(rusb::Error::NotFound)?;
-        assert_eq!(out_endpoint_descriptor.direction(), rusb::Direction::Out);
-        assert_eq!(
-            out_endpoint_descriptor.transfer_type(),
-            rusb::TransferType::Interrupt
-        );
+        if out_endpoint_descriptor.direction() != rusb::Direction::Out {
+            return Err(rusb::Error::InvalidParam);
+        }
+        if out_endpoint_descriptor.transfer_type() != rusb::TransferType::Interrupt {
+            return Err(rusb::Error::InvalidParam);
+        }
 
         drop(locked_handle);
 
@@ -98,12 +100,9 @@ impl<T: UsbContext> UsbTransport<T> {
             &mut packet,
             timeout,
         )?;
-        assert_eq!(
-            len,
-            self.in_packet_size,
-            "packet: {:?}",
-            hex::encode(packet)
-        );
+        if len != self.in_packet_size {
+            return Err(rusb::Error::Other);
+        }
         if !(len >= 1 && packet[0] == b'?') {
             return Err(rusb::Error::Other);
         }
@@ -141,14 +140,18 @@ impl<T: UsbContext> Transport for UsbTransport<T> {
             packet.push(b'?');
             packet.extend_from_slice(chunk);
             packet.extend(repeat(0).take(self.out_packet_size - packet.len()));
-            debug_assert_eq!(packet.len(), self.out_packet_size);
+            if packet.len() != self.out_packet_size {
+                return Err(rusb::Error::Other);
+            }
 
             let written_len = self.handle.lock().map_err(|_| rusb::Error::Other)?.write_interrupt(
                 self.out_endpoint_address,
                 &packet,
                 since!(started, timeout)?,
             )?;
-            assert_eq!(written_len, packet.len());
+            if written_len != packet.len() {
+                return Err(rusb::Error::Other);
+            }
         }
         Ok(msg.len())
     }

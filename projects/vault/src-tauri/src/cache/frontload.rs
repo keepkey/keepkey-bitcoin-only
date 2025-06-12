@@ -74,64 +74,141 @@ impl DeviceFrontloader {
         info!("   Serial number: {:?}", device_info.serial_number);
         info!("   Found {} USB devices to search", devices.len());
         
+        // Log all available devices for debugging
+        for (i, d) in devices.iter().enumerate() {
+            if let Ok(desc) = d.device_descriptor() {
+                info!("   Device [{}]: VID:{:04x} PID:{:04x} Bus:{} Addr:{}", 
+                      i, desc.vendor_id(), desc.product_id(), d.bus_number(), d.address());
+                      
+                // Try to read serial number for debugging
+                if let Ok(handle) = d.open() {
+                    let timeout = std::time::Duration::from_millis(100);
+                    if let Ok(langs) = handle.read_languages(timeout) {
+                        if let Some(lang) = langs.first() {
+                            if let Ok(device_serial) = handle.read_serial_number_string(*lang, &desc, timeout) {
+                                info!("      Serial: {}", device_serial);
+                            } else {
+                                info!("      Serial: <failed to read>");
+                            }
+                        } else {
+                            info!("      Serial: <no languages>");
+                        }
+                    } else {
+                        info!("      Serial: <failed to read languages>");
+                    }
+                } else {
+                    info!("      Serial: <failed to open device>");
+                }
+            }
+        }
+        
         // First, try to match by unique_id directly as serial number
+        info!("🔍 Attempting to match by serial number...");
         let physical_device = devices.iter().find(|d| {
+            info!("   Checking device: Bus:{} Addr:{}", d.bus_number(), d.address());
             if let Ok(handle) = d.open() {
                 let timeout = std::time::Duration::from_millis(100);
                 if let Ok(langs) = handle.read_languages(timeout) {
                     if let Some(lang) = langs.first() {
                         if let Ok(desc) = d.device_descriptor() {
                             if let Ok(device_serial) = handle.read_serial_number_string(*lang, &desc, timeout) {
-                                let matches = device_serial == device_info.unique_id || 
-                                             device_info.serial_number.as_ref().map_or(false, |s| device_serial == *s);
+                                let matches_unique_id = device_serial == device_info.unique_id;
+                                let matches_serial = device_info.serial_number.as_ref().map_or(false, |s| device_serial == *s);
+                                let matches = matches_unique_id || matches_serial;
+                                info!("      Device serial: {}", device_serial);
+                                info!("      Target unique_id: {}", device_info.unique_id);
+                                info!("      Target serial: {:?}", device_info.serial_number);
+                                info!("      Matches unique_id: {}", matches_unique_id);
+                                info!("      Matches serial: {}", matches_serial);
+                                info!("      Overall match: {}", matches);
                                 if matches {
                                     info!("✅ Found device by serial number match: {}", device_serial);
                                 }
                                 return matches;
+                            } else {
+                                info!("      Failed to read serial number string");
                             }
+                        } else {
+                            info!("      Failed to get device descriptor");
                         }
+                    } else {
+                        info!("      No languages available");
                     }
+                } else {
+                    info!("      Failed to read languages");
                 }
+            } else {
+                info!("      Failed to open device");
             }
             false
         }).cloned()
         .or_else(|| {
+            info!("🔍 Serial number match failed, trying bus/address parsing...");
             // Try to parse bus and address from unique_id
             let parts: Vec<&str> = device_info.unique_id.split('_').collect();
+            info!("   Unique_id parts: {:?}", parts);
             if parts.len() >= 2 {
                 let bus_str = parts[0].strip_prefix("bus").unwrap_or("");
                 let addr_str = parts[1].strip_prefix("addr").unwrap_or("");
+                info!("   Bus string: '{}', Addr string: '{}'", bus_str, addr_str);
                 
                 if let (Ok(bus), Ok(addr)) = (bus_str.parse::<u8>(), addr_str.parse::<u8>()) {
                     info!("🔍 Looking for device with bus {} and address {}", bus, addr);
-                    devices.iter().find(|d| d.bus_number() == bus && d.address() == addr).cloned()
+                    let found = devices.iter().find(|d| {
+                        let device_bus = d.bus_number();
+                        let device_addr = d.address();
+                        let matches = device_bus == bus && device_addr == addr;
+                        info!("   Checking device: Bus:{} Addr:{} (matches: {})", device_bus, device_addr, matches);
+                        matches
+                    }).cloned();
+                    if found.is_some() {
+                        info!("✅ Found device by bus/address match");
+                    } else {
+                        info!("❌ No device found with bus {} and address {}", bus, addr);
+                    }
+                    found
                 } else {
+                    info!("❌ Failed to parse bus ({}) or address ({})", bus_str, addr_str);
                     None
                 }
             } else {
+                info!("❌ Unique_id doesn't contain bus/address format");
                 None
             }
         })
         .or_else(|| {
+            info!("🔍 Bus/address match failed, trying KeepKey VID fallback...");
             // Last resort: If this is a KeepKey device, just use the first available KeepKey
             if device_info.is_keepkey {
                 warn!("⚠️  Could not match device by ID, using first available KeepKey device");
-                devices.iter().find(|d| {
+                let found = devices.iter().find(|d| {
                     if let Ok(desc) = d.device_descriptor() {
-                        desc.vendor_id() == 0x2B24 // KEEPKEY_VID
+                        let is_keepkey = desc.vendor_id() == 0x2B24; // KEEPKEY_VID
+                        info!("   Checking device: VID:{:04x} (is_keepkey: {})", desc.vendor_id(), is_keepkey);
+                        is_keepkey
                     } else {
+                        info!("   Failed to get descriptor for device");
                         false
                     }
-                }).cloned()
+                }).cloned();
+                if found.is_some() {
+                    info!("✅ Found KeepKey device by VID");
+                } else {
+                    info!("❌ No KeepKey devices found (VID 0x2B24)");
+                }
+                found
             } else {
+                info!("❌ Device is not marked as KeepKey, skipping VID fallback");
                 None
             }
         });
 
         match physical_device {
             Some(device) => {
+                info!("🔧 Attempting to create transport for found device...");
                 // Wrap USB transport creation in panic catch to prevent app crash
                 let usb_result = std::panic::catch_unwind(|| {
+                    info!("   Trying USB transport creation...");
                     crate::transport::UsbTransport::new(&device, 0)
                 });
                 
@@ -145,8 +222,10 @@ impl DeviceFrontloader {
                         
                         // Wrap HID transport creation in panic catch to prevent app crash
                         let hid_result = std::panic::catch_unwind(|| {
+                            info!("   Trying HID transport creation...");
                             crate::transport::HidTransport::new_for_device(Some(&device_info.unique_id))
                                 .or_else(|_| {
+                                    info!("   HID with unique_id failed, trying with serial...");
                                     if let Some(serial) = &device_info.serial_number {
                                         crate::transport::HidTransport::new_for_device(Some(serial))
                                     } else {
@@ -156,6 +235,7 @@ impl DeviceFrontloader {
                                 .or_else(|_| {
                                     // Last resort: try without serial number (will use first available)
                                     warn!("⚠️  Trying HID without serial number filter");
+                                    info!("   Trying HID without serial filter...");
                                     crate::transport::HidTransport::new_for_device(None)
                                 })
                         });
@@ -175,8 +255,7 @@ impl DeviceFrontloader {
                                 Err(anyhow::anyhow!("Transport creation failed: USB ({}), HID ({})", usb_err, hid_err))
                             }
                             Err(panic_info) => {
-                                error!("❌ HID transport creation panicked for device {}", device_info.unique_id);
-                                error!("   Panic info: {:?}", panic_info);
+                                error!("❌ HID transport creation panicked for device {}: {:?}", device_info.unique_id, panic_info);
                                 
                                 // Return error without crashing app  
                                 warn!("⚠️  HID transport creation panicked, device not accessible");
@@ -185,12 +264,12 @@ impl DeviceFrontloader {
                         }
                     }
                     Err(panic_info) => {
-                        error!("❌ USB transport creation panicked for device {}", device_info.unique_id);
-                        error!("   Panic info: {:?}", panic_info);
+                        error!("❌ USB transport creation panicked for device {}: {:?}", device_info.unique_id, panic_info);
                         
                         // Try HID as fallback even after USB panic
                         warn!("⚠️  USB panicked, trying HID fallback");
                         let hid_result = std::panic::catch_unwind(|| {
+                            info!("   Trying HID after USB panic...");
                             crate::transport::HidTransport::new_for_device(Some(&device_info.unique_id))
                                 .or_else(|_| crate::transport::HidTransport::new_for_device(None))
                         });
@@ -716,9 +795,28 @@ impl DeviceFrontloader {
         }
     }
     
-    /// Get device features from transport or device registry with retry logic
-    #[instrument(level = "debug", skip(self))]
+    /// Get device features and ID
     async fn frontload_features(&self) -> Result<(messages::Features, String)> {
+        // Try to use device queue first (preferred method)
+        if let Some(ref device_info) = self.device_info {
+            if let Ok(Some(queue_handle)) = crate::device_registry::get_device_queue_handle(&device_info.unique_id) {
+                info!("✅ Using device queue to get features for {}", device_info.unique_id);
+                
+                match queue_handle.get_features().await {
+                    Ok(features) => {
+                        let device_id = features.device_id.clone().unwrap_or_else(|| "unknown".to_string());
+                        info!("✅ Got device features via queue - ID: {}, Label: {}", 
+                            device_id, 
+                            features.label.as_deref().unwrap_or("Unnamed"));
+                        return Ok((features, device_id));
+                    }
+                    Err(e) => {
+                        warn!("⚠️  Failed to get features via queue: {}, trying fallback", e);
+                    }
+                }
+            }
+        }
+        
         // First try to get features using the transport factory
         match self.create_device_transport() {
             Ok(mut transport) => {
@@ -817,7 +915,45 @@ impl DeviceFrontloader {
         device_id: &str,
         path: &[u32],
     ) -> Result<()> {
-        // Step 1: Get address from device (synchronous, no async boundaries)
+        // Try to use device queue first (preferred method)
+        if let Ok(Some(queue_handle)) = crate::device_registry::get_device_queue_handle(device_id) {
+            debug!("✅ Using device queue to get Ethereum address at {:?}", path);
+            
+            // Create EthereumGetAddress message for proper hex format
+            let ethereum_get_address_msg = messages::EthereumGetAddress {
+                address_n: path.to_vec(),
+                show_display: Some(false),
+            };
+            
+            // Send message via queue
+            match queue_handle.send_raw(ethereum_get_address_msg.into(), false).await {
+                Ok(Message::EthereumAddress(addr_msg)) => {
+                    if !addr_msg.address.is_empty() {
+                        // Convert bytes to hex string with 0x prefix
+                        let address = format!("0x{}", hex::encode(&addr_msg.address));
+                        
+                        self.cache.save_address(
+                            device_id,
+                            "Ethereum",
+                            "ethereum",
+                            path,
+                            &address,
+                            None,
+                        ).await?;
+                        debug!("Cached Ethereum address via queue: {}", address);
+                        return Ok(());
+                    } else {
+                        return Err(anyhow::anyhow!("Empty Ethereum address received"));
+                    }
+                }
+                Ok(_) => return Err(anyhow::anyhow!("Unexpected response to EthereumGetAddress")),
+                Err(e) => {
+                    warn!("Failed to get Ethereum address via queue: {}, falling back to transport", e);
+                }
+            }
+        }
+        
+        // Fallback: Get address from device (synchronous, no async boundaries)
         let address = {
             let mut transport = match self.create_device_transport() {
                 Ok(transport) => transport,
@@ -847,7 +983,7 @@ impl DeviceFrontloader {
                 }
                 _ => Err(anyhow::anyhow!("Unexpected response to EthereumGetAddress")),
             }
-        }?; // Transport is dropped here, before async calls
+        }?;
         
         // Step 2: Cache the address (async call after transport is dropped)
         self.cache.save_address(
@@ -858,8 +994,7 @@ impl DeviceFrontloader {
             &address,
             None,
         ).await?;
-        debug!("Cached Ethereum address: {}", address);
-        
+        debug!("Cached Ethereum address via fallback: {}", address);
         Ok(())
     }
     
@@ -872,7 +1007,50 @@ impl DeviceFrontloader {
         script_type: &str,
         path: &[u32],
     ) -> Result<()> {
-        // Step 1: Get address from device (synchronous, no async boundaries)
+        // Try to use device queue first (preferred method)
+        if let Ok(Some(queue_handle)) = crate::device_registry::get_device_queue_handle(device_id) {
+            debug!("✅ Using device queue to get Bitcoin address for {} {} at {:?}", coin_name, script_type, path);
+            
+            // Create GetAddress message
+            let mut msg = messages::GetAddress::default();
+            msg.address_n = path.to_vec();
+            msg.coin_name = Some(coin_name.to_string());
+            msg.show_display = Some(false);
+            
+            // Set script type
+            match script_type {
+                "p2pkh" => msg.script_type = Some(messages::InputScriptType::Spendaddress as i32),
+                "p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendwitness as i32),
+                "p2sh-p2wpkh" => msg.script_type = Some(messages::InputScriptType::Spendp2shwitness as i32),
+                _ => return Err(anyhow::anyhow!("Unknown script type: {}", script_type)),
+            }
+            
+            // Send message via queue
+            match queue_handle.send_raw(msg.into(), false).await {
+                Ok(Message::Address(addr_msg)) => {
+                    if !addr_msg.address.is_empty() {
+                        self.cache.save_address(
+                            device_id,
+                            coin_name,
+                            script_type,
+                            path,
+                            &addr_msg.address,
+                            None, // We're not storing pubkeys for now
+                        ).await?;
+                        debug!("Cached {} {} address via queue: {}", coin_name, script_type, addr_msg.address);
+                        return Ok(());
+                    } else {
+                        return Err(anyhow::anyhow!("Empty Bitcoin address received"));
+                    }
+                }
+                Ok(_) => return Err(anyhow::anyhow!("Unexpected response to GetAddress")),
+                Err(e) => {
+                    warn!("Failed to get Bitcoin address via queue: {}, falling back to transport", e);
+                }
+            }
+        }
+        
+        // Fallback: Step 1: Get address from device (synchronous, no async boundaries)
         let address = {
             let mut transport = match self.create_device_transport() {
                 Ok(transport) => transport,
@@ -909,7 +1087,7 @@ impl DeviceFrontloader {
                 }
                 _ => Err(anyhow::anyhow!("Unexpected response to GetAddress")),
             }
-        }?; // Transport is dropped here, before async calls
+        }?;
         
         // Step 2: Cache the address (async call after transport is dropped)
         self.cache.save_address(
@@ -920,8 +1098,7 @@ impl DeviceFrontloader {
             &address,
             None, // We're not storing pubkeys for now
         ).await?;
-        debug!("Cached {} {} address: {}", coin_name, script_type, address);
-        
+        debug!("Cached {} {} address via fallback: {}", coin_name, script_type, address);
         Ok(())
     }
     
@@ -990,7 +1167,46 @@ impl DeviceFrontloader {
         device_id: &str,
         path: &[u32],
     ) -> Result<()> {
-        // Step 1: Get address from device (synchronous, no async boundaries)
+        // Try to use device queue first (preferred method)
+        if let Ok(Some(queue_handle)) = crate::device_registry::get_device_queue_handle(device_id) {
+            debug!("✅ Using device queue to get Ripple address at {:?}", path);
+            
+            // Create RippleGetAddress message
+            let ripple_get_address_msg = messages::RippleGetAddress {
+                address_n: path.to_vec(),
+                show_display: Some(false),
+            };
+            
+            // Send message via queue
+            match queue_handle.send_raw(ripple_get_address_msg.into(), false).await {
+                Ok(Message::RippleAddress(addr_msg)) => {
+                    if let Some(address) = &addr_msg.address {
+                        if !address.is_empty() {
+                            self.cache.save_address(
+                                device_id,
+                                "Ripple",
+                                "ripple",
+                                path,
+                                address,
+                                None,
+                            ).await?;
+                            debug!("Cached Ripple address via queue: {}", address);
+                            return Ok(());
+                        } else {
+                            return Err(anyhow::anyhow!("Empty Ripple address received"));
+                        }
+                    } else {
+                        return Err(anyhow::anyhow!("No address in Ripple response"));
+                    }
+                }
+                Ok(_) => return Err(anyhow::anyhow!("Unexpected response to RippleGetAddress")),
+                Err(e) => {
+                    warn!("Failed to get Ripple address via queue: {}, falling back to transport", e);
+                }
+            }
+        }
+        
+        // Fallback: Step 1: Get address from device (synchronous, no async boundaries)
         let address = {
             let mut transport = match self.create_device_transport() {
                 Ok(transport) => transport,
@@ -1023,7 +1239,7 @@ impl DeviceFrontloader {
                 }
                 _ => Err(anyhow::anyhow!("Unexpected response to RippleGetAddress")),
             }
-        }?; // Transport is dropped here, before async calls
+        }?;
         
         // Step 2: Cache the address (async call after transport is dropped)
         self.cache.save_address(
@@ -1034,8 +1250,7 @@ impl DeviceFrontloader {
             &address,
             None,
         ).await?;
-        debug!("Cached Ripple address: {}", address);
-        
+        debug!("Cached Ripple address via fallback: {}", address);
         Ok(())
     }
     

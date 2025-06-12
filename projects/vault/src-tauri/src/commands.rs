@@ -1424,36 +1424,69 @@ async fn create_device_transport(target_device: &FriendlyUsbDevice) -> Result<Bo
 async fn send_message_to_device(device_id: &str, message: crate::messages::Message) -> Result<crate::messages::Message, String> {
     log::info!("Sending message to device: {} (type: {:?})", device_id, message.message_type());
     
-    // Get device entry
-    let entries = device_registry::get_all_device_entries()
-        .map_err(|e| format!("Failed to get device entries: {}", e))?;
-    
-    let target_device = entries.iter()
-        .find(|entry| entry.device.unique_id == device_id)
-        .ok_or_else(|| format!("Device not found: {}", device_id))?;
-    
-    // Create transport
-    let mut transport = create_device_transport(&target_device.device).await?;
-    
-    // Check if device is in special flow modes
+    // Check if device is in special flow modes that require raw transport access
     let in_pin_flow = is_device_in_pin_flow(device_id);
     let in_recovery_flow = is_device_in_recovery_flow(device_id);
     
-    if in_recovery_flow {
-        log::info!("Device {} is in recovery flow, using recovery flow handler", device_id);
-        // Use recovery flow handler that handles ButtonRequest but passes through CharacterRequest
-        let mut handler = transport.with_recovery_flow_handler();
-        handler.handle(message).map_err(|e| format!("Failed to send message: {}", e))
-    } else if in_pin_flow {
-        log::info!("Device {} is in PIN flow, using PIN flow handler", device_id);
-        // Use PIN flow handler that handles ButtonRequest but passes through PinMatrixRequest
-        let mut handler = transport.with_pin_flow_handler();
-        handler.handle(message).map_err(|e| format!("Failed to send message: {}", e))
+    // For special flows or when queue is not available, use direct transport
+    if in_pin_flow || in_recovery_flow {
+        log::info!("Device {} is in special flow, using direct transport", device_id);
+        
+        // Get device entry
+        let entries = device_registry::get_all_device_entries()
+            .map_err(|e| format!("Failed to get device entries: {}", e))?;
+        
+        let target_device = entries.iter()
+            .find(|entry| entry.device.unique_id == device_id)
+            .ok_or_else(|| format!("Device not found: {}", device_id))?;
+        
+        // Create transport
+        let mut transport = create_device_transport(&target_device.device).await?;
+        
+        if in_recovery_flow {
+            log::info!("Device {} is in recovery flow, using recovery flow handler", device_id);
+            // Use recovery flow handler that handles ButtonRequest but passes through CharacterRequest
+            let mut handler = transport.with_recovery_flow_handler();
+            handler.handle(message).map_err(|e| format!("Failed to send message: {}", e))
+        } else if in_pin_flow {
+            log::info!("Device {} is in PIN flow, using PIN flow handler", device_id);
+            // Use PIN flow handler that handles ButtonRequest but passes through PinMatrixRequest
+            let mut handler = transport.with_pin_flow_handler();
+            handler.handle(message).map_err(|e| format!("Failed to send message: {}", e))
+        } else {
+            log::info!("Device {} is not in special flow, using standard handler for automatic responses", device_id);
+            // Use standard handler for automatic button/pin handling
+            let mut handler = transport.with_standard_handler();
+            handler.handle(message).map_err(|e| format!("Failed to send message: {}", e))
+        }
     } else {
-        log::info!("Device {} is not in special flow, using standard handler for automatic responses", device_id);
-        // Use standard handler for automatic button/pin handling
-        let mut handler = transport.with_standard_handler();
-        handler.handle(message).map_err(|e| format!("Failed to send message: {}", e))
+        // Try to use device queue first (preferred method)
+        log::info!("Device {} not in special flow, trying device queue", device_id);
+        
+        match send_message_via_queue(Some(device_id), message.clone()).await {
+            Ok(response) => {
+                log::info!("✅ Message sent successfully via device queue");
+                Ok(response)
+            }
+            Err(queue_err) => {
+                log::warn!("Queue communication failed: {}, falling back to direct transport", queue_err);
+                
+                // Fallback to direct transport creation (legacy behavior)
+                let entries = device_registry::get_all_device_entries()
+                    .map_err(|e| format!("Failed to get device entries: {}", e))?;
+                
+                let target_device = entries.iter()
+                    .find(|entry| entry.device.unique_id == device_id)
+                    .ok_or_else(|| format!("Device not found: {}", device_id))?;
+                
+                // Create transport
+                let mut transport = create_device_transport(&target_device.device).await?;
+                
+                log::info!("Using fallback transport with standard handler");
+                let mut handler = transport.with_standard_handler();
+                handler.handle(message).map_err(|e| format!("Failed to send message via fallback: {}", e))
+            }
+        }
     }
 }
 
@@ -2325,5 +2358,35 @@ pub async fn force_cleanup_seed_verification(device_id: String) -> Result<bool, 
     }
     
     Ok(cleanup_done)
+}
+
+/// Get device queue handle for a device, with fallback to direct transport creation
+async fn get_device_queue_or_fallback(device_id: &str) -> Result<crate::device_queue::DeviceQueueHandle, String> {
+    // First try to get the queue handle from registry
+    if let Ok(Some(queue_handle)) = crate::device_registry::get_device_queue_handle(device_id) {
+        return Ok(queue_handle);
+    }
+    
+    // If no queue handle, try to get first available device queue
+    if let Ok(Some(queue_handle)) = crate::device_registry::get_first_device_queue_handle() {
+        return Ok(queue_handle);
+    }
+    
+    Err("No device queue available - device may not be ready".to_string())
+}
+
+/// Send message using device queue (preferred method)
+async fn send_message_via_queue(device_id: Option<&str>, message: crate::messages::Message) -> Result<crate::messages::Message, String> {
+    let queue_handle = if let Some(device_id) = device_id {
+        get_device_queue_or_fallback(device_id).await?
+    } else {
+        // Use first available device
+        crate::device_registry::get_first_device_queue_handle()
+            .map_err(|e| format!("Failed to get device queue: {}", e))?
+            .ok_or("No device queues available")?
+    };
+    
+    queue_handle.send_raw(message, false).await
+        .map_err(|e| format!("Queue communication failed: {}", e))
 }
 

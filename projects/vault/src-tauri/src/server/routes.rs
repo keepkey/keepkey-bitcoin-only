@@ -157,7 +157,7 @@ fn get_package_version() -> Result<String, Box<dyn std::error::Error>> {
 pub async fn device_status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<DeviceStatus>, StatusCode> {
-    let _device_manager = state.server_state.device_manager.lock().await;
+    let _device_manager = state.server_state.device_manager.lock().unwrap();
     
     // Get device features using the features module
     let status = match crate::features::get_device_features_impl() {

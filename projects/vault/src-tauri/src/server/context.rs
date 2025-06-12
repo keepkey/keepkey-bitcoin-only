@@ -117,52 +117,87 @@ pub async fn get_cached_eth_address_for_device(device_id: &str) -> Option<String
 pub async fn get_real_eth_address_from_device(device_id: &str) -> Result<String> {
     info!("Getting real Ethereum address from device {}", device_id);
     
-    // Constants for KeepKey device IDs
-    const DEVICE_IDS: &[(u16, u16)] = &[(0x2b24, 0x0001), (0x2b24, 0x0002)];
-    
-    // Get the first available KeepKey device
-    // TODO: In the future, use device_id to select the specific device
-    let devices: Box<[rusb::Device<rusb::GlobalContext>]> = rusb::devices()
-        .map_err(|e| anyhow::anyhow!("Failed to enumerate USB devices: {}", e))?
-        .iter()
-        .filter(|device| {
-            device.device_descriptor()
-                .map(|desc| DEVICE_IDS.contains(&(desc.vendor_id(), desc.product_id())))
-                .unwrap_or(false)
-        })
-        .collect();
-    
-    let device = devices
-        .iter()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("No KeepKey device found"))?;
-    
-    // Create transport for the device
-    let (mut transport, _, _) = crate::transport::UsbTransport::new(device, 0)
-        .map_err(|e| anyhow::anyhow!("Failed to create transport: {}", e))?;
-    
-    // Create GetAddress message for Ethereum at m/44'/60'/0'/0/0
-    let mut msg = crate::messages::EthereumGetAddress::default();
-    msg.address_n = vec![44 + 0x80000000, 60 + 0x80000000, 0x80000000, 0, 0];
-    msg.show_display = Some(false); // Don't show on device display
-    
-    // Send message and get response
-    let response = transport.with_standard_handler().handle(msg.into())
-        .map_err(|e| anyhow::anyhow!("Failed to get Ethereum address from device: {}", e))?;
-    
-    match response {
-        crate::messages::Message::EthereumAddress(addr_msg) => {
-            if !addr_msg.address.is_empty() {
-                // Convert bytes to hex string with 0x prefix
-                let address = format!("0x{}", hex::encode(&addr_msg.address));
-                info!("✅ Got real Ethereum address from device {}: {}", device_id, address);
-                return Ok(address);
+    // Try to get device queue handle first (preferred method)
+    if let Ok(Some(queue_handle)) = crate::device_registry::get_device_queue_handle(device_id) {
+        info!("✅ Using device queue to get Ethereum address for {}", device_id);
+        
+        // Create GetAddress message for Ethereum at m/44'/60'/0'/0/0
+        let ethereum_path = vec![44 + 0x80000000, 60 + 0x80000000, 0x80000000, 0, 0];
+        let ethereum_get_address = crate::messages::EthereumGetAddress {
+            address_n: ethereum_path,
+            show_display: Some(false), // Don't show on device display
+        };
+        
+        // Send via device queue
+        match queue_handle.send_raw(ethereum_get_address.into(), false).await {
+            Ok(crate::messages::Message::EthereumAddress(addr_msg)) => {
+                if !addr_msg.address.is_empty() {
+                    // Convert bytes to hex string with 0x prefix
+                    let address = format!("0x{}", hex::encode(&addr_msg.address));
+                    info!("✅ Got real Ethereum address from device {} via queue: {}", device_id, address);
+                    return Ok(address);
+                }
+                Err(anyhow::anyhow!("Device returned empty Ethereum address"))
             }
-            Err(anyhow::anyhow!("Device returned empty Ethereum address"))
+            Ok(response) => {
+                error!("Unexpected response from device when getting Ethereum address: {:?}", response);
+                Err(anyhow::anyhow!("Unexpected response from device"))
+            }
+            Err(e) => {
+                warn!("Failed to get Ethereum address via queue: {}", e);
+                Err(anyhow::anyhow!("Queue communication failed: {}", e))
+            }
         }
-        _ => {
-            error!("Unexpected response from device when getting Ethereum address: {:?}", response);
-            Err(anyhow::anyhow!("Unexpected response from device"))
+    } else {
+        warn!("No device queue available for {}, using fallback transport", device_id);
+        
+        // Fallback to direct transport (legacy behavior)
+        // Constants for KeepKey device IDs
+        const DEVICE_IDS: &[(u16, u16)] = &[(0x2b24, 0x0001), (0x2b24, 0x0002)];
+        
+        // Get the first available KeepKey device
+        let devices: Box<[rusb::Device<rusb::GlobalContext>]> = rusb::devices()
+            .map_err(|e| anyhow::anyhow!("Failed to enumerate USB devices: {}", e))?
+            .iter()
+            .filter(|device| {
+                device.device_descriptor()
+                    .map(|desc| DEVICE_IDS.contains(&(desc.vendor_id(), desc.product_id())))
+                    .unwrap_or(false)
+            })
+            .collect();
+        
+        let device = devices
+            .iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No KeepKey device found"))?;
+        
+        // Create transport for the device
+        let (mut transport, _, _) = crate::transport::UsbTransport::new(device, 0)
+            .map_err(|e| anyhow::anyhow!("Failed to create transport: {}", e))?;
+        
+        // Create GetAddress message for Ethereum at m/44'/60'/0'/0/0
+        let mut msg = crate::messages::EthereumGetAddress::default();
+        msg.address_n = vec![44 + 0x80000000, 60 + 0x80000000, 0x80000000, 0, 0];
+        msg.show_display = Some(false); // Don't show on device display
+        
+        // Send message and get response
+        let response = transport.with_standard_handler().handle(msg.into())
+            .map_err(|e| anyhow::anyhow!("Failed to get Ethereum address from device: {}", e))?;
+        
+        match response {
+            crate::messages::Message::EthereumAddress(addr_msg) => {
+                if !addr_msg.address.is_empty() {
+                    // Convert bytes to hex string with 0x prefix
+                    let address = format!("0x{}", hex::encode(&addr_msg.address));
+                    info!("✅ Got real Ethereum address from device {} via fallback: {}", device_id, address);
+                    return Ok(address);
+                }
+                Err(anyhow::anyhow!("Device returned empty Ethereum address"))
+            }
+            _ => {
+                error!("Unexpected response from device when getting Ethereum address: {:?}", response);
+                Err(anyhow::anyhow!("Unexpected response from device"))
+            }
         }
     }
 }
@@ -227,88 +262,47 @@ pub async fn clear_device_cache_if_invalid(device_id: &str) -> Result<bool> {
 /// This gets the REAL address from the device, not cache
 /// ALSO saves device features to database to avoid foreign key constraint errors during address caching
 pub async fn set_context_with_real_eth_address(device_id: String, label: Option<String>) -> axum::http::StatusCode {
-    // Constants for KeepKey device IDs
-    const DEVICE_IDS: &[(u16, u16)] = &[(0x2b24, 0x0001), (0x2b24, 0x0002)];
-    
-    // Get the first available KeepKey device
-    let devices: Box<[rusb::Device<rusb::GlobalContext>]> = match rusb::devices() {
-        Ok(devices) => devices
-            .iter()
-            .filter(|device| {
-                device.device_descriptor()
-                    .map(|desc| DEVICE_IDS.contains(&(desc.vendor_id(), desc.product_id())))
-                    .unwrap_or(false)
-            })
-            .collect(),
-        Err(e) => {
-            warn!("Failed to enumerate USB devices for context setting: {}", e);
-            return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
-        }
-    };
-    
-    let device = match devices.iter().next() {
-        Some(device) => device,
-        None => {
-            warn!("No KeepKey device found for context setting");
-            return axum::http::StatusCode::NOT_FOUND;
-        }
-    };
-    
-    // Create transport for the device
-    let (mut transport, _, _) = match crate::transport::UsbTransport::new(device, 0) {
-        Ok(transport) => transport,
-        Err(e) => {
-            warn!("Failed to create transport for context setting: {}", e);
-            return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
-        }
-    };
-    
-    // STEP 1: Get device features and save to database to fix foreign key constraint
-    info!("Getting device features to save to database for device {}", device_id);
-    
-    let features = match transport.with_standard_handler().handle(crate::messages::GetFeatures {}.into()) {
-        Ok(crate::messages::Message::Features(features_msg)) => {
-            info!("✅ Got device features for {}", device_id);
-            features_msg
-        }
-        Ok(response) => {
-            error!("Unexpected response when getting device features: {:?}", response);
-            return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
-        }
-        Err(e) => {
-            warn!("Failed to get device features for context setting: {}", e);
-            return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
-        }
-    };
-    
-    // Save features to database to ensure device exists for address caching
-    if let Ok(cache) = crate::cache::device_cache::DeviceCache::open() {
-        if let Err(e) = cache.save_features(&features, &device_id).await {
-            warn!("Failed to save device features to database: {}", e);
-            // Continue anyway - context setting is more important than caching
-        } else {
-            info!("✅ Saved device features to database for {}", device_id);
-        }
-    } else {
-        warn!("Failed to open device cache to save features");
-    }
-    
-    // STEP 2: Get the real Ethereum address from the device
-    info!("Getting real Ethereum address from device {}", device_id);
-    
-    let eth_address = {
-        // Create GetAddress message for Ethereum at m/44'/60'/0'/0/0
-        let mut msg = crate::messages::EthereumGetAddress::default();
-        msg.address_n = vec![44 + 0x80000000, 60 + 0x80000000, 0x80000000, 0, 0];
-        msg.show_display = Some(false); // Don't show on device display
+    // Try to use device queue first (preferred method)
+    if let Ok(Some(queue_handle)) = crate::device_registry::get_device_queue_handle(&device_id) {
+        info!("✅ Using device queue to set context for {}", device_id);
         
-        // Send message and get response
-        match transport.with_standard_handler().handle(msg.into()) {
+        // STEP 1: Get device features via queue
+        let features = match queue_handle.get_features().await {
+            Ok(features_msg) => {
+                info!("✅ Got device features for {} via queue", device_id);
+                features_msg
+            }
+            Err(e) => {
+                warn!("Failed to get device features via queue for {}: {}", device_id, e);
+                return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
+            }
+        };
+        
+        // Save features to database to ensure device exists for address caching
+        if let Ok(cache) = crate::cache::device_cache::DeviceCache::open() {
+            if let Err(e) = cache.save_features(&features, &device_id).await {
+                warn!("Failed to save device features to database: {}", e);
+                // Continue anyway - context setting is more important than caching
+            } else {
+                info!("✅ Saved device features to database for {}", device_id);
+            }
+        } else {
+            warn!("Failed to open device cache to save features");
+        }
+        
+        // STEP 2: Get the real Ethereum address via queue
+        let ethereum_path = vec![44 + 0x80000000, 60 + 0x80000000, 0x80000000, 0, 0];
+        let ethereum_get_address = crate::messages::EthereumGetAddress {
+            address_n: ethereum_path,
+            show_display: Some(false), // Don't show on device display
+        };
+        
+        let eth_address = match queue_handle.send_raw(ethereum_get_address.into(), false).await {
             Ok(crate::messages::Message::EthereumAddress(addr_msg)) => {
                 if !addr_msg.address.is_empty() {
                     // Convert bytes to hex string with 0x prefix
                     let address = format!("0x{}", hex::encode(&addr_msg.address));
-                    info!("✅ Got real Ethereum address from device {}: {}", device_id, address);
+                    info!("✅ Got real Ethereum address from device {} via queue: {}", device_id, address);
                     address
                 } else {
                     warn!("Device returned empty Ethereum address for {}, using placeholder", device_id);
@@ -316,25 +310,137 @@ pub async fn set_context_with_real_eth_address(device_id: String, label: Option<
                 }
             }
             Ok(response) => {
-                error!("Unexpected response when getting Ethereum address: {:?}", response);
+                error!("Unexpected response when getting Ethereum address via queue: {:?}", response);
                 warn!("Failed to get real Ethereum address for device {}, using placeholder", device_id);
                 "0x0000000000000000000000000000000000000000".to_string()
             }
             Err(e) => {
-                warn!("Failed to get real Ethereum address for device {}: {}, using placeholder", device_id, e);
+                warn!("Failed to get real Ethereum address for device {} via queue: {}, using placeholder", device_id, e);
                 "0x0000000000000000000000000000000000000000".to_string()
             }
+        };
+        
+        // STEP 3: Set the context in memory
+        let request = SetContextRequest {
+            device_id,
+            eth_address,
+            label,
+        };
+        
+        return set_context(axum::Json(request)).await;
+    } else {
+        warn!("No device queue available for {}, using fallback transport", device_id);
+        
+        // Fallback to direct transport (legacy behavior)
+        // Constants for KeepKey device IDs
+        const DEVICE_IDS: &[(u16, u16)] = &[(0x2b24, 0x0001), (0x2b24, 0x0002)];
+        
+        // Get the first available KeepKey device
+        let devices: Box<[rusb::Device<rusb::GlobalContext>]> = match rusb::devices() {
+            Ok(devices) => devices
+                .iter()
+                .filter(|device| {
+                    device.device_descriptor()
+                        .map(|desc| DEVICE_IDS.contains(&(desc.vendor_id(), desc.product_id())))
+                        .unwrap_or(false)
+                })
+                .collect(),
+            Err(e) => {
+                warn!("Failed to enumerate USB devices for context setting: {}", e);
+                return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
+            }
+        };
+        
+        let device = match devices.iter().next() {
+            Some(device) => device,
+            None => {
+                warn!("No KeepKey device found for context setting");
+                return axum::http::StatusCode::NOT_FOUND;
+            }
+        };
+        
+        // Create transport for the device
+        let (mut transport, _, _) = match crate::transport::UsbTransport::new(device, 0) {
+            Ok(transport) => transport,
+            Err(e) => {
+                warn!("Failed to create transport for context setting: {}", e);
+                return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
+            }
+        };
+        
+        // STEP 1: Get device features and save to database to fix foreign key constraint
+        info!("Getting device features to save to database for device {}", device_id);
+        
+        let features = match transport.with_standard_handler().handle(crate::messages::GetFeatures {}.into()) {
+            Ok(crate::messages::Message::Features(features_msg)) => {
+                info!("✅ Got device features for {}", device_id);
+                features_msg
+            }
+            Ok(response) => {
+                error!("Unexpected response when getting device features: {:?}", response);
+                return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
+            }
+            Err(e) => {
+                warn!("Failed to get device features for context setting: {}", e);
+                return axum::http::StatusCode::INTERNAL_SERVER_ERROR;
+            }
+        };
+        
+        // Save features to database to ensure device exists for address caching
+        if let Ok(cache) = crate::cache::device_cache::DeviceCache::open() {
+            if let Err(e) = cache.save_features(&features, &device_id).await {
+                warn!("Failed to save device features to database: {}", e);
+                // Continue anyway - context setting is more important than caching
+            } else {
+                info!("✅ Saved device features to database for {}", device_id);
+            }
+        } else {
+            warn!("Failed to open device cache to save features");
         }
-    };
-    
-    // STEP 3: Set the context in memory
-    let request = SetContextRequest {
-        device_id,
-        eth_address,
-        label,
-    };
-    
-    set_context(axum::Json(request)).await
+        
+        // STEP 2: Get the real Ethereum address from the device
+        info!("Getting real Ethereum address from device {}", device_id);
+        
+        let eth_address = {
+            // Create GetAddress message for Ethereum at m/44'/60'/0'/0/0
+            let mut msg = crate::messages::EthereumGetAddress::default();
+            msg.address_n = vec![44 + 0x80000000, 60 + 0x80000000, 0x80000000, 0, 0];
+            msg.show_display = Some(false); // Don't show on device display
+            
+            // Send message and get response
+            match transport.with_standard_handler().handle(msg.into()) {
+                Ok(crate::messages::Message::EthereumAddress(addr_msg)) => {
+                    if !addr_msg.address.is_empty() {
+                        // Convert bytes to hex string with 0x prefix
+                        let address = format!("0x{}", hex::encode(&addr_msg.address));
+                        info!("✅ Got real Ethereum address from device {}: {}", device_id, address);
+                        address
+                    } else {
+                        warn!("Device returned empty Ethereum address for {}, using placeholder", device_id);
+                        "0x0000000000000000000000000000000000000000".to_string()
+                    }
+                }
+                Ok(response) => {
+                    error!("Unexpected response when getting Ethereum address: {:?}", response);
+                    warn!("Failed to get real Ethereum address for device {}, using placeholder", device_id);
+                    "0x0000000000000000000000000000000000000000".to_string()
+                }
+                Err(e) => {
+                    warn!("Failed to get real Ethereum address for device {}: {}, using placeholder", device_id, e);
+                    "0x0000000000000000000000000000000000000000".to_string()
+                }
+            }
+        };
+        
+        // STEP 3: Set the context in memory
+        let request = SetContextRequest {
+            device_id,
+            eth_address,
+            label,
+        };
+        
+        set_context(axum::Json(request)).await
+    }
 }
 
 /// Helper function to set context with automatic Ethereum address lookup from cache
