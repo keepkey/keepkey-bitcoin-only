@@ -36,6 +36,20 @@ interface Balance {
 
 // Simple API service
 const apiService = {
+  async syncDevice(): Promise<{ success: boolean; device_id?: string; balances_cached?: number; message?: string }> {
+    try {
+      const response = await fetch('http://localhost:1646/api/v2/sync-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) throw new Error('Failed to sync device');
+      return await response.json();
+    } catch (error) {
+      console.error('Sync Error:', error);
+      throw error;
+    }
+  },
+
   async getDashboard(): Promise<Dashboard> {
     try {
       const response = await fetch('http://localhost:1646/api/v2/portfolio/summary');
@@ -93,7 +107,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   const [balances, setBalances] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   // Format USD value
   const formatUsd = (value: number | string) => {
@@ -105,32 +119,73 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
     });
   };
 
-  
-
-  
-
-
-
-  // Initial load
-  useEffect(() => {
-    // Only fetch dashboard and balances now
-    const fetchSimpleData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
+  // Sync device and refresh data
+  const syncDeviceAndRefresh = async () => {
+    try {
+      setSyncStatus('Syncing device...');
+      console.log('🔄 Portfolio: Starting device sync...');
+      
+      const syncResult = await apiService.syncDevice();
+      console.log('✅ Portfolio: Device sync result:', syncResult);
+      
+      if (syncResult.success) {
+        setSyncStatus('Refreshing data...');
+        console.log('🔄 Portfolio: Refreshing portfolio data...');
+        
+        // Refresh both dashboard and balances after sync
         const [dashboardData, balancesData] = await Promise.all([
           apiService.getDashboard(),
           apiService.getBalances()
         ]);
+        
         setDashboard(dashboardData);
         setBalances(balancesData);
+        setSyncStatus(`Synced! ${syncResult.balances_cached || 0} balances cached`);
+        
+        console.log('✅ Portfolio: Data refreshed successfully');
+        
+        // Clear sync status after 3 seconds
+        setTimeout(() => setSyncStatus(null), 3000);
+      } else {
+        throw new Error('Sync failed');
+      }
+    } catch (error) {
+      console.error('❌ Portfolio: Sync failed:', error);
+      setSyncStatus('Sync failed');
+      setTimeout(() => setSyncStatus(null), 3000);
+    }
+  };
+
+  // Initial load with automatic sync
+  useEffect(() => {
+    const initializePortfolio = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        console.log('🏁 Portfolio: Initializing with auto-sync...');
+        
+        // First try to sync device to ensure fresh data
+        await syncDeviceAndRefresh();
+        
+        // If sync fails, still try to load existing data
+        const [dashboardData, balancesData] = await Promise.all([
+          apiService.getDashboard(),
+          apiService.getBalances()
+        ]);
+        
+        setDashboard(dashboardData);
+        setBalances(balancesData);
+        
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch data');
+        console.error('❌ Portfolio: Initialization failed:', err);
+        setError(err instanceof Error ? err.message : 'Failed to initialize portfolio');
       } finally {
         setLoading(false);
       }
     };
-    fetchSimpleData();
+    
+    initializePortfolio();
   }, []);
 
   if (loading) {
@@ -146,6 +201,9 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
         >
           <Spinner size="xl" color="blue.400" />
           <Text color="gray.300" fontSize="lg">Loading Portfolio...</Text>
+          {syncStatus && (
+            <Text color="gray.400" fontSize="sm">{syncStatus}</Text>
+          )}
         </VStack>
       </Box>
     );
@@ -163,6 +221,13 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           border="1px solid rgba(255, 255, 255, 0.1)"
         >
           <Text color="red.400" textAlign="center">{error}</Text>
+          <Button 
+            colorScheme="blue" 
+            size="sm" 
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </Button>
         </VStack>
       </Box>
     );
@@ -200,15 +265,26 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
             Total USD Value
           </Text>
         </Box>
+        
         {/* BTC Balance */}
         <Box textAlign="center">
           <Text fontSize="2xl" fontWeight="semibold" color="orange.300">
-            {btcTotal} BTC
+            {btcTotal.toFixed(8)} BTC
           </Text>
           <Text fontSize="md" color="gray.400" mt={1}>
             Bitcoin Balance
           </Text>
         </Box>
+        
+        {/* Sync Status */}
+        {syncStatus && (
+          <Box textAlign="center">
+            <Text fontSize="sm" color="blue.300">
+              {syncStatus}
+            </Text>
+          </Box>
+        )}
+        
         {/* Send/Receive Buttons */}
         <HStack gap={8} mt={4}>
           <Button 
