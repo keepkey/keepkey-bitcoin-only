@@ -368,11 +368,41 @@ pub async fn get_pubkeys(
     debug!("{}: Getting pubkeys with params: {:?}", tag, params);
     
     // Get actual device ID from cache - FAIL FAST if no device
-    let _device_id = match app_state.device_cache.get_device_id() {
+    let device_id = match app_state.device_cache.get_device_id() {
         Some(id) => id,
         None => {
-            error!("{}: No device found in cache", tag);
-            return Json::<Vec<PubkeyResponse>>(vec![]).into_response();
+            // Memory cache is empty - try to load first device from database
+            debug!("{}: Memory cache empty, trying to load device from database", tag);
+            
+            // Get first device from database
+            match app_state.device_cache.get_first_device_from_db().await {
+                Ok(Some(device_id)) => {
+                    debug!("{}: Found device {} in database, loading into memory", tag, device_id);
+                    // Load device into memory cache
+                    match app_state.device_cache.load_device(&device_id).await {
+                        Ok(Some(_)) => {
+                            info!("{}: Successfully loaded device {} from database", tag, device_id);
+                            device_id
+                        }
+                        Ok(None) => {
+                            error!("{}: Device {} not found in database after lookup", tag, device_id);
+                            return Json::<Vec<PubkeyResponse>>(vec![]).into_response();
+                        }
+                        Err(e) => {
+                            error!("{}: Failed to load device {} into memory: {}", tag, device_id, e);
+                            return Json::<Vec<PubkeyResponse>>(vec![]).into_response();
+                        }
+                    }
+                }
+                Ok(None) => {
+                    error!("{}: No devices found in database", tag);
+                    return Json::<Vec<PubkeyResponse>>(vec![]).into_response();
+                }
+                Err(e) => {
+                    error!("{}: Failed to query database for devices: {}", tag, e);
+                    return Json::<Vec<PubkeyResponse>>(vec![]).into_response();
+                }
+            }
         }
     };
     
@@ -398,70 +428,122 @@ pub async fn get_pubkeys(
     let mut pubkey_responses = Vec::new();
     
     // Process each path and ONLY return real cached addresses
-    for path in paths {
+    for path in &paths {
         for network in &path.networks {
-            // Determine coin name and script type from network and path
+            // Get coin info for this network/path combination
             let (coin_name, script_type) = match get_coin_info_from_network(network, &path.script_type) {
                 Ok(info) => info,
                 Err(e) => {
-                    warn!("{}: Skipping unsupported network {}: {}", tag, network, e);
+                    debug!("{}: Skipping unsupported network {}: {}", tag, network, e);
                     continue;
                 }
             };
             
-            // Use the addressNListMaster directly - it's already a complete address path
-            let address_path = &path.address_n_list_master;
+            // Use different address paths for UTXO vs account-based networks
+            let is_utxo_network = network.starts_with("bip122:");
+            let address_path = if is_utxo_network { 
+                &path.address_n_list 
+            } else { 
+                &path.address_n_list_master 
+            };
             
-            // Check if this address is cached - ONLY USE REAL DATA
-            let cached_addr = app_state.device_cache.get_cached_address(&coin_name, &script_type, address_path)
-                .or_else(|| {
-                    // For Bitcoin networks, also check for XPUB variants (e.g., p2wpkh_xpub)
-                    if coin_name == "Bitcoin" {
-                        let xpub_script_type = format!("{}_xpub", script_type);
-                        app_state.device_cache.get_cached_address(&coin_name, &xpub_script_type, address_path)
+            // For UTXO networks, try to find both the XPUB and individual addresses
+            if is_utxo_network {
+                // First try to find the XPUB
+                let xpub_script_type = format!("{}_xpub", script_type);
+                if let Some(cached_addr) = app_state.device_cache.get_cached_address(&coin_name, &xpub_script_type, address_path) {
+                    // Format BIP32 path strings
+                    let path_str = format_bip32_path(&path.address_n_list);
+                    let path_master_str = format_bip32_path(address_path);
+                    
+                    // Determine XPUB type from address content
+                    let key_type = if cached_addr.address.starts_with("xpub") {
+                        "xpub".to_string()
+                    } else if cached_addr.address.starts_with("ypub") {
+                        "ypub".to_string()
+                    } else if cached_addr.address.starts_with("zpub") {
+                        "zpub".to_string()
                     } else {
-                        None
+                        path.path_type.clone()
+                    };
+                    
+                    let pubkey_response = PubkeyResponse {
+                        key_type: key_type.clone(),
+                        master: None,
+                        address: cached_addr.address.clone(),
+                        pubkey: cached_addr.pubkey.unwrap_or_else(|| cached_addr.address.clone()),
+                        path: path_str,
+                        pathMaster: path_master_str,
+                        scriptType: xpub_script_type.clone(),
+                        note: path.note.clone(),
+                        available_scripts_types: path.available_script_types.clone(),
+                        networks: vec![network.clone()],
+                        context: Some(format!("XPUB for {}", network)),
+                    };
+                    
+                    pubkey_responses.push(pubkey_response);
+                    debug!("{}: Added {} XPUB for {} {}", tag, key_type, coin_name, script_type);
+                }
+                
+                // Also try to find individual addresses (first 5)
+                for i in 0..5 {
+                    let mut individual_path = address_path.to_vec();
+                    if individual_path.len() == 3 {
+                        individual_path.push(0); // change = 0 (receiving)
+                        individual_path.push(i); // address_index
+                    } else {
+                        continue; // Skip malformed paths
                     }
-                });
-            
-            if let Some(cached_addr) = cached_addr {
-                // Format BIP32 path strings
-                let path_str = format_bip32_path(&path.address_n_list);
-                let path_master_str = format_bip32_path(address_path);
-                
-                // Determine if this is an XPUB based on the address content
-                let key_type = if cached_addr.address.starts_with("xpub") || 
-                                 cached_addr.address.starts_with("ypub") || 
-                                 cached_addr.address.starts_with("zpub") {
-                    match cached_addr.address.chars().next() {
-                        Some('x') => "xpub".to_string(),
-                        Some('y') => "ypub".to_string(), 
-                        Some('z') => "zpub".to_string(),
-                        _ => path.path_type.clone(),
+                    
+                    if let Some(cached_addr) = app_state.device_cache.get_cached_address(&coin_name, &script_type, &individual_path) {
+                        // Format BIP32 path strings
+                        let path_str = format_bip32_path(&individual_path);
+                        let path_master_str = format_bip32_path(address_path);
+                        
+                        let pubkey_response = PubkeyResponse {
+                            key_type: "address".to_string(),
+                            master: None,
+                            address: cached_addr.address.clone(),
+                            pubkey: cached_addr.pubkey.unwrap_or_else(|| cached_addr.address.clone()),
+                            path: path_str,
+                            pathMaster: path_master_str,
+                            scriptType: script_type.clone(),
+                            note: path.note.clone(),
+                            available_scripts_types: path.available_script_types.clone(),
+                            networks: vec![network.clone()],
+                            context: Some(format!("Address for {}", network)),
+                        };
+                        
+                        pubkey_responses.push(pubkey_response);
+                        debug!("{}: Added individual address for {} {} at index {}", tag, coin_name, script_type, i);
                     }
-                } else {
-                    path.path_type.clone()
-                };
-                
-                let pubkey_response = PubkeyResponse {
-                    key_type,
-                    master: None,
-                    address: cached_addr.address.clone(),
-                    pubkey: cached_addr.pubkey.unwrap_or_else(|| cached_addr.address.clone()),
-                    path: path_str,
-                    pathMaster: path_master_str,
-                    scriptType: script_type.clone(),
-                    note: path.note.clone(),
-                    available_scripts_types: path.available_script_types.clone(),
-                    networks: vec![network.clone()],
-                    context: Some(format!("Real cached address for {}", network)),
-                };
-                
-                pubkey_responses.push(pubkey_response);
-                debug!("{}: Added real cached address for {} {}", tag, coin_name, script_type);
+                }
             } else {
-                // NO FALLBACK, NO MOCK DATA - just log the missing address
-                debug!("{}: No cached address found for {} {} at path {:?} - skipping", tag, coin_name, script_type, address_path);
+                // Account-based networks - just look for the main address
+                if let Some(cached_addr) = app_state.device_cache.get_cached_address(&coin_name, &script_type, address_path) {
+                    // Format BIP32 path strings
+                    let path_str = format_bip32_path(&path.address_n_list);
+                    let path_master_str = format_bip32_path(address_path);
+                    
+                    let key_type = path.path_type.clone();
+                    
+                    let pubkey_response = PubkeyResponse {
+                        key_type,
+                        master: None,
+                        address: cached_addr.address.clone(),
+                        pubkey: cached_addr.pubkey.unwrap_or_else(|| cached_addr.address.clone()),
+                        path: path_str,
+                        pathMaster: path_master_str,
+                        scriptType: script_type.clone(),
+                        note: path.note.clone(),
+                        available_scripts_types: path.available_script_types.clone(),
+                        networks: vec![network.clone()],
+                        context: Some(format!("Real cached address for {}", network)),
+                    };
+                    
+                    pubkey_responses.push(pubkey_response);
+                    debug!("{}: Added account-based address for {} {}", tag, coin_name, script_type);
+                }
             }
         }
     }

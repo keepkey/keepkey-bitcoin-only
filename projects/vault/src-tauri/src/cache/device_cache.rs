@@ -1166,6 +1166,24 @@ impl DeviceCache {
         cache.features = Some(features);
         info!("Force-set device {} in memory cache", device_id);
     }
+    
+    /// Get first device ID from database (for auto-loading when memory cache is empty)
+    pub async fn get_first_device_from_db(&self) -> Result<Option<String>> {
+        let db = self.db.lock().await;
+        let device_id: Option<String> = db.query_row(
+            "SELECT device_id FROM devices ORDER BY last_seen DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        ).optional()?;
+        
+        if let Some(ref id) = device_id {
+            debug!("Found first device in database: {}", id);
+        } else {
+            debug!("No devices found in database");
+        }
+        
+        Ok(device_id)
+    }
 }
 
 #[cfg(test)]
