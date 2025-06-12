@@ -235,30 +235,13 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                             // Handle the result of frontload (successful or failed)
                             match frontload_result {
                                 Ok(_) => {
-                                    log::info!("Frontload completed successfully for device {}", device_id_clone);
+                                    log::info!("✅ Frontload completed successfully for device {}", device_id_clone);
                                     
-                                    // Automatically set device context for the successfully frontloaded device
-                                    // This ensures V1 API calls will work without manual context setup
-                                    log::info!("Setting device context to {}", device_id_clone);
+                                    // Wait a moment for all async operations to settle
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
                                     
-                                    // Try to get device label from registry
-                                    let device_label = device_registry::get_all_device_entries()
-                                        .ok()
-                                        .and_then(|entries| {
-                                            entries.into_iter()
-                                                .find(|e| e.device.unique_id == device_id_clone)
-                                                .and_then(|entry| entry.features)
-                                                .and_then(|features| features.label)
-                                        });
+                                    log::info!("🚀 Device {} is fully ready", device_id_clone);
                                     
-                                    // Use the helper function that gets real Ethereum address from device
-                                    let _status = crate::server::context::set_context_with_real_eth_address(
-                                        device_id_clone.clone(),
-                                        device_label.clone()
-                                    ).await;
-                                    log::info!("Device context set successfully for device {} with label: {:?}", device_id_clone, device_label);
-                                    
-                                    // Update status to "Device ready"
                                     if let Ok(entries) = device_registry::get_all_device_entries() {
                                         let payload = ApplicationState {
                                             status: "Device ready".to_string(),
@@ -270,7 +253,7 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                     }
                                 }
                                 Err(e) => {
-                                    log::error!("Frontload failed for device {}: {}", device_id_clone, e);
+                                    log::error!("❌ Frontload failed for device {}: {}", device_id_clone, e);
                                     
                                     // Check if this is a transport/device access error that requires troubleshooting
                                     let error_msg = e.to_string();
@@ -282,26 +265,10 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                                              error_msg.contains("Transport creation failed");
                                     
                                     if needs_troubleshooter {
-                                        log::warn!("Device connection issue detected, triggering troubleshooter wizard");
-                                        
-                                        // Emit troubleshooter event instead of crashing
-                                        let troubleshoot_payload = serde_json::json!({
-                                            "device_id": device_id_clone,
-                                            "error_type": "connection_failed",
-                                            "error_message": error_msg,
-                                            "suggested_actions": [
-                                                "Check USB cable connection",
-                                                "Try a different USB port",
-                                                "Restart the device",
-                                                "Check device permissions"
-                                            ]
-                                        });
-                                        let _ = emitter_clone.emit("device:troubleshooter_needed", &troubleshoot_payload);
-                                        
-                                        // Update status to show troubleshooter is needed
+                                        // Show troubleshooting view instead of error
                                         if let Ok(entries) = device_registry::get_all_device_entries() {
                                             let payload = ApplicationState {
-                                                status: "Device needs troubleshooting - click for help".to_string(),
+                                                status: "Device connection issues - troubleshooting".to_string(),
                                                 connected: !entries.is_empty(),
                                                 devices: entries.iter().map(|e| e.into()).collect(),
                                                 blocking_actions_count: 0,
@@ -309,10 +276,10 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                             let _ = emitter_clone.emit("application:state", &payload);
                                         }
                                     } else {
-                                        // Other types of errors (not connection-related)
+                                        // Show generic error
                                         if let Ok(entries) = device_registry::get_all_device_entries() {
                                             let payload = ApplicationState {
-                                                status: format!("Device registration failed: {}", e),
+                                                status: format!("Setup failed: {}", e).to_string(),
                                                 connected: !entries.is_empty(),
                                                 devices: entries.iter().map(|e| e.into()).collect(),
                                                 blocking_actions_count: 0,

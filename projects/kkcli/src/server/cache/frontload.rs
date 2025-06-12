@@ -748,11 +748,11 @@ impl DeviceFrontloader {
         let tag = "frontload_balances";
         info!("{}: Starting balance frontload for device {}", tag, device_id);
         
-        // Check if balances need refresh (always refresh on startup for now)
+        // Check if balances need refresh - RESPECT THE CACHE!
         let needs_refresh = match self.cache.balances_need_refresh(device_id).await {
             Ok(needs) => {
                 info!("{}: Balances need refresh: {}", tag, needs);
-                true // Always refresh during frontload
+                needs // ✅ FIXED: Actually use the cache result instead of always true
             }
             Err(e) => {
                 warn!("{}: Error checking refresh status, forcing refresh: {}", tag, e);
@@ -764,32 +764,11 @@ impl DeviceFrontloader {
             info!("{}: Refreshing balances from Pioneer API...", tag);
             
             // Import the refresh function from v2_endpoints
-            match self.refresh_balances_from_pioneer(device_id).await {
-                Ok(_) => {
-                    info!("{}: ✅ Successfully frontloaded balances from Pioneer API", tag);
-                    
-                    // Log summary of what we got
-                    match self.cache.get_cached_balances(device_id).await {
-                        Ok(balances) => {
-                            let total_value: f64 = balances.iter()
-                                .filter_map(|b| b.value_usd.parse::<f64>().ok())
-                                .sum();
-                            info!("{}: 📊 Cached {} balances worth ${:.2} USD", tag, balances.len(), total_value);
-                            
-                            for balance in &balances {
-                                info!("{}: 💎 {} = {} (${} USD)", tag, balance.caip, balance.balance, balance.value_usd);
-                            }
-                        }
-                        Err(e) => warn!("{}: Could not retrieve cached balances for summary: {}", tag, e),
-                    }
-                }
-                Err(e) => {
-                    error!("{}: ❌ Failed to refresh balances from Pioneer API: {}", tag, e);
-                    return Err(e);
-                }
+            if let Err(e) = self.refresh_balances_from_pioneer(device_id).await {
+                return Err(anyhow::anyhow!("Failed to refresh balances from Pioneer: {}", e));
             }
         } else {
-            info!("{}: ✅ Balances are fresh, no refresh needed", tag);
+            info!("{}: ⚡ Balances are fresh (< 1h old) - skipping Pioneer API call for instant startup!", tag);
         }
         
         Ok(())

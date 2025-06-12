@@ -1011,7 +1011,14 @@ impl DeviceCache {
             )?;
         }
         
-        info!("Saved {} balances for device {}", balances.len(), device_id);
+        // 🚨 FIXED: Clear portfolio summary cache when balances update
+        // This ensures USD values update immediately in the frontend
+        db.execute(
+            "DELETE FROM portfolio_summaries WHERE device_id = ?1",
+            params![device_id],
+        )?;
+        
+        info!("💾 Saved {} balances for device {} and cleared portfolio summary cache", balances.len(), device_id);
         Ok(())
     }
 
@@ -1048,20 +1055,23 @@ impl DeviceCache {
         Ok(balances)
     }
 
-    /// Check if balances need refresh (older than 10 minutes)
+    /// Check if balances need refresh (older than 1 hour)
     pub async fn balances_need_refresh(&self, device_id: &str) -> Result<bool> {
         let db = self.db.lock().await;
-        let ten_minutes_ago = chrono::Utc::now().timestamp() - 600; // 10 minutes in seconds
+        let one_hour_ago = chrono::Utc::now().timestamp() - 3600; // 1 hour in seconds (was 600 = 10 min)
         
         let count: i64 = db.query_row(
             "SELECT COUNT(*) FROM cached_balances 
              WHERE device_id = ?1 AND last_updated > ?2",
-            params![device_id, ten_minutes_ago],
+            params![device_id, one_hour_ago],
             |row| row.get(0),
         )?;
         
         // If we have no recent balances, we need refresh
-        Ok(count == 0)
+        let needs_refresh = count == 0;
+        info!("💾 Cache check for device {}: {} fresh balances (< 1h old) → need refresh: {}", 
+            device_id, count, needs_refresh);
+        Ok(needs_refresh)
     }
 
     /// Clear old balances (older than 1 hour)
