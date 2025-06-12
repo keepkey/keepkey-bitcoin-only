@@ -593,7 +593,23 @@ impl DeviceCache {
         Ok(())
     }
     
-    /// Save an address to the cache
+    /// Save an address to the cache database 
+    /// 
+    /// 🚨 CRITICAL WARNING: ON DELETE CASCADE DANGER 🚨
+    /// 
+    /// This function previously used "INSERT OR REPLACE" which caused CASCADE deletions!
+    /// The cached_addresses table has: FOREIGN KEY (device_id) REFERENCES devices(device_id) ON DELETE CASCADE
+    /// When "INSERT OR REPLACE" encounters a UNIQUE constraint conflict, it:
+    /// 1. DELETES the existing row (triggering CASCADE deletion of ALL related data!)
+    /// 2. INSERTS the new row
+    /// 
+    /// This was the root cause of the cache clearing bug documented in:
+    /// /docs/debugging/resolved_cache_bug_summary_20250609.md
+    /// 
+    /// SOLUTION: Use "INSERT ... ON CONFLICT DO UPDATE" instead, which updates in-place
+    /// without triggering CASCADE deletions.
+    /// 
+    /// ⚠️ NEVER USE "INSERT OR REPLACE" ON TABLES WITH CASCADE FOREIGN KEYS! ⚠️
     pub async fn save_address(
         &self,
         device_id: &str,
@@ -607,10 +623,17 @@ impl DeviceCache {
         let now = chrono::Utc::now().timestamp();
         
         let db = self.db.lock().await;
+        
+        // 🚨 FIXED: Using INSERT ... ON CONFLICT DO UPDATE instead of INSERT OR REPLACE
+        // to prevent CASCADE deletion of cached data!
         db.execute(
-            "INSERT OR REPLACE INTO cached_addresses 
+            "INSERT INTO cached_addresses 
              (device_id, coin, script_type, derivation_path, address, pubkey, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(device_id, coin, script_type, derivation_path) DO UPDATE SET
+               address = excluded.address,
+               pubkey = excluded.pubkey,
+               created_at = excluded.created_at",
             params![device_id, coin, script_type, path_json, address, pubkey, now],
         )?;
 
@@ -941,15 +964,40 @@ impl DeviceCache {
     // === Balance Methods ===
 
     /// Save balances to cache
+    /// 
+    /// 🚨 CRITICAL WARNING: ON DELETE CASCADE DANGER 🚨
+    /// 
+    /// This function previously used "INSERT OR REPLACE" which caused CASCADE deletions!
+    /// The cached_balances table has: FOREIGN KEY (device_id) REFERENCES devices(device_id) ON DELETE CASCADE
+    /// When "INSERT OR REPLACE" encounters a UNIQUE constraint conflict, it:
+    /// 1. DELETES the existing row (triggering CASCADE deletion of ALL related data!)
+    /// 2. INSERTS the new row
+    /// 
+    /// This was the root cause of the cache clearing bug documented in:
+    /// /docs/debugging/resolved_cache_bug_summary_20250609.md
+    /// 
+    /// SOLUTION: Use "INSERT ... ON CONFLICT DO UPDATE" instead, which updates in-place
+    /// without triggering CASCADE deletions.
+    /// 
+    /// ⚠️ NEVER USE "INSERT OR REPLACE" ON TABLES WITH CASCADE FOREIGN KEYS! ⚠️
     pub async fn save_balances(&self, device_id: &str, balances: &[CachedBalance]) -> Result<()> {
         let db = self.db.lock().await;
         let now = chrono::Utc::now().timestamp();
         
         for balance in balances {
+            // 🚨 FIXED: Using INSERT ... ON CONFLICT DO UPDATE instead of INSERT OR REPLACE
+            // to prevent CASCADE deletion of cached data!
             db.execute(
-                "INSERT OR REPLACE INTO cached_balances 
+                "INSERT INTO cached_balances 
                  (device_id, caip, pubkey, balance, price_usd, value_usd, symbol, network_id, last_updated)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(device_id, caip, pubkey) DO UPDATE SET
+                   balance = excluded.balance,
+                   price_usd = excluded.price_usd,
+                   value_usd = excluded.value_usd,
+                   symbol = excluded.symbol,
+                   network_id = excluded.network_id,
+                   last_updated = excluded.last_updated",
                 params![
                     device_id,
                     balance.caip,
@@ -1035,14 +1083,37 @@ impl DeviceCache {
     }
 
     /// Save portfolio summary
+    /// 
+    /// 🚨 CRITICAL WARNING: ON DELETE CASCADE DANGER 🚨
+    /// 
+    /// This function previously used "INSERT OR REPLACE" which caused CASCADE deletions!
+    /// The portfolio_summaries table has: FOREIGN KEY (device_id) REFERENCES devices(device_id) ON DELETE CASCADE
+    /// When "INSERT OR REPLACE" encounters a UNIQUE constraint conflict, it:
+    /// 1. DELETES the existing row (triggering CASCADE deletion of ALL related data!)
+    /// 2. INSERTS the new row
+    /// 
+    /// This was the root cause of the cache clearing bug documented in:
+    /// /docs/debugging/resolved_cache_bug_summary_20250609.md
+    /// 
+    /// SOLUTION: Use "INSERT ... ON CONFLICT DO UPDATE" instead, which updates in-place
+    /// without triggering CASCADE deletions.
+    /// 
+    /// ⚠️ NEVER USE "INSERT OR REPLACE" ON TABLES WITH CASCADE FOREIGN KEYS! ⚠️
     pub async fn save_portfolio_summary(&self, device_id: &str, summary: &PortfolioSummary) -> Result<()> {
         let db = self.db.lock().await;
         let now = chrono::Utc::now().timestamp();
         
+        // 🚨 FIXED: Using INSERT ... ON CONFLICT DO UPDATE instead of INSERT OR REPLACE
+        // to prevent CASCADE deletion of cached data!
         db.execute(
-            "INSERT OR REPLACE INTO portfolio_summaries 
+            "INSERT INTO portfolio_summaries 
              (device_id, total_value_usd, network_count, asset_count, last_updated)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(device_id) DO UPDATE SET
+               total_value_usd = excluded.total_value_usd,
+               network_count = excluded.network_count,
+               asset_count = excluded.asset_count,
+               last_updated = excluded.last_updated",
             params![
                 device_id,
                 summary.total_value_usd,

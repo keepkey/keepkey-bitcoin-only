@@ -21,7 +21,7 @@ import {
 import { sendService } from '../services/sendService';
 
 const Send: React.FC<SendPageProps> = ({ onBack }) => {
-  // Simplified state for Phase 1 MVP
+  // State according to planning document 
   const [recipientAddress, setRecipientAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [feeRate, setFeeRate] = useState<'slow' | 'medium' | 'fast'>('medium');
@@ -31,7 +31,29 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const [addressValidation, setAddressValidation] = useState<{ valid: boolean; error?: string }>({ valid: false });
   const [feeEstimates, setFeeEstimates] = useState<FeeEstimate>({ slow: 1, medium: 5, fast: 10 });
   const [utxos, setUtxos] = useState<UTXO[]>([]);
-  const [spendableBalance, setSpendableBalance] = useState<number>(0);
+  const [sliderPercent, setSliderPercent] = useState<number>(100); // Key addition: slider for UTXO selection
+  const [amountCurrency, setAmountCurrency] = useState<'BTC' | 'USD'>('BTC'); // Currency toggle
+  const [btcPrice, setBtcPrice] = useState<number>(43000); // BTC/USD price
+
+  // Computed values
+  const sortedUtxos = [...utxos].sort((a, b) => {
+    // Sort by ascending age/value as per planning document
+    if (a.confirmations !== b.confirmations) {
+      return a.confirmations - b.confirmations; // Older first (more confirmations)
+    }
+    return a.amount_sat - b.amount_sat; // Smaller amounts first
+  });
+
+  // Selected UTXOs based on slider percentage
+  const selectedUtxosCount = Math.ceil((sortedUtxos.length * sliderPercent) / 100);
+  const selectedUtxos = sortedUtxos.slice(0, selectedUtxosCount);
+  
+  // Calculate spendable balance from selected UTXOs only
+  const spendableBalance = selectedUtxos.reduce((sum, utxo) => {
+    // FIXED: Ensure amount_sat is treated as number and handle NaN values
+    const sats = Number(utxo.amount_sat) || 0;
+    return sum + sats;
+  }, 0);
 
   // Load initial data
   useEffect(() => {
@@ -51,18 +73,29 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const loadInitialData = async () => {
     try {
       setLoading(true);
+      setError(null);
       
-      // Load fee estimates
+      // Load fee estimates and BTC price
       const estimates = await sendService.getFeeEstimates();
       setFeeEstimates(estimates);
 
       // Load UTXOs (using dummy device ID for now)
       const fetchedUtxos = await sendService.getUtxos('keepkey-001', 0, 'p2wpkh');
+      console.log('🔍 Fetched UTXOs:', fetchedUtxos.map(u => ({ txid: u.txid.substring(0, 8), vout: u.vout, amount_sat: u.amount_sat, type: typeof u.amount_sat })));
       setUtxos(fetchedUtxos);
+
+      // Fetch BTC price (could be from same API as portfolio)
+      try {
+        const response = await fetch('http://localhost:1646/api/v2/portfolio/summary');
+        if (response.ok) {
+          // For now, use a reasonable default price - could be enhanced to get real price
+          setBtcPrice(43000);
+        }
+      } catch (e) {
+        console.log('Could not fetch BTC price, using default');
+        setBtcPrice(43000);
+      }
       
-      // Calculate spendable balance
-      const totalBalance = fetchedUtxos.reduce((sum, utxo) => sum + utxo.amount_sat, 0);
-      setSpendableBalance(totalBalance);
     } catch (error) {
       console.error('Error loading initial data:', error);
       setError('Failed to load wallet data');
@@ -72,11 +105,11 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   };
 
   const handleMaxAmount = () => {
-    if (utxos.length === 0) return;
+    if (selectedUtxos.length === 0) return;
     
-    // Simple calculation - use all UTXOs minus estimated fee
-    const totalSats = utxos.reduce((sum, utxo) => sum + utxo.amount_sat, 0);
-    const estimatedFeeSats = sendService.calculateFee(utxos, [{ amount }], feeEstimates[feeRate]);
+    // Calculate max using selected UTXOs minus estimated fee
+    const totalSats = spendableBalance;
+    const estimatedFeeSats = sendService.calculateFee(selectedUtxos, [{ amount: '0' }], feeEstimates[feeRate]);
     const maxAmountSats = totalSats - estimatedFeeSats;
     
     if (maxAmountSats > 0) {
@@ -96,11 +129,11 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       setError(null);
       setSuccess(null);
 
-      // Build transaction
+      // Build transaction with slider percentage
       const buildRequest = {
         recipients: [{ address: recipientAddress, amount }],
         feeRate: feeEstimates[feeRate],
-        sliderPercent: 100 // Use all available UTXOs for Phase 1
+        sliderPercent: sliderPercent // Use actual slider value
       };
 
       const buildResult = await sendService.buildTransaction(buildRequest);
@@ -143,9 +176,38 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
     }
   };
 
-  const estimatedFeeSats = utxos.length > 0 && amount 
-    ? sendService.calculateFee(utxos, [{ amount }], feeEstimates[feeRate])
+  const estimatedFeeSats = selectedUtxos.length > 0 && amount 
+    ? sendService.calculateFee(selectedUtxos, [{ amount }], feeEstimates[feeRate])
     : 0;
+
+  // Currency conversion helpers
+  const convertBtcToUsd = (btc: number): number => btc * btcPrice;
+  const convertUsdToBtc = (usd: number): number => usd / btcPrice;
+  
+  const formatCurrency = (value: number, currency: 'BTC' | 'USD'): string => {
+    if (currency === 'BTC') {
+      return value.toFixed(8);
+    } else {
+      return value.toFixed(2);
+    }
+  };
+
+  const toggleCurrency = () => {
+    const currentAmountNum = parseFloat(amount) || 0;
+    let convertedAmount: number;
+    
+    if (amountCurrency === 'BTC') {
+      // Converting from BTC to USD
+      convertedAmount = convertBtcToUsd(currentAmountNum);
+      setAmountCurrency('USD');
+    } else {
+      // Converting from USD to BTC
+      convertedAmount = convertUsdToBtc(currentAmountNum);
+      setAmountCurrency('BTC');
+    }
+    
+    setAmount(formatCurrency(convertedAmount, amountCurrency === 'BTC' ? 'USD' : 'BTC'));
+  };
 
   return (
     <Box height="100%" bg="transparent" display="flex" alignItems="center" justifyContent="center" p={6}>
@@ -183,6 +245,35 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
         {/* Phase 1 MVP - Easy Mode Send Form */}
         <VStack gap={6} bg="gray.800" p={6} borderRadius="lg">
+          {/* UTXO Selection - Choose which UTXOs to make available */}
+          <Box w="100%">
+            <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
+              💰 Coin Selection ({sliderPercent}% of UTXOs)
+            </Text>
+            <HStack gap={2}>
+              {[25, 50, 75, 100].map((percent) => (
+                <Button
+                  key={percent}
+                  size="sm"
+                  variant={sliderPercent === percent ? "solid" : "outline"}
+                  colorScheme={sliderPercent === percent ? "green" : "gray"}
+                  onClick={() => setSliderPercent(percent)}
+                  flex="1"
+                >
+                  {percent}%
+                </Button>
+              ))}
+            </HStack>
+            <HStack justify="space-between" mt={1}>
+              <Text fontSize="xs" color="gray.500">
+                📊 Using {selectedUtxos.length} of {utxos.length} UTXOs
+              </Text>
+              <Text fontSize="xs" color="green.400" fontWeight="medium">
+                💎 Available: {sendService.satToBtc(spendableBalance)} BTC
+              </Text>
+            </HStack>
+          </Box>
+
           {/* Recipient Address */}
           <Box w="100%">
             <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
@@ -222,24 +313,36 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             )}
           </Box>
 
-          {/* Amount */}
+          {/* Amount with BTC/USD Toggle */}
           <Box w="100%">
-            <HStack justify="space-between" mb={2}>
-              <Text color="gray.300" fontSize="sm" fontWeight="medium">
-                Amount (BTC)
-              </Text>
+                          <HStack justify="space-between" mb={2}>
+                <HStack gap={2}>
+                  <Text color="gray.300" fontSize="sm" fontWeight="medium">
+                    Amount
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    color="blue.400"
+                    onClick={toggleCurrency}
+                    fontWeight="bold"
+                    _hover={{ color: "blue.300" }}
+                  >
+                    ({amountCurrency})
+                  </Button>
+                </HStack>
               <Button
                 size="xs"
                 variant="outline"
                 colorScheme="blue"
                 onClick={handleMaxAmount}
-                disabled={utxos.length === 0}
+                disabled={selectedUtxos.length === 0}
               >
                 Max
               </Button>
             </HStack>
             <Input
-              placeholder="0.00000000"
+              placeholder={amountCurrency === 'BTC' ? "0.00000000" : "0.00"}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               color="white"
@@ -248,10 +351,17 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
               borderColor="gray.600"
               _focus={{ borderColor: "blue.400" }}
               type="number"
-              step="0.00000001"
+              step={amountCurrency === 'BTC' ? "0.00000001" : "0.01"}
             />
             <Text fontSize="xs" color="gray.500" mt={1}>
-              Available: {sendService.satToBtc(spendableBalance)} BTC
+              {amount && parseFloat(amount) > 0 && (
+                <>
+                  ≈ {amountCurrency === 'BTC' 
+                    ? `$${convertBtcToUsd(parseFloat(amount)).toFixed(2)} USD` 
+                    : `${convertUsdToBtc(parseFloat(amount)).toFixed(8)} BTC`
+                  }
+                </>
+              )}
             </Text>
           </Box>
 
@@ -260,26 +370,35 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
               Transaction Fee
             </Text>
-            <HStack gap={2}>
-              {(['slow', 'medium', 'fast'] as const).map((preset) => (
-                <Button
-                  key={preset}
-                  size="sm"
-                  variant={feeRate === preset ? "solid" : "outline"}
-                  colorScheme={feeRate === preset ? "blue" : "gray"}
-                  onClick={() => setFeeRate(preset)}
-                  flex="1"
-                  textTransform="capitalize"
-                >
-                  <VStack gap={1}>
-                    <Text>{preset}</Text>
-                    <Text fontSize="xs">{feeEstimates[preset]} sat/vB</Text>
-                  </VStack>
-                </Button>
-              ))}
+            <HStack gap={1}>
+              {(['slow', 'medium', 'fast'] as const).map((preset) => {
+                const presetFeeRate = feeEstimates[preset];
+                const feeSats = selectedUtxos.length > 0 ? sendService.calculateFee(selectedUtxos, [{ amount: amount || '0' }], presetFeeRate) : 0;
+                const feeUsd = convertBtcToUsd(parseFloat(sendService.satToBtc(feeSats)));
+                
+                return (
+                  <Button
+                    key={preset}
+                    size="xs"
+                    variant={feeRate === preset ? "solid" : "outline"}
+                    colorScheme={feeRate === preset ? "blue" : "gray"}
+                    onClick={() => setFeeRate(preset)}
+                    flex="1"
+                    textTransform="capitalize"
+                    py={3}
+                    px={2}
+                  >
+                    <VStack gap={0} align="center">
+                      <Text fontSize="xs" fontWeight="bold">{preset}</Text>
+                      <Text fontSize="2xs" opacity={0.8}>{presetFeeRate} sat/vB</Text>
+                      <Text fontSize="2xs" opacity={0.6}>${feeUsd.toFixed(2)}</Text>
+                    </VStack>
+                  </Button>
+                );
+              })}
             </HStack>
             <Text fontSize="xs" color="gray.500" mt={2}>
-              Estimated fee: {sendService.satToBtc(estimatedFeeSats)} BTC
+              Estimated fee: {sendService.satToBtc(estimatedFeeSats)} BTC (${convertBtcToUsd(parseFloat(sendService.satToBtc(estimatedFeeSats))).toFixed(2)} USD)
             </Text>
           </Box>
 

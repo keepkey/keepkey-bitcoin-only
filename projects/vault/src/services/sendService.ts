@@ -8,37 +8,100 @@ import {
 } from '../types/send';
 import { validate, getAddressInfo, Network } from 'bitcoin-address-validation';
 
-const API_BASE = 'http://localhost:1646/api/v2';
+const VAULT_API_BASE = 'http://localhost:1646/api/v2';
+const PIONEER_API_BASE = 'https://pioneers.dev';
 
 export const sendService = {
   /**
-   * Get UTXOs for a specific account and script type
+   * Get Bitcoin XPUBs from vault for a specific script type
+   */
+  async getBitcoinXpubs(): Promise<{ legacy?: string; segwit?: string; native_segwit?: string }> {
+    try {
+      const response = await fetch(`${VAULT_API_BASE}/pubkeys`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch pubkeys: ${response.statusText}`);
+      }
+
+      const pubkeys = await response.json();
+      
+      // Find Bitcoin XPUBs
+      const bitcoinXpubs = pubkeys.filter((p: any) => 
+        p.scriptType && p.scriptType.includes('_xpub') &&
+        p.address && (
+          p.address.startsWith('xpub') || 
+          p.address.startsWith('ypub') || 
+          p.address.startsWith('zpub')
+        ) &&
+        p.context && p.context.includes('bip122:000000000019d6689c085ae165831e93')
+      );
+
+      const result: { legacy?: string; segwit?: string; native_segwit?: string } = {};
+      
+      for (const xpub of bitcoinXpubs) {
+        if (xpub.address.startsWith('xpub')) {
+          result.legacy = xpub.address;
+        } else if (xpub.address.startsWith('ypub')) {
+          result.segwit = xpub.address;
+        } else if (xpub.address.startsWith('zpub')) {
+          result.native_segwit = xpub.address;
+        }
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error fetching Bitcoin XPUBs:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get UTXOs from pioneers.dev using XPUBs
    */
   async getUtxos(deviceId: string, account: number, scriptType: string): Promise<UTXO[]> {
     try {
-      const response = await fetch(`${API_BASE}/utxos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_id: deviceId,
-          account,
-          script_type: scriptType
-        })
+      // Get XPUBs from vault first
+      const xpubs = await this.getBitcoinXpubs();
+      
+      // Map script type to XPUB
+      let xpub: string;
+      switch (scriptType) {
+        case 'p2pkh':
+          if (!xpubs.legacy) throw new Error('Legacy XPUB not found');
+          xpub = xpubs.legacy;
+          break;
+        case 'p2sh-p2wpkh':
+          if (!xpubs.segwit) throw new Error('SegWit XPUB not found');
+          xpub = xpubs.segwit;
+          break;
+        case 'p2wpkh':
+          if (!xpubs.native_segwit) throw new Error('Native SegWit XPUB not found');
+          xpub = xpubs.native_segwit;
+          break;
+        default:
+          throw new Error(`Unsupported script type: ${scriptType}`);
+      }
+
+      // Call pioneers.dev for UTXOs
+      const response = await fetch(`${PIONEER_API_BASE}/api/v1/listUnspent/BTC/${xpub}`, {
+        headers: { 'accept': 'application/json' }
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch UTXOs: ${response.statusText}`);
+        throw new Error(`Failed to fetch UTXOs from pioneers.dev: ${response.statusText}`);
       }
 
       const utxos = await response.json();
+      
+      // Convert to our UTXO format
       return utxos.map((utxo: any) => ({
         txid: utxo.txid,
         vout: utxo.vout,
-        address: utxo.address,
-        amount_sat: utxo.amount_sat,
-        confirmations: utxo.confirmations,
-        is_locked: utxo.is_locked || false,
-        label: utxo.label
+        address: utxo.address || '',
+        amount_sat: utxo.value,
+        confirmations: utxo.confirmations || 0,
+        is_locked: false, // UTXOs from pioneers.dev aren't locked by default
+        label: utxo.label || undefined
       }));
     } catch (error) {
       console.error('Error fetching UTXOs:', error);
@@ -47,11 +110,11 @@ export const sendService = {
   },
 
   /**
-   * Toggle lock state of a UTXO
+   * Toggle lock state of a UTXO (stored locally in vault)
    */
   async lockUtxo(txid: string, vout: number, locked: boolean): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/lock_utxo`, {
+      const response = await fetch(`${VAULT_API_BASE}/lock_utxo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -69,14 +132,17 @@ export const sendService = {
   },
 
   /**
-   * Get current fee estimates
+   * Get current fee estimates from pioneers.dev
    */
   async getFeeEstimates(): Promise<FeeEstimate> {
     try {
-      const response = await fetch(`${API_BASE}/fees`);
+      const response = await fetch(
+        `${PIONEER_API_BASE}/api/v1/GetFeeRate/bip122%3A000000000019d6689c085ae165831e93`,
+        { headers: { 'accept': 'application/json' } }
+      );
       
       if (!response.ok) {
-        // Fallback to default values if API fails
+        console.warn('Failed to fetch fees from pioneers.dev, using defaults');
         return {
           slow: 1,
           medium: 5,
@@ -86,9 +152,9 @@ export const sendService = {
 
       const fees = await response.json();
       return {
-        slow: fees.slow || 1,
-        medium: fees.medium || 5,
-        fast: fees.fast || 10
+        slow: fees.average || 1,    // Map Pioneer's 'average' to our 'slow'
+        medium: fees.fast || 5,     // Map Pioneer's 'fast' to our 'medium'  
+        fast: fees.fastest || 10    // Map Pioneer's 'fastest' to our 'fast'
       };
     } catch (error) {
       console.error('Error fetching fee estimates:', error);
@@ -106,7 +172,7 @@ export const sendService = {
    */
   async buildTransaction(request: BuildTxRequest): Promise<BuildTxResponse> {
     try {
-      const response = await fetch(`${API_BASE}/tx/build`, {
+      const response = await fetch(`${VAULT_API_BASE}/tx/build`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -150,7 +216,7 @@ export const sendService = {
    */
   async signTransaction(psbt: string, deviceId: string): Promise<BuildTxResponse> {
     try {
-      const response = await fetch(`${API_BASE}/tx/sign`, {
+      const response = await fetch(`${VAULT_API_BASE}/tx/sign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -192,7 +258,7 @@ export const sendService = {
    */
   async broadcastTransaction(signedPsbt: string): Promise<BroadcastResponse> {
     try {
-      const response = await fetch(`${API_BASE}/tx/broadcast`, {
+      const response = await fetch(`${VAULT_API_BASE}/tx/broadcast`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
