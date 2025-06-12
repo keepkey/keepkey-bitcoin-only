@@ -1227,6 +1227,10 @@ pub fn v2_router() -> axum::Router<Arc<AppState>> {
         .route("/balances", get(get_balances))
         .route("/portfolio", post(post_portfolio_balances))
         .route("/portfolio/summary", get(get_portfolio_summary))
+        .route("/listUnspent", get(list_unspent_v2))
+        .route("/txHistory", get(tx_history_v2))
+        .route("/getNewAddress", get(get_new_address_v2))
+        .route("/getChangeAddress", get(get_change_address_v2))
         .route("/debug/cache", get(debug_device_cache))
         .route("/sync-device", post(sync_device_to_cache))
 }
@@ -1298,5 +1302,181 @@ pub async fn sync_device_to_cache(State(app_state): State<Arc<AppState>>) -> imp
         (StatusCode::BAD_REQUEST, Json(serde_json::json!({
             "error": "Device has no features in registry"
         }))).into_response()
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PubkeyQueryParams {
+    pub include_indices: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct XpubQueryParams {
+    pub xpub: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UtxoResponse {
+    pub txid: String,
+    pub vout: u32,
+    pub value: u64,
+    pub height: Option<u64>,
+    pub confirmations: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TxHistoryResponse {
+    pub balance: u64,
+    #[serde(rename = "totalReceived")]
+    pub total_received: u64,
+    #[serde(rename = "totalSent")]
+    pub total_sent: u64,
+    pub txs: u64,
+    pub page: u32,
+    #[serde(rename = "totalPages")]
+    pub total_pages: u32,
+    pub txids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AddressGenerationResponse {
+    pub address: String,
+    #[serde(rename = "addressIndex")]
+    pub address_index: u32,
+    #[serde(rename = "changeIndex")]
+    pub change_index: Option<u32>,
+    #[serde(rename = "receiveIndex")]
+    pub receive_index: Option<u32>,
+    pub path: String,
+}
+
+// Pioneer API client for comparison
+async fn call_pioneer_api(endpoint: &str) -> Result<reqwest::Response, Box<dyn std::error::Error + Send + Sync>> {
+    let client = reqwest::Client::new();
+    let url = format!("https://pioneers.dev{}", endpoint);
+    
+    debug!("Calling Pioneer API: {}", url);
+    let response = client
+        .get(&url)
+        .header("accept", "application/json")
+        .send()
+        .await?;
+    
+    Ok(response)
+}
+
+/// List unspent outputs for an XPUB - hits pioneers.dev
+pub async fn list_unspent_v2(
+    State(_app_state): State<Arc<AppState>>,
+    Query(params): Query<XpubQueryParams>,
+) -> impl IntoResponse {
+    let tag = "list_unspent_v2";
+    debug!("{}: Getting unspent outputs for XPUB: {}", tag, &params.xpub[..20]);
+    
+    // Call pioneers.dev for real data - NO FALLBACK
+    match call_pioneer_api(&format!("/api/v1/listUnspent/BTC/{}", params.xpub)).await {
+        Ok(response) => {
+            match response.json::<Vec<UtxoResponse>>().await {
+                Ok(utxos) => {
+                    info!("{}: ✅ Found {} UTXOs from pioneers.dev", tag, utxos.len());
+                    Json(utxos).into_response()
+                }
+                Err(e) => {
+                    error!("{}: ❌ Failed to parse pioneers.dev response: {}", tag, e);
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+        Err(e) => {
+            error!("{}: ❌ Failed to call pioneers.dev: {}", tag, e);
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+/// Get transaction history for an XPUB - hits pioneers.dev  
+pub async fn tx_history_v2(
+    State(_app_state): State<Arc<AppState>>,
+    Query(params): Query<XpubQueryParams>,
+) -> impl IntoResponse {
+    let tag = "tx_history_v2";
+    debug!("{}: Getting tx history for XPUB: {}", tag, &params.xpub[..20]);
+    
+    // Call pioneers.dev for real data - NO FALLBACK
+    match call_pioneer_api(&format!("/api/v1/txsByXpub/BTC/{}", params.xpub)).await {
+        Ok(response) => {
+            match response.json::<TxHistoryResponse>().await {
+                Ok(history) => {
+                    info!("{}: ✅ Found {} transactions from pioneers.dev", tag, history.txs);
+                    Json(history).into_response()
+                }
+                Err(e) => {
+                    error!("{}: ❌ Failed to parse pioneers.dev response: {}", tag, e);
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+        Err(e) => {
+            error!("{}: ❌ Failed to call pioneers.dev: {}", tag, e);
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+/// Generate new receive address for an XPUB - hits pioneers.dev
+pub async fn get_new_address_v2(
+    State(_app_state): State<Arc<AppState>>,
+    Query(params): Query<XpubQueryParams>,
+) -> impl IntoResponse {
+    let tag = "get_new_address_v2";
+    debug!("{}: Getting new receive address for XPUB: {}", tag, &params.xpub[..20]);
+    
+    // Call pioneers.dev for real data - NO FALLBACK
+    match call_pioneer_api(&format!("/api/v1/getNewAddress/BTC/{}", params.xpub)).await {
+        Ok(response) => {
+            match response.json::<AddressGenerationResponse>().await {
+                Ok(address_data) => {
+                    info!("{}: ✅ Generated receive address from pioneers.dev", tag);
+                    Json(address_data).into_response()
+                }
+                Err(e) => {
+                    error!("{}: ❌ Failed to parse pioneers.dev response: {}", tag, e);
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+        Err(e) => {
+            error!("{}: ❌ Failed to call pioneers.dev: {}", tag, e);
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+/// Generate new change address for an XPUB - hits pioneers.dev
+pub async fn get_change_address_v2(
+    State(_app_state): State<Arc<AppState>>,
+    Query(params): Query<XpubQueryParams>,
+) -> impl IntoResponse {
+    let tag = "get_change_address_v2";
+    debug!("{}: Getting new change address for XPUB: {}", tag, &params.xpub[..20]);
+    
+    // Call pioneers.dev for real data - NO FALLBACK
+    match call_pioneer_api(&format!("/api/v1/getChangeAddress/BTC/{}", params.xpub)).await {
+        Ok(response) => {
+            match response.json::<AddressGenerationResponse>().await {
+                Ok(address_data) => {
+                    info!("{}: ✅ Generated change address from pioneers.dev", tag);
+                    Json(address_data).into_response()
+                }
+                Err(e) => {
+                    error!("{}: ❌ Failed to parse pioneers.dev response: {}", tag, e);
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+        Err(e) => {
+            error!("{}: ❌ Failed to call pioneers.dev: {}", tag, e);
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
     }
 }

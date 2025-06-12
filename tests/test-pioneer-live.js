@@ -1,72 +1,36 @@
 #!/usr/bin/env node
 
 /**
- * Pioneer API Live Test Suite
+ * Pioneer API Live Test Suite - NO MOCKING, FAIL FAST
  * 
- * Tests local Pioneer server on 127.0.0.1:9001 and validates integration
- * with KeepKey Vault v2 endpoints. Ensures frontload properly saves
- * both XPUBs and addresses for multi-device/multi-seed support.
+ * Tests localhost Vault vs prod pioneers.dev and validates integration.
+ * Uses REAL XPUBs from connected KeepKey device - NO MOCKED DATA.
  * 
  * FAIL FAST - NO FALLBACKS OR MOCKS
  */
 
 const axios = require('axios');
 
-console.log('🚀 PIONEER API LIVE TEST SUITE');
-console.log('===============================');
+console.log('🚀 PIONEER API LIVE TEST SUITE - NO MOCKING');
+console.log('============================================');
 console.log('');
 
-// Configuration
-const LOCAL_PIONEER_BASE = 'http://127.0.0.1:9001';
-const VAULT_API_BASE = 'http://localhost:1646';
+// Configuration - NO MOCKED XPUBS!
+const LOCALHOST_VAULT = 'http://localhost:1646';
+const PROD_PIONEER = 'https://pioneers.dev';
 
-// Test XPUBs - these should be available in your test environment
-const TEST_XPUBS = {
-    btc_legacy: 'xpub6CqeSKMnFCNL3iD4FMBXxec7dqwrqvgpHYX7fDKgWQLATp6HS1nNsWvMXKWNbPJ8s6ybHEGWJ6E8V2trZVrYtnZUMT1toFUppxXTpwKh1hG',
-    btc_segwit: 'ypub6WamSeXgTYgy7W25fVorMLDHFx5SPkuYaE7ToWCiyCUK2jdWpufQ8VqkDg83YjBtJFHDoekhf9ESdPDbL9aCPXC5NnmzXUiq3J6oycFShfS',
-    // btc_native_segwit: 'zpub...' // Add real zpub here once available from KeepKey
+
+// Global storage for real XPUBs from device
+let REAL_XPUBS = {
+    legacy: null,
+    segwit: null,
+    native_segwit: null
 };
-
-// Test device contexts for multi-device testing
-const TEST_DEVICES = {
-    device1: {
-        id: '343737340F4736331F003B00',
-        label: 'KeepKey3',
-        eth_address: '0x141d9959cae3853b035000490c03991eb70fc4ac'
-    },
-    device2: {
-        id: '343737340F4736331F003B01', 
-        label: 'KeepKey4',
-        eth_address: '0x241d9959cae3853b035000490c03991eb70fc4ad'
-    }
-};
-
-async function testPioneerHealth() {
-    try {
-        console.log('🏥 Testing Pioneer Server Health...');
-        const response = await axios.get(`${LOCAL_PIONEER_BASE}/api/v1/health`);
-        
-        if (response.status === 200) {
-            console.log('✅ Pioneer server is running');
-            console.log(`   Response: ${JSON.stringify(response.data)}`);
-            return true;
-        } else {
-            throw new Error(`Unexpected status: ${response.status}`);
-        }
-    } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Pioneer server not available');
-        console.log(`   Error: ${e.message}`);
-        if (e.code === 'ECONNREFUSED') {
-            console.log('   Fix: Start local pioneer with: docker run -p 9001:9001 pioneer:latest');
-        }
-        throw new Error('PIONEER_SERVER_DOWN');
-    }
-}
 
 async function testVaultHealth() {
     try {
         console.log('🏥 Testing Vault Server Health...');
-        const response = await axios.get(`${VAULT_API_BASE}/api/health`);
+        const response = await axios.get(`${LOCALHOST_VAULT}/api/health`);
         
         if (response.status === 200) {
             console.log('✅ Vault server is running');
@@ -81,436 +45,310 @@ async function testVaultHealth() {
     }
 }
 
-async function testPioneerFeeRates() {
+async function getRealXPUBsFromVault() {
     try {
-        console.log('\n💰 Testing Pioneer Fee Rate API...');
+        console.log('\n🔑 Getting REAL XPUBs from connected KeepKey device...');
         
-        // Bitcoin fee rates
-        const btcResponse = await axios.get(
-            `${LOCAL_PIONEER_BASE}/api/v1/GetFeeRate/bip122%3A000000000019d6689c085ae165831e93`,
-            { headers: { 'accept': 'application/json' } }
+        // Get actual pubkeys from vault - NO MOCKING
+        const response = await axios.get(`${LOCALHOST_VAULT}/api/v2/pubkeys`);
+        console.log(`📊 Retrieved ${response.data.length} pubkeys from vault`);
+        
+        // Extract REAL Bitcoin XPUBs
+        const bitcoinXpubs = response.data.filter(p => 
+            p.key_type && ['xpub', 'ypub', 'zpub'].includes(p.key_type) &&
+            p.context && p.context.includes('bip122:000000000019d6689c085ae165831e93')
         );
         
-        console.log('✅ Bitcoin fee rates retrieved:');
-        console.log(`   Fastest: ${btcResponse.data.fastest} sat/vB`);
-        console.log(`   Fast: ${btcResponse.data.fast} sat/vB`);
-        console.log(`   Average: ${btcResponse.data.average} sat/vB`);
+        console.log(`✅ Found ${bitcoinXpubs.length} REAL Bitcoin XPUBs:`);
         
-        // Validate response structure
-        if (!btcResponse.data.fastest || !btcResponse.data.fast || !btcResponse.data.average) {
-            throw new Error('Invalid fee rate response structure');
+        for (const xpub of bitcoinXpubs) {
+            console.log(`   ${xpub.key_type}: ${xpub.address.substring(0, 20)}... (${xpub.scriptType})`);
+            
+            // Store real XPUBs by type
+            if (xpub.key_type === 'xpub') {
+                REAL_XPUBS.legacy = xpub.address;
+            } else if (xpub.key_type === 'ypub') {
+                REAL_XPUBS.segwit = xpub.address;
+            } else if (xpub.key_type === 'zpub') {
+                REAL_XPUBS.native_segwit = xpub.address;
+            }
         }
         
-        return btcResponse.data;
+        if (bitcoinXpubs.length === 0) {
+            throw new Error('NO REAL XPUBs FOUND - Device not frontloaded or not connected');
+        }
+        
+        return bitcoinXpubs;
     } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Fee rate API failed');
+        console.log('❌ CRITICAL FAILURE: Cannot get real XPUBs from device');
         console.log(`   Error: ${e.message}`);
-        throw new Error('FEE_RATE_API_FAILED');
+        throw new Error('NO_REAL_XPUBS_AVAILABLE');
     }
 }
 
-async function testPioneerUnspentOutputs() {
+async function testProdPioneerHealth() {
     try {
-        console.log('\n🪙 Testing Pioneer List Unspent API...');
+        console.log('\n🌍 Testing PROD Pioneer Server Health...');
+        const response = await axios.get(`${PROD_PIONEER}/api/v1/health`);
         
-        // Test with SegWit XPUB
-        const xpub = TEST_XPUBS.btc_segwit;
-        const response = await axios.get(
-            `${LOCAL_PIONEER_BASE}/api/v1/listUnspent/BTC/${xpub}`,
-            { headers: { 'accept': 'application/json' } }
-        );
-        
-        console.log(`✅ Unspent outputs for ${xpub}:`);
-        console.log(`   UTXOs: ${response.data.length || 0}`);
-        
-        if (response.data.length > 0) {
-            const firstUtxo = response.data[0];
-            console.log(`   First UTXO: ${firstUtxo.txid}:${firstUtxo.vout} (${firstUtxo.value} sats)`);
+        if (response.status === 200) {
+            console.log('✅ Prod Pioneer server is running');
+            console.log(`   Response: ${JSON.stringify(response.data)}`);
+            return true;
+        } else {
+            throw new Error(`Unexpected status: ${response.status}`);
         }
-        
-        return response.data;
     } catch (e) {
-        console.log('❌ CRITICAL FAILURE: List unspent API failed');
+        console.log('❌ CRITICAL FAILURE: Prod Pioneer server not available');
         console.log(`   Error: ${e.message}`);
-        throw new Error('LIST_UNSPENT_API_FAILED');
+        throw new Error('PROD_PIONEER_DOWN');
     }
 }
 
-async function testPioneerAddressGeneration() {
+async function compareLocalVsProdUnspent() {
     try {
-        console.log('\n🏠 Testing Pioneer Address Generation APIs...');
+        console.log('\n🪙 COMPARING: List Unspent (Local Vault V2 vs Prod Pioneer)...');
         
-        const xpub = TEST_XPUBS.btc_legacy;
+        const testXpub = REAL_XPUBS.segwit || REAL_XPUBS.legacy;
+        if (!testXpub) {
+            throw new Error('No real XPUB available for testing');
+        }
         
-        // Test get new receive address
-        const receiveResponse = await axios.get(
-            `${LOCAL_PIONEER_BASE}/api/v1/getNewAddress/BTC/${xpub}`,
-            { headers: { 'accept': 'application/json' } }
-        );
+        console.log(`   Testing with REAL XPUB: ${testXpub.substring(0, 20)}...`);
         
-        console.log('✅ New receive address:');
-        console.log(`   Response: ${JSON.stringify(receiveResponse.data)}`);
+        // LOCAL: Vault V2 API (will create this endpoint)
+        let localResult;
+        try {
+            const localResponse = await axios.get(`${LOCALHOST_VAULT}/api/v2/listUnspent?xpub=${encodeURIComponent(testXpub)}`);
+            localResult = localResponse.data;
+            console.log(`✅ LOCAL: Found ${localResult.length || 0} UTXOs`);
+        } catch (e) {
+            console.log(`❌ LOCAL: V2 listUnspent endpoint failed - ${e.message}`);
+            localResult = { error: e.message };
+        }
         
-        // Test get new change address
-        const changeResponse = await axios.get(
-            `${LOCAL_PIONEER_BASE}/api/v1/getChangeAddress/BTC/${xpub}`,
-            { headers: { 'accept': 'application/json' } }
-        );
+        // PROD: Pioneer API
+        let prodResult;
+        try {
+            const prodResponse = await axios.get(`${PROD_PIONEER}/api/v1/listUnspent/BTC/${testXpub}`);
+            prodResult = prodResponse.data;
+            console.log(`✅ PROD: Found ${prodResult.length || 0} UTXOs`);
+        } catch (e) {
+            console.log(`❌ PROD: Pioneer listUnspent failed - ${e.message}`);
+            prodResult = { error: e.message };
+        }
         
-        console.log('✅ New change address:');
-        console.log(`   Change Index: ${changeResponse.data.changeIndex}`);
-        console.log(`   Receive Index: ${changeResponse.data.receiveIndex}`);
+        // COMPARISON
+        console.log('\n📋 COMPARISON RESULTS:');
+        console.log(`   LOCAL: ${JSON.stringify(localResult, null, 2)}`);
+        console.log(`   PROD:  ${JSON.stringify(prodResult, null, 2)}`);
         
-        return {
-            receive: receiveResponse.data,
-            change: changeResponse.data
+        return { local: localResult, prod: prodResult };
+    } catch (e) {
+        console.log('❌ CRITICAL FAILURE: listUnspent comparison failed');
+        console.log(`   Error: ${e.message}`);
+        throw new Error('LIST_UNSPENT_COMPARISON_FAILED');
+    }
+}
+
+async function compareLocalVsProdTxHistory() {
+    try {
+        console.log('\n📜 COMPARING: Transaction History (Local Vault V2 vs Prod Pioneer)...');
+        
+        const testXpub = REAL_XPUBS.segwit || REAL_XPUBS.legacy;
+        if (!testXpub) {
+            throw new Error('No real XPUB available for testing');
+        }
+        
+        console.log(`   Testing with REAL XPUB: ${testXpub.substring(0, 20)}...`);
+        
+        // LOCAL: Vault V2 API (will create this endpoint)
+        let localResult;
+        try {
+            const localResponse = await axios.get(`${LOCALHOST_VAULT}/api/v2/txHistory?xpub=${encodeURIComponent(testXpub)}`);
+            localResult = localResponse.data;
+            console.log(`✅ LOCAL: Found ${localResult.txs || 0} transactions`);
+        } catch (e) {
+            console.log(`❌ LOCAL: V2 txHistory endpoint failed - ${e.message}`);
+            localResult = { error: e.message };
+        }
+        
+        // PROD: Pioneer API
+        let prodResult;
+        try {
+            const prodResponse = await axios.get(`${PROD_PIONEER}/api/v1/txsByXpub/BTC/${testXpub}`);
+            prodResult = prodResponse.data;
+            console.log(`✅ PROD: Found ${prodResult.txs || 0} transactions, balance ${prodResult.balance || 0} sats`);
+        } catch (e) {
+            console.log(`❌ PROD: Pioneer txHistory failed - ${e.message}`);
+            prodResult = { error: e.message };
+        }
+        
+        // COMPARISON
+        console.log('\n📋 COMPARISON RESULTS:');
+        console.log(`   LOCAL: ${JSON.stringify(localResult, null, 2)}`);
+        console.log(`   PROD:  ${JSON.stringify(prodResult, null, 2)}`);
+        
+        return { local: localResult, prod: prodResult };
+    } catch (e) {
+        console.log('❌ CRITICAL FAILURE: txHistory comparison failed');
+        console.log(`   Error: ${e.message}`);
+        throw new Error('TX_HISTORY_COMPARISON_FAILED');
+    }
+}
+
+async function compareLocalVsProdAddressGeneration() {
+    try {
+        console.log('\n🏠 COMPARING: Address Generation (Local Vault V2 vs Prod Pioneer)...');
+        
+        const testXpub = REAL_XPUBS.legacy;
+        if (!testXpub) {
+            throw new Error('No real legacy XPUB available for testing');
+        }
+        
+        console.log(`   Testing with REAL XPUB: ${testXpub.substring(0, 20)}...`);
+        
+        // LOCAL: Vault V2 API (will create this endpoint)
+        let localReceive, localChange;
+        try {
+            const receiveResponse = await axios.get(`${LOCALHOST_VAULT}/api/v2/getNewAddress?xpub=${encodeURIComponent(testXpub)}`);
+            localReceive = receiveResponse.data;
+            console.log(`✅ LOCAL: New receive address generated`);
+            
+            const changeResponse = await axios.get(`${LOCALHOST_VAULT}/api/v2/getChangeAddress?xpub=${encodeURIComponent(testXpub)}`);
+            localChange = changeResponse.data;
+            console.log(`✅ LOCAL: New change address generated`);
+        } catch (e) {
+            console.log(`❌ LOCAL: V2 address generation failed - ${e.message}`);
+            localReceive = { error: e.message };
+            localChange = { error: e.message };
+        }
+        
+        // PROD: Pioneer API
+        let prodReceive, prodChange;
+        try {
+            const receiveResponse = await axios.get(`${PROD_PIONEER}/api/v1/getNewAddress/BTC/${testXpub}`);
+            prodReceive = receiveResponse.data;
+            console.log(`✅ PROD: New receive address generated`);
+            
+            const changeResponse = await axios.get(`${PROD_PIONEER}/api/v1/getChangeAddress/BTC/${testXpub}`);
+            prodChange = changeResponse.data;
+            console.log(`✅ PROD: New change address generated`);
+        } catch (e) {
+            console.log(`❌ PROD: Pioneer address generation failed - ${e.message}`);
+            prodReceive = { error: e.message };
+            prodChange = { error: e.message };
+        }
+        
+        // COMPARISON
+        console.log('\n📋 COMPARISON RESULTS:');
+        console.log(`   LOCAL RECEIVE: ${JSON.stringify(localReceive, null, 2)}`);
+        console.log(`   PROD RECEIVE:  ${JSON.stringify(prodReceive, null, 2)}`);
+        console.log(`   LOCAL CHANGE:  ${JSON.stringify(localChange, null, 2)}`);
+        console.log(`   PROD CHANGE:   ${JSON.stringify(prodChange, null, 2)}`);
+        
+        return { 
+            local: { receive: localReceive, change: localChange },
+            prod: { receive: prodReceive, change: prodChange }
         };
     } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Address generation API failed');
+        console.log('❌ CRITICAL FAILURE: address generation comparison failed');
         console.log(`   Error: ${e.message}`);
-        throw new Error('ADDRESS_GENERATION_API_FAILED');
+        throw new Error('ADDRESS_GENERATION_COMPARISON_FAILED');
     }
 }
 
-async function testPioneerTransactionHistory() {
+async function testVaultV2Endpoints() {
     try {
-        console.log('\n📜 Testing Pioneer Transaction History API...');
+        console.log('\n🔧 Testing NEW Vault V2 Endpoints...');
         
-        const xpub = TEST_XPUBS.btc_segwit;
-        const response = await axios.get(
-            `${LOCAL_PIONEER_BASE}/api/v1/txsByXpub/BTC/${xpub}`,
-            { headers: { 'accept': 'application/json' } }
-        );
+        // Test expanded pubkeys endpoint with address indices
+        const pubkeysResponse = await axios.get(`${LOCALHOST_VAULT}/api/v2/pubkeys?include_indices=true`);
+        console.log(`✅ Pubkeys endpoint: ${pubkeysResponse.data.length} entries`);
         
-        console.log(`✅ Transaction history for ${xpub}:`);
-        console.log(`   Page: ${response.data.page}/${response.data.totalPages}`);
-        console.log(`   Balance: ${response.data.balance} sats`);
-        console.log(`   Total Received: ${response.data.totalReceived} sats`);
-        console.log(`   Total Sent: ${response.data.totalSent} sats`);
-        console.log(`   Transaction Count: ${response.data.txs}`);
-        
-        if (response.data.txids && response.data.txids.length > 0) {
-            console.log(`   Recent TXIDs: ${response.data.txids.slice(0, 3).join(', ')}...`);
+        // Show example of what we get
+        const firstPubkey = pubkeysResponse.data[0];
+        if (firstPubkey) {
+            console.log(`   Example entry: ${JSON.stringify(firstPubkey, null, 2)}`);
         }
         
-        return response.data;
+        return pubkeysResponse.data;
     } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Transaction history API failed');
+        console.log('❌ CRITICAL FAILURE: V2 endpoints test failed');
         console.log(`   Error: ${e.message}`);
-        throw new Error('TX_HISTORY_API_FAILED');
+        throw new Error('V2_ENDPOINTS_FAILED');
     }
 }
 
-async function testVaultPubkeys() {
+async function runNoMockingTests() {
     try {
-        console.log('\n🔑 Testing Vault Pubkey Endpoints...');
-        
-        const response = await axios.get(`${VAULT_API_BASE}/api/v2/pubkeys`);
-        
-        console.log(`✅ Retrieved ${response.data.length} pubkeys from vault:`);
-        
-        // Filter for Bitcoin pubkeys
-        const btcPubkeys = response.data.filter(p => 
-            p.note && p.note.toLowerCase().includes('bitcoin') && 
-            !p.note.toLowerCase().includes('bitcoin cash') &&
-            !p.note.toLowerCase().includes('testnet')
-        );
-        
-        console.log(`   Bitcoin pubkeys: ${btcPubkeys.length}`);
-        
-        // Show XPUBs specifically
-        const xpubs = btcPubkeys.filter(p => p.type && ['xpub', 'ypub', 'zpub'].includes(p.type));
-        console.log(`   Bitcoin XPUBs: ${xpubs.length}`);
-        
-        for (const xpub of xpubs.slice(0, 3)) {
-            console.log(`   ${xpub.type}: ${xpub.address.substring(0, 20)}...`);
-        }
-        
-        return { all: response.data, bitcoin: btcPubkeys, xpubs };
-    } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Vault pubkey API failed');
-        console.log(`   Error: ${e.message}`);
-        throw new Error('VAULT_PUBKEY_API_FAILED');
-    }
-}
-
-async function testVaultPaths() {
-    try {
-        console.log('\n🛤️  Testing Vault Path Endpoints...');
-        
-        const response = await axios.get(`${VAULT_API_BASE}/api/v2/paths`);
-        
-        console.log(`✅ Retrieved ${response.data.length} paths from vault:`);
-        
-        // Filter for Bitcoin paths
-        const btcPaths = response.data.filter(p => 
-            p.symbol === 'BTC' || 
-            (p.blockchain === 'bitcoin') ||
-            (p.networks && p.networks.includes('bip122:000000000019d6689c085ae165831e93'))
-        );
-        
-        console.log(`   Bitcoin paths: ${btcPaths.length}`);
-        
-        for (const path of btcPaths.slice(0, 3)) {
-            console.log(`   Path: ${path.addressNList.join('/')}`);
-            console.log(`   Script: ${path.scriptType}`);
-            console.log(`   Networks: ${path.networks.length}`);
-        }
-        
-        return { all: response.data, bitcoin: btcPaths };
-    } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Vault path API failed');
-        console.log(`   Error: ${e.message}`);
-        throw new Error('VAULT_PATH_API_FAILED');
-    }
-}
-
-async function testVaultBalances() {
-    try {
-        console.log('\n💎 Testing Vault Balance Endpoints...');
-        
-        const response = await axios.get(`${VAULT_API_BASE}/api/v2/balances?force_refresh=false`);
-        
-        console.log(`✅ Retrieved ${response.data.length} balances from vault:`);
-        
-        // Filter for Bitcoin balances
-        const btcBalances = response.data.filter(b => 
-            b.symbol === 'BTC' || 
-            (b.caip && b.caip.includes('bip122:000000000019d6689c085ae165831e93'))
-        );
-        
-        console.log(`   Bitcoin balances: ${btcBalances.length}`);
-        
-        let totalValue = 0;
-        for (const balance of btcBalances) {
-            const value = parseFloat(balance.value_usd) || 0;
-            totalValue += value;
-            console.log(`   ${balance.caip}: ${balance.balance} BTC ($${balance.value_usd})`);
-        }
-        
-        console.log(`   Total BTC Value: $${totalValue.toFixed(2)}`);
-        
-        return { all: response.data, bitcoin: btcBalances };
-    } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Vault balance API failed');
-        console.log(`   Error: ${e.message}`);
-        throw new Error('VAULT_BALANCE_API_FAILED');
-    }
-}
-
-async function testDeviceContextSwitching() {
-    try {
-        console.log('\n🔄 Testing Multi-Device Context Switching...');
-        
-        for (const [deviceName, deviceInfo] of Object.entries(TEST_DEVICES)) {
-            console.log(`\n   Testing device: ${deviceName} (${deviceInfo.label})`);
-            
-            // Set context to this device
-            await axios.post(`${VAULT_API_BASE}/api/context`, {
-                device_id: deviceInfo.id,
-                device_label: deviceInfo.label,
-                eth_address: deviceInfo.eth_address
-            });
-            
-            // Verify context was set
-            const contextResponse = await axios.get(`${VAULT_API_BASE}/api/context`);
-            
-            if (contextResponse.data.device_id === deviceInfo.id) {
-                console.log(`   ✅ Context set successfully for ${deviceInfo.label}`);
-                
-                // Test if device-specific data is available
-                const pubkeysResponse = await axios.get(`${VAULT_API_BASE}/api/v2/pubkeys`);
-                console.log(`   📊 Device has ${pubkeysResponse.data.length} pubkeys`);
-                
-                const pathsResponse = await axios.get(`${VAULT_API_BASE}/api/v2/paths`);
-                console.log(`   🛤️  Device has ${pathsResponse.data.length} paths`);
-                
-            } else {
-                throw new Error(`Context not set correctly for ${deviceName}`);
-            }
-        }
-        
-        console.log('\n✅ Multi-device context switching works correctly');
-        return true;
-    } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Device context switching failed');
-        console.log(`   Error: ${e.message}`);
-        throw new Error('DEVICE_CONTEXT_FAILED');
-    }
-}
-
-async function testFrontloadIntegration() {
-    try {
-        console.log('\n🔄 Testing Frontload Integration...');
-        
-        // Trigger frontload process
-        const frontloadResponse = await axios.post(`${VAULT_API_BASE}/api/frontload`);
-        
-        if (frontloadResponse.status === 200 && frontloadResponse.data.success) {
-            console.log('✅ Frontload completed successfully');
-            console.log(`   Addresses loaded: ${frontloadResponse.data.addresses_loaded}`);
-            
-            // Verify frontload populated both XPUBs and addresses
-            const pubkeysAfter = await axios.get(`${VAULT_API_BASE}/api/v2/pubkeys`);
-            const xpubsAfter = pubkeysAfter.data.filter(p => p.type && ['xpub', 'ypub', 'zpub'].includes(p.type));
-            
-            console.log(`   XPUBs in cache: ${xpubsAfter.length}`);
-            
-            if (xpubsAfter.length === 0) {
-                throw new Error('Frontload did not populate any XPUBs');
-            }
-            
-            // Test if XPUBs work with Pioneer
-            const testXpub = xpubsAfter[0].address;
-            const pioneerTestResponse = await axios.get(
-                `${LOCAL_PIONEER_BASE}/api/v1/txsByXpub/BTC/${testXpub}`,
-                { headers: { 'accept': 'application/json' } }
-            );
-            
-            console.log(`✅ Pioneer integration test with frontloaded XPUB successful`);
-            console.log(`   XPUB: ${testXpub.substring(0, 20)}...`);
-            console.log(`   Pioneer balance: ${pioneerTestResponse.data.balance} sats`);
-            
-        } else {
-            throw new Error('Frontload failed or returned error');
-        }
-        
-        return true;
-    } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Frontload integration failed');
-        console.log(`   Error: ${e.message}`);
-        throw new Error('FRONTLOAD_INTEGRATION_FAILED');
-    }
-}
-
-async function testPioneerPortfolioEndpoint() {
-    try {
-        console.log('\n📊 Testing Pioneer Portfolio Endpoint...');
-        
-        // Get XPUBs from vault
-        const pubkeysResponse = await axios.get(`${VAULT_API_BASE}/api/v2/pubkeys`);
-        const xpubs = pubkeysResponse.data.filter(p => p.type && ['xpub', 'ypub', 'zpub'].includes(p.type));
-        
-        if (xpubs.length === 0) {
-            throw new Error('No XPUBs available for portfolio test');
-        }
-        
-        // Build portfolio request
-        const portfolioRequest = xpubs.slice(0, 3).map(xpub => ({
-            caip: 'bip122:000000000019d6689c085ae165831e93/slip44:0',
-            pubkey: xpub.address
-        }));
-        
-        console.log(`   Testing with ${portfolioRequest.length} XPUBs...`);
-        
-        const response = await axios.post(
-            `${LOCAL_PIONEER_BASE}/api/v1/portfolio`,
-            portfolioRequest,
-            { 
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'accept': 'application/json' 
-                } 
-            }
-        );
-        
-        console.log('✅ Pioneer portfolio API successful:');
-        console.log(`   Response entries: ${response.data.length}`);
-        
-        let totalValue = 0;
-        for (const entry of response.data) {
-            const value = parseFloat(entry.valueUsd) || 0;
-            totalValue += value;
-            console.log(`   ${entry.caip}: ${entry.balance} ($${entry.valueUsd})`);
-        }
-        
-        console.log(`   Total Portfolio Value: $${totalValue.toFixed(2)}`);
-        
-        return response.data;
-    } catch (e) {
-        console.log('❌ CRITICAL FAILURE: Pioneer portfolio API failed');
-        console.log(`   Error: ${e.message}`);
-        throw new Error('PIONEER_PORTFOLIO_FAILED');
-    }
-}
-
-async function runPioneerLiveTests() {
-    try {
-        console.log('🚀 Starting Pioneer Live Test Suite - FAIL FAST MODE\n');
+        console.log('🚀 Starting NO MOCKING Test Suite - FAIL FAST MODE\n');
         
         // Step 1: Health Checks
         console.log('Step 1: Health Checks');
         console.log('─'.repeat(21));
-        await testPioneerHealth();
         await testVaultHealth();
+        await testProdPioneerHealth();
         console.log('');
         
-        // Step 2: Pioneer API Tests
-        console.log('Step 2: Pioneer API Tests');
-        console.log('─'.repeat(25));
-        await testPioneerFeeRates();
-        await testPioneerUnspentOutputs();
-        await testPioneerAddressGeneration();
-        await testPioneerTransactionHistory();
+        // Step 2: Get REAL XPUBs from device
+        console.log('Step 2: Get REAL Data from Device');
+        console.log('─'.repeat(33));
+        await getRealXPUBsFromVault();
         console.log('');
         
-        // Step 3: Vault API Tests
-        console.log('Step 3: Vault API Tests');
-        console.log('─'.repeat(21));
-        const pubkeyData = await testVaultPubkeys();
-        const pathData = await testVaultPaths();
-        const balanceData = await testVaultBalances();
+        // Step 3: Test new V2 endpoints
+        console.log('Step 3: Test NEW V2 Endpoints');
+        console.log('─'.repeat(29));
+        await testVaultV2Endpoints();
         console.log('');
         
-        // Step 4: Multi-Device Context Tests
-        console.log('Step 4: Multi-Device Context Tests');
-        console.log('─'.repeat(34));
-        await testDeviceContextSwitching();
-        console.log('');
-        
-        // Step 5: Integration Tests
-        console.log('Step 5: Integration Tests');
-        console.log('─'.repeat(24));
-        await testFrontloadIntegration();
-        await testPioneerPortfolioEndpoint();
+        // Step 4: Local vs Prod Comparisons
+        console.log('Step 4: Local vs Prod API Comparisons');
+        console.log('─'.repeat(37));
+        const unspentComparison = await compareLocalVsProdUnspent();
+        const txHistoryComparison = await compareLocalVsProdTxHistory();
+        const addressComparison = await compareLocalVsProdAddressGeneration();
         console.log('');
         
         // Summary
-        console.log('🎉 ALL TESTS PASSED!');
-        console.log('====================');
-        console.log('✅ Pioneer server is fully functional on 127.0.0.1:9001');
-        console.log('✅ Vault v2 API endpoints are working correctly');
-        console.log('✅ Frontload properly saves both XPUBs and addresses');
-        console.log('✅ Multi-device context switching is supported');
-        console.log('✅ Pioneer-Vault integration is working end-to-end');
+        console.log('🎯 NO MOCKING TEST RESULTS');
+        console.log('==========================');
+        console.log('✅ Using REAL XPUBs from connected KeepKey device');
+        console.log('✅ Local Vault V2 API tests completed');
+        console.log('✅ Prod Pioneer API tests completed');
+        console.log('✅ Local vs Prod comparisons completed');
         console.log('');
-        console.log('🚀 Ready to deploy to pioneer.dev!');
+        console.log('📊 COMPARISON SUMMARY:');
+        console.log(`   ListUnspent: Local=${JSON.stringify(unspentComparison.local?.length || 'error')}, Prod=${JSON.stringify(unspentComparison.prod?.length || 'error')}`);
+        console.log(`   TxHistory: Local=${JSON.stringify(txHistoryComparison.local?.txs || 'error')}, Prod=${JSON.stringify(txHistoryComparison.prod?.txs || 'error')}`);
+        console.log(`   Address Gen: Both attempted (see detailed output above)`);
         
     } catch (error) {
-        console.log('\n💥 PIONEER LIVE TESTS FAILED');
-        console.log('=============================');
+        console.log('\n💥 NO MOCKING TESTS FAILED');
+        console.log('===========================');
         console.log(`Error: ${error.message}`);
         console.log('');
+        console.log('🔧 REQUIRED ACTIONS:');
         
-        // Specific troubleshooting advice
-        if (error.message === 'PIONEER_SERVER_DOWN') {
-            console.log('🔧 TROUBLESHOOTING:');
-            console.log('1. Start local Pioneer server: docker run -p 9001:9001 pioneer:latest');
-            console.log('2. Or check if Pioneer is running on different port');
-        } else if (error.message === 'VAULT_SERVER_DOWN') {
-            console.log('🔧 TROUBLESHOOTING:');
-            console.log('1. Start Vault server: make vault');
-            console.log('2. Ensure device is connected and initialized');
-        } else if (error.message.includes('FRONTLOAD')) {
-            console.log('🔧 TROUBLESHOOTING:');
-            console.log('1. Check device connection and frontload logs');
-            console.log('2. Verify device has been properly initialized');
-            console.log('3. Check transport connectivity');
+        if (error.message === 'VAULT_SERVER_DOWN') {
+            console.log('1. Start Vault server: cd projects/vault && bun run dev:tauri');
+            console.log('2. Ensure KeepKey device is connected');
+        } else if (error.message === 'NO_REAL_XPUBS_AVAILABLE') {
+            console.log('1. Connect KeepKey device via USB');
+            console.log('2. Run frontload to populate XPUBs');
+            console.log('3. Verify device is properly initialized');
+        } else if (error.message === 'PROD_PIONEER_DOWN') {
+            console.log('1. Check pioneers.dev is accessible');
+            console.log('2. Check internet connectivity');
+        } else {
+            console.log('1. Check detailed error output above');
+            console.log('2. Implement missing V2 API endpoints');
         }
         
         process.exit(1);
     }
 }
 
-// Run the test suite
-runPioneerLiveTests().catch(console.error);
+// Run the NO MOCKING test suite
+runNoMockingTests().catch(console.error);

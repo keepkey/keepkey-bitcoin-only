@@ -50,7 +50,7 @@ const bitcoinService = {
 
   async getAddress(scriptType: string = 'p2wpkh', index: number = 0): Promise<string> {
     try {
-      const response = await fetch('http://localhost:1646/api/v1/addresses/utxo', {
+      const response = await fetch('http://localhost:1646/addresses/utxo', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
