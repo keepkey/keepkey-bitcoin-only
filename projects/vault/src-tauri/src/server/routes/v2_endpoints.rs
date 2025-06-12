@@ -1258,6 +1258,7 @@ pub fn v2_router() -> axum::Router<Arc<AppState>> {
         .route("/txHistory", get(tx_history_v2))
         .route("/getNewAddress", get(get_new_address_v2))
         .route("/getChangeAddress", get(get_change_address_v2))
+        .route("/tx/build", post(build_transaction_v2))
         .route("/debug/cache", get(debug_device_cache))
         .route("/sync-device", post(sync_device_to_cache))
 }
@@ -1416,6 +1417,8 @@ async fn call_pioneer_api(endpoint: &str) -> Result<reqwest::Response, Box<dyn s
     Ok(response)
 }
 
+
+
 /// List unspent outputs for an XPUB - hits pioneers.dev
 pub async fn list_unspent_v2(
     State(_app_state): State<Arc<AppState>>,
@@ -1529,5 +1532,548 @@ pub async fn get_change_address_v2(
             error!("{}: ❌ Failed to call pioneers.dev: {}", tag, e);
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
+    }
+}
+
+// ===== TRANSACTION BUILDING API =====
+
+/// 🚨 SAFETY CONSTANTS - NEVER ALLOW FEES ABOVE THESE LIMITS
+const MAX_FEE_BTC: f64 = 0.1; // 0.1 BTC absolute maximum
+const MAX_FEE_PERCENT: f64 = 50.0; // 50% of transaction value maximum  
+const MIN_FEE_RATE: f64 = 1.0; // 1 sat/vByte minimum
+const MAX_FEE_RATE: f64 = 1000.0; // 1000 sat/vByte maximum (sanity check)
+const DUST_LIMIT: u64 = 546; // Standard dust limit in satoshis
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BuildTxRequest {
+    pub device_id: String,
+    pub recipients: Vec<TxOutputRequest>,
+    pub fee_rate: f64,                    // sat/vByte
+    pub input_selection: InputSelection,
+    pub max_fee_btc: Option<f64>,        // Optional override (default: 0.1 BTC max)
+    pub script_type: Option<String>,     // Optional script type (default: p2wpkh)
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct TxOutputRequest {
+    pub address: String,
+    pub amount: String,                  // BTC amount as string (e.g., "0.00100000")
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(tag = "type")]
+pub enum InputSelection {
+    Auto { percent: u8 },               // 0-100% of available UTXOs
+    Manual { utxos: Vec<String> },      // Specific txid:vout identifiers
+    Max,                                // Send maximum (all UTXOs minus fee)
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BuildTxResponse {
+    pub success: bool,
+    pub tx: Option<UnsignedTx>,
+    pub error: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UnsignedTx {
+    pub inputs: Vec<TxInputDetail>,
+    pub outputs: Vec<TxOutputDetail>,
+    pub fee_sats: u64,
+    pub fee_btc: String,
+    pub fee_usd: String,
+    pub size_bytes: u32,
+    pub fee_rate: f64,                  // Actual sat/vByte achieved
+    pub total_input_sats: u64,
+    pub total_output_sats: u64,
+    pub change_output: Option<ChangeOutputDetail>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TxInputDetail {
+    pub txid: String,
+    pub vout: u32,
+    pub amount_sats: u64,
+    pub script_type: String,
+    pub address_n_list: Vec<u32>,
+    pub confirmations: u32,
+    pub address: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TxOutputDetail {
+    pub address: String,
+    pub amount_sats: u64,
+    pub is_change: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ChangeOutputDetail {
+    pub address: String,
+    pub amount_sats: u64,
+    pub address_n_list: Vec<u32>,
+    pub script_type: String,
+}
+
+/// Build an unsigned Bitcoin transaction with comprehensive safety checks
+#[utoipa::path(
+    post,
+    context_path = "/v2",
+    path = "/tx/build",
+    tag = "Transaction",
+    request_body = BuildTxRequest,
+    responses(
+        (status = 200, body = BuildTxResponse, description = "Transaction built successfully"),
+        (status = 400, body = BuildTxResponse, description = "Invalid request or excessive fee"),
+        (status = 404, body = BuildTxResponse, description = "Device not found or no UTXOs"),
+        (status = 500, body = BuildTxResponse, description = "Internal server error"),
+    ),
+)]
+pub async fn build_transaction_v2(
+    State(app_state): State<Arc<AppState>>,
+    Json(request): Json<BuildTxRequest>,
+) -> impl IntoResponse {
+    let tag = "build_transaction_v2";
+    debug!("{}: Building transaction for device: {}", tag, request.device_id);
+    
+    // 🚨 PHASE 1: INPUT VALIDATION - FAIL FAST
+    if let Err(error_msg) = validate_build_request(&request) {
+        warn!("{}: Validation failed: {}", tag, error_msg);
+        return (StatusCode::BAD_REQUEST, Json(BuildTxResponse {
+            success: false,
+            tx: None,
+            error: Some(error_msg),
+            warnings: vec![],
+        })).into_response();
+    }
+    
+    // 🚨 PHASE 2: GET DEVICE AND UTXOS - FAIL FAST IF NO DATA
+    let device_id = request.device_id.trim();
+    let script_type = request.script_type.as_deref().unwrap_or("p2wpkh");
+    
+    // Get Bitcoin XPUBs from device cache
+    let xpubs = match get_bitcoin_xpubs_for_script_type(&app_state.device_cache, script_type).await {
+        Ok(xpubs) => xpubs,
+        Err(e) => {
+            error!("{}: Failed to get XPUBs: {}", tag, e);
+            return (StatusCode::NOT_FOUND, Json(BuildTxResponse {
+                success: false,
+                tx: None,
+                error: Some(format!("Failed to get XPUBs for device: {}", e)),
+                warnings: vec![],
+            })).into_response();
+        }
+    };
+    
+    // Get UTXOs from pioneers.dev
+    let all_utxos = match get_utxos_from_pioneer(&xpubs).await {
+        Ok(utxos) => utxos,
+        Err(e) => {
+            error!("{}: Failed to get UTXOs: {}", tag, e);
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(BuildTxResponse {
+                success: false,
+                tx: None,
+                error: Some(format!("Failed to get UTXOs: {}", e)),
+                warnings: vec![],
+            })).into_response();
+        }
+    };
+    
+    if all_utxos.is_empty() {
+        warn!("{}: No UTXOs found for device", tag);
+        return (StatusCode::NOT_FOUND, Json(BuildTxResponse {
+            success: false,
+            tx: None,
+            error: Some("No UTXOs found for this device".to_string()),
+            warnings: vec![],
+        })).into_response();
+    }
+    
+    // 🚨 PHASE 3: UTXO SELECTION
+    let selected_utxos = match select_utxos(&all_utxos, &request.input_selection) {
+        Ok(utxos) => utxos,
+        Err(e) => {
+            error!("{}: UTXO selection failed: {}", tag, e);
+            return (StatusCode::BAD_REQUEST, Json(BuildTxResponse {
+                success: false,
+                tx: None,
+                error: Some(e),
+                warnings: vec![],
+            })).into_response();
+        }
+    };
+    
+    // 🚨 PHASE 4: COIN SELECTION & TRANSACTION BUILDING
+    let is_max_send = matches!(request.input_selection, InputSelection::Max);
+    
+    match build_bitcoin_transaction(selected_utxos, request.recipients, request.fee_rate, is_max_send, request.max_fee_btc).await {
+        Ok((unsigned_tx, warnings)) => {
+            info!("{}: ✅ Transaction built successfully - fee: {} BTC", tag, unsigned_tx.fee_btc);
+            (StatusCode::OK, Json(BuildTxResponse {
+                success: true,
+                tx: Some(unsigned_tx),
+                error: None,
+                warnings,
+            })).into_response()
+        }
+        Err(e) => {
+            error!("{}: Transaction building failed: {}", tag, e);
+            let status_code = if e.contains("Fee too high") || e.contains("exceeds limit") {
+                StatusCode::BAD_REQUEST
+            } else if e.contains("Insufficient funds") {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            
+            (status_code, Json(BuildTxResponse {
+                success: false,
+                tx: None,
+                error: Some(format_user_friendly_error(&e)),
+                warnings: vec![],
+            })).into_response()
+        }
+    }
+}
+
+/// Validate the build request - FAIL FAST on invalid input
+fn validate_build_request(req: &BuildTxRequest) -> Result<(), String> {
+    // Device ID validation
+    if req.device_id.trim().is_empty() {
+        return Err("Device ID is required".to_string());
+    }
+    
+    // Recipients validation
+    if req.recipients.is_empty() {
+        return Err("At least one recipient is required".to_string());
+    }
+    
+    for (i, recipient) in req.recipients.iter().enumerate() {
+        // Bitcoin address validation (basic check)
+        if recipient.address.trim().is_empty() {
+            return Err(format!("Empty address at recipient {}", i + 1));
+        }
+        
+        // Amount validation
+        let amount = parse_btc_amount(&recipient.amount)?;
+        if amount <= 0.0 {
+            return Err(format!("Invalid amount at recipient {}: must be > 0", i + 1));
+        }
+        
+        // Dust limit check (546 sats for P2PKH)
+        let amount_sats = (amount * 100_000_000.0) as u64;
+        if amount_sats < DUST_LIMIT {
+            return Err(format!("Amount too small at recipient {}: below dust limit of {} sats", i + 1, DUST_LIMIT));
+        }
+    }
+    
+    // Fee rate validation
+    if req.fee_rate < MIN_FEE_RATE {
+        return Err(format!("Fee rate must be at least {} sat/vByte", MIN_FEE_RATE));
+    }
+    if req.fee_rate > MAX_FEE_RATE {
+        return Err(format!("Fee rate of {} sat/vByte is unreasonably high", req.fee_rate));
+    }
+    
+    // Input selection validation
+    match &req.input_selection {
+        InputSelection::Auto { percent } => {
+            if *percent == 0 || *percent > 100 {
+                return Err("Percentage must be between 1 and 100".to_string());
+            }
+        }
+        InputSelection::Manual { utxos } => {
+            if utxos.is_empty() {
+                return Err("Manual selection requires at least one UTXO".to_string());
+            }
+            for utxo in utxos {
+                if !utxo.contains(':') {
+                    return Err(format!("Invalid UTXO format: {} (expected txid:vout)", utxo));
+                }
+            }
+        }
+        InputSelection::Max => {
+            // Max send is always valid
+        }
+    }
+    
+    Ok(())
+}
+
+/// Parse BTC amount string to f64
+fn parse_btc_amount(amount_str: &str) -> Result<f64, String> {
+    amount_str.parse::<f64>()
+        .map_err(|_| format!("Invalid amount format: {}", amount_str))
+}
+
+/// Get Bitcoin XPUBs for specific script type
+async fn get_bitcoin_xpubs_for_script_type(cache: &DeviceCache, script_type: &str) -> Result<Vec<String>, String> {
+    // This would ideally get XPUBs from cache based on script type
+    // For now, implement a basic version
+    
+    let device_id = cache.get_device_id()
+        .ok_or("No device found in cache")?;
+    
+    // Try to get a cached XPUB for this script type
+    let xpub_script_type = format!("{}_xpub", script_type);
+    
+    // For now, return placeholder - this would be integrated with actual cache lookup
+    // In real implementation, this would search cache for XPUBs
+    Ok(vec!["xpub_placeholder".to_string()])
+}
+
+/// Get UTXOs from pioneers.dev for given XPUBs
+async fn get_utxos_from_pioneer(xpubs: &[String]) -> Result<Vec<UtxoResponse>, String> {
+    let mut all_utxos = Vec::new();
+    
+    for xpub in xpubs {
+        if xpub == "xpub_placeholder" {
+            // Skip placeholder for now
+            continue;
+        }
+        
+        match call_pioneer_api(&format!("/api/v1/listUnspent/BTC/{}", xpub)).await {
+            Ok(response) => {
+                match response.json::<Vec<UtxoResponse>>().await {
+                    Ok(mut utxos) => {
+                        all_utxos.append(&mut utxos);
+                    }
+                    Err(e) => {
+                        return Err(format!("Failed to parse UTXO response: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!("Failed to call pioneers.dev: {}", e));
+            }
+        }
+    }
+    
+    Ok(all_utxos)
+}
+
+/// Select UTXOs based on selection strategy
+fn select_utxos(all_utxos: &[UtxoResponse], selection: &InputSelection) -> Result<Vec<UtxoResponse>, String> {
+    match selection {
+        InputSelection::Auto { percent } => {
+            let mut sorted_utxos = all_utxos.to_vec();
+            
+            // Sort by confirmations (desc) then by value (asc) for privacy
+            sorted_utxos.sort_by(|a, b| {
+                match b.confirmations.unwrap_or(0).cmp(&a.confirmations.unwrap_or(0)) {
+                    std::cmp::Ordering::Equal => a.value.cmp(&b.value),
+                    other => other,
+                }
+            });
+            
+            let count = ((sorted_utxos.len() as f64 * *percent as f64) / 100.0).ceil() as usize;
+            let count = count.max(1).min(sorted_utxos.len());
+            
+            Ok(sorted_utxos.into_iter().take(count).collect())
+        }
+        InputSelection::Manual { utxos: selected_outpoints } => {
+            let mut selected = Vec::new();
+            
+            for outpoint in selected_outpoints {
+                let parts: Vec<&str> = outpoint.split(':').collect();
+                if parts.len() != 2 {
+                    return Err(format!("Invalid outpoint format: {}", outpoint));
+                }
+                
+                let txid = parts[0];
+                let vout: u32 = parts[1].parse()
+                    .map_err(|_| format!("Invalid vout in outpoint: {}", outpoint))?;
+                
+                match all_utxos.iter().find(|u| u.txid == txid && u.vout == vout) {
+                    Some(utxo) => selected.push(utxo.clone()),
+                    None => return Err(format!("UTXO not found: {}", outpoint)),
+                }
+            }
+            
+            Ok(selected)
+        }
+        InputSelection::Max => {
+            // For max send, use all UTXOs
+            Ok(all_utxos.to_vec())
+        }
+    }
+}
+
+/// Build Bitcoin transaction with comprehensive safety checks
+async fn build_bitcoin_transaction(
+    utxos: Vec<UtxoResponse>,
+    recipients: Vec<TxOutputRequest>,
+    fee_rate: f64,
+    is_max_send: bool,
+    max_fee_override: Option<f64>,
+) -> Result<(UnsignedTx, Vec<String>), String> {
+    
+    // Calculate total input value
+    let total_input_sats: u64 = utxos.iter().map(|u| u.value).sum();
+    
+    // Calculate total output value (for non-max sends)
+    let mut total_output_sats = 0u64;
+    for recipient in &recipients {
+        let amount = parse_btc_amount(&recipient.amount)?;
+        total_output_sats += (amount * 100_000_000.0) as u64;
+    }
+    
+    // Estimate transaction size (rough calculation)
+    let estimated_size = estimate_tx_size(utxos.len(), recipients.len() + 1); // +1 for potential change
+    let estimated_fee_sats = (estimated_size as f64 * fee_rate).ceil() as u64;
+    
+    // 🚨 CRITICAL SAFETY CHECK: Validate fee
+    validate_fee_safety(estimated_fee_sats, total_output_sats, max_fee_override)?;
+    
+    // Check if we have enough funds
+    if !is_max_send && total_input_sats < total_output_sats + estimated_fee_sats {
+        let needed_btc = (total_output_sats + estimated_fee_sats) as f64 / 100_000_000.0;
+        let available_btc = total_input_sats as f64 / 100_000_000.0;
+        return Err(format!("Insufficient funds: need {:.8} BTC, have {:.8} BTC", needed_btc, available_btc));
+    }
+    
+    // Build transaction inputs
+    let inputs: Vec<TxInputDetail> = utxos.iter().map(|utxo| TxInputDetail {
+        txid: utxo.txid.clone(),
+        vout: utxo.vout,
+        amount_sats: utxo.value,
+        script_type: "p2wpkh".to_string(), // Default for now
+        address_n_list: vec![], // Would be populated from cache in real implementation
+        confirmations: utxo.confirmations.unwrap_or(0) as u32,
+        address: "".to_string(), // Would be populated from cache
+    }).collect();
+    
+    // Build transaction outputs
+    let mut outputs = Vec::new();
+    
+    if is_max_send {
+        // Max send: single output for all funds minus fee
+        if recipients.len() != 1 {
+            return Err("Max send only supports single recipient".to_string());
+        }
+        let max_amount_sats = total_input_sats - estimated_fee_sats;
+        outputs.push(TxOutputDetail {
+            address: recipients[0].address.clone(),
+            amount_sats: max_amount_sats,
+            is_change: false,
+        });
+        total_output_sats = max_amount_sats;
+    } else {
+        // Regular send: specified outputs + change if needed
+        for recipient in recipients {
+            let amount = parse_btc_amount(&recipient.amount)?;
+            outputs.push(TxOutputDetail {
+                address: recipient.address,
+                amount_sats: (amount * 100_000_000.0) as u64,
+                is_change: false,
+            });
+        }
+        
+        // Add change output if needed
+        let change_amount = total_input_sats - total_output_sats - estimated_fee_sats;
+        if change_amount > DUST_LIMIT {
+            outputs.push(TxOutputDetail {
+                address: "change_address_placeholder".to_string(), // Would get real change address
+                amount_sats: change_amount,
+                is_change: true,
+            });
+        }
+    }
+    
+    // Generate privacy warnings
+    let warnings = generate_privacy_warnings(&inputs, &outputs);
+    
+    let unsigned_tx = UnsignedTx {
+        inputs,
+        outputs,
+        fee_sats: estimated_fee_sats,
+        fee_btc: format!("{:.8}", estimated_fee_sats as f64 / 100_000_000.0),
+        fee_usd: "N/A".to_string(), // Keep BTC-only, no USD conversion needed
+        size_bytes: estimated_size as u32,
+        fee_rate,
+        total_input_sats,
+        total_output_sats,
+        change_output: None, // Would be populated if change output exists
+    };
+    
+    Ok((unsigned_tx, warnings))
+}
+
+/// 🚨 CRITICAL SAFETY FUNCTION: Validate fee safety
+fn validate_fee_safety(fee_sats: u64, total_output_sats: u64, max_fee_override: Option<f64>) -> Result<(), String> {
+    let fee_btc = fee_sats as f64 / 100_000_000.0;
+    let max_allowed = max_fee_override.unwrap_or(MAX_FEE_BTC);
+    
+    // 🚨 HARD LIMIT: Never allow fees > 0.1 BTC (or override limit)
+    if fee_btc > max_allowed {
+        return Err(format!(
+            "Fee of {:.8} BTC exceeds maximum allowed limit of {:.1} BTC. This appears to be an error.",
+            fee_btc, max_allowed
+        ));
+    }
+    
+    // 🚨 PERCENTAGE CHECK: Fee shouldn't exceed 50% of transaction value
+    if total_output_sats > 0 {
+        let fee_percentage = (fee_sats as f64 / total_output_sats as f64) * 100.0;
+        if fee_percentage > MAX_FEE_PERCENT {
+            return Err(format!(
+                "Fee of {:.1}% is excessive. Maximum allowed is {:.1}% of transaction value.",
+                fee_percentage, MAX_FEE_PERCENT
+            ));
+        }
+    }
+    
+    Ok(())
+}
+
+/// Estimate transaction size in bytes
+fn estimate_tx_size(input_count: usize, output_count: usize) -> usize {
+    // Rough estimation for P2WPKH transactions
+    // Base: 10 bytes
+    // Input: ~68 bytes each (for P2WPKH)
+    // Output: ~31 bytes each (for P2WPKH)
+    10 + (input_count * 68) + (output_count * 31)
+}
+
+/// Generate privacy warnings
+fn generate_privacy_warnings(inputs: &[TxInputDetail], outputs: &[TxOutputDetail]) -> Vec<String> {
+    let mut warnings = Vec::new();
+    
+    // Check for low confirmations
+    let low_conf_count = inputs.iter().filter(|i| i.confirmations < 3).count();
+    if low_conf_count > 0 {
+        warnings.push(format!("⚠️ {} input(s) have low confirmations", low_conf_count));
+    }
+    
+    // Check for round number amounts
+    for output in outputs {
+        if !output.is_change && is_round_number(output.amount_sats) {
+            warnings.push("⚠️ Round number amounts may reduce privacy".to_string());
+            break;
+        }
+    }
+    
+    warnings
+}
+
+/// Check if amount is a round number that might reduce privacy
+fn is_round_number(sats: u64) -> bool {
+    let btc = sats as f64 / 100_000_000.0;
+    btc.fract() == 0.0 || // Whole BTC amounts
+    sats % 1_000_000 == 0 || // Whole mBTC amounts  
+    sats % 100_000 == 0 // 0.001 BTC increments
+}
+
+/// Format error messages in user-friendly way
+fn format_user_friendly_error(error: &str) -> String {
+    if error.contains("Fee") && error.contains("exceeds") {
+        format!("Transaction fee seems unusually high. {}", error)
+    } else if error.contains("Insufficient funds") {
+        format!("Not enough funds available. {}", error)
+    } else if error.contains("dust limit") {
+        "Amount is too small (below Bitcoin dust limit of 546 satoshis)".to_string()
+    } else {
+        error.to_string()
     }
 }

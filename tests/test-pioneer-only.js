@@ -204,7 +204,7 @@ async function testPioneerTransactionHistory() {
                 `${LOCAL_PIONEER_BASE}/api/v1/txsByXpub/BTC/${xpub}`,
                 { headers: { 'accept': 'application/json' } }
             );
-            console.log(response);
+            // console.log(response);
             console.log(`   ✅ ${type} transaction history:`);
             console.log(`      Page: ${response.data.page}/${response.data.totalPages}`);
             console.log(`      Balance: ${response.data.balance} sats`);
