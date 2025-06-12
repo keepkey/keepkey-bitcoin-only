@@ -11,14 +11,5 @@ firmware:
 kkcli:
 	cd projects/kkcli && cargo build && target/debug/kkcli server
 
-rest:
-	cargo build --manifest-path keepkey-rest/Cargo.toml
-
-test-rest:
-	./skills/test-rest.sh
-
-vault-ui:
-	cd projects/vault-ui && bun install && bun run dev
-
 vault:
 	cd projects/vault && bun i && cargo tauri build

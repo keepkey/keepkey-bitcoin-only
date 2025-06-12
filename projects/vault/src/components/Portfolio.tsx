@@ -135,8 +135,15 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
 
   if (loading) {
     return (
-      <Box height="100%" display="flex" alignItems="center" justifyContent="center" bg={theme.bg}>
-        <VStack gap={4}>
+      <Box height="100%" display="flex" alignItems="center" justifyContent="center" bg="transparent">
+        <VStack 
+          gap={4}
+          bg="rgba(26, 32, 44, 0.9)" 
+          p={8} 
+          borderRadius="xl" 
+          backdropFilter="blur(20px)"
+          border="1px solid rgba(255, 255, 255, 0.1)"
+        >
           <Spinner size="xl" color="blue.400" />
           <Text color="gray.300" fontSize="lg">Loading Portfolio...</Text>
         </VStack>
@@ -146,8 +153,17 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
 
   if (error) {
     return (
-      <Box p={8} textAlign="center">
-        <Text color="red.400">{error}</Text>
+      <Box height="100%" display="flex" alignItems="center" justifyContent="center" bg="transparent">
+        <VStack 
+          gap={4}
+          bg="rgba(26, 32, 44, 0.9)" 
+          p={8} 
+          borderRadius="xl" 
+          backdropFilter="blur(20px)"
+          border="1px solid rgba(255, 255, 255, 0.1)"
+        >
+          <Text color="red.400" textAlign="center">{error}</Text>
+        </VStack>
       </Box>
     );
   }
@@ -158,8 +174,18 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
     .reduce((sum, b) => sum + parseFloat(b.balance), 0);
 
   return (
-    <Flex align="center" justify="center" h="100%" bg={theme.bg}>
-      <VStack gap={6} align="center" bg={theme.cardBg} p={10} borderRadius="xl" boxShadow="lg" minW="340px">
+    <Flex align="center" justify="center" h="100%" bg="transparent">
+      <VStack 
+        gap={6} 
+        align="center" 
+        bg="rgba(26, 32, 44, 0.9)" 
+        p={10} 
+        borderRadius="xl" 
+        boxShadow="2xl" 
+        minW="340px"
+        backdropFilter="blur(20px)"
+        border="1px solid rgba(255, 255, 255, 0.1)"
+      >
         {/* Bitcoin Logo */}
         <Box color="orange.400" fontSize="4xl">
           <SiBitcoin />

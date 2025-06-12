@@ -35,13 +35,17 @@ pub(crate) async fn generate_utxo_address_impl(
     // Map script type to our internal format
     let script_type = request.script_type.as_deref().unwrap_or("p2pkh");
     
-    // Check cache first
-    if let Some(cached_address) = cache.get_cached_address(&request.coin, script_type, &request.address_n) {
-        info!("✨ Found cached address: {}", cached_address.address);
-        return Ok(routes::UtxoAddressResponse {
-            address: cached_address.address,
-            address_n: request.address_n,
-        });
+    // Check cache first, but ALWAYS go to device if show_display is true
+    if !request.show_display.unwrap_or(false) {
+        if let Some(cached_address) = cache.get_cached_address(&request.coin, script_type, &request.address_n) {
+            info!("✨ Found cached address: {}", cached_address.address);
+            return Ok(routes::UtxoAddressResponse {
+                address: cached_address.address,
+                address_n: request.address_n,
+            });
+        }
+    } else {
+        info!("🔍 show_display=true, bypassing cache and going to device");
     }
     
     // Address not in cache - try to get from device

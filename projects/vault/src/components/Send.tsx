@@ -29,8 +29,19 @@ const Send: React.FC<SendProps> = ({ onBack }) => {
   };
 
   return (
-    <Box height="100%" bg="gray.900" p={6}>
-      <VStack align="stretch" gap={6} maxW="400px" mx="auto">
+    <Box height="100%" bg="transparent" display="flex" alignItems="center" justifyContent="center" p={6}>
+      <VStack 
+        align="stretch" 
+        gap={6} 
+        maxW="400px" 
+        w="100%"
+        bg="rgba(26, 32, 44, 0.95)" 
+        p={6} 
+        borderRadius="xl" 
+        backdropFilter="blur(20px)"
+        border="1px solid rgba(255, 255, 255, 0.1)"
+        boxShadow="2xl"
+      >
         {/* Header with back button */}
         <HStack>
           <IconButton

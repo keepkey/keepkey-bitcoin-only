@@ -21,7 +21,7 @@ let run_test = async function () {
 
         // Native SegWit address (P2WPKH)
         let addressInfo = {
-            addressNList: [0x80000000 + 84, 0x80000000 + 0, 0x80000000 + 0, 0, 110], // m/84'/0'/0'/0/0
+            addressNList: [0x80000000 + 84, 0x80000000 + 0, 0x80000000 + 0, 0, 0], // m/84'/0'/0'/0/0
             coin: 'Bitcoin',
             scriptType: 'p2wpkh',
             showDisplay: false

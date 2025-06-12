@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Box, 
   Heading, 
@@ -11,7 +11,8 @@ import {
   Flex,
   Spinner
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaCopy, FaCheck, FaEye } from 'react-icons/fa';
+import { FaArrowLeft, FaCopy, FaCheck, FaEye, FaRedo, FaPencilAlt } from 'react-icons/fa';
+import { FiShield } from 'react-icons/fi';
 import { SiBitcoin } from 'react-icons/si';
 import QRCode from 'react-qr-code';
 
@@ -19,161 +20,220 @@ interface ReceiveProps {
   onBack?: () => void;
 }
 
-// API service for Bitcoin addresses
-const bitcoinService = {
-  // Helper to get the correct BIP number and derivation path for script type
-  getScriptTypeInfo(scriptType: string) {
+// Address state
+interface AddressState {
+  address: string;
+  addressIndex: number;
+  derivationPath: string;
+  scriptType: string;
+  isChange: boolean;
+  account: number;
+}
+
+// Wallet State following planning document
+interface WalletState {
+  selectedAccount: number;
+  selectedScriptType: 'p2pkh' | 'p2sh-p2wpkh' | 'p2wpkh';
+  showChangeAddresses: boolean;
+  currentAddressIndex: number;
+  isOnlineMode: boolean;
+}
+
+const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
+  // State management following planning document
+  const [walletState, setWalletState] = useState<WalletState>({
+    selectedAccount: 0,
+    selectedScriptType: 'p2wpkh', // Default: Native SegWit
+    showChangeAddresses: false,
+    currentAddressIndex: 0,
+    isOnlineMode: true
+  });
+  
+  const [addressState, setAddressState] = useState<AddressState | null>(null);
+  const [hasCopied, setHasCopied] = useState(false);
+  const [deviceVerified, setDeviceVerified] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editingPath, setEditingPath] = useState(false);
+  const [customPath, setCustomPath] = useState('');
+
+  // Script type info mapping
+  const getScriptTypeInfo = (scriptType: string) => {
     switch (scriptType) {
       case 'p2pkh':
-        return { bip: 44, pathPrefix: "m/44'/0'/0'" };
+        return { bip: 44, name: "Legacy (P2PKH)", pathPrefix: "m/44'/0'" };
       case 'p2sh-p2wpkh':
-        return { bip: 49, pathPrefix: "m/49'/0'/0'" };
+        return { bip: 49, name: "SegWit (P2SH-P2WPKH)", pathPrefix: "m/49'/0'" };
       case 'p2wpkh':
-        return { bip: 84, pathPrefix: "m/84'/0'/0'" };
+        return { bip: 84, name: "Native SegWit (P2WPKH)", pathPrefix: "m/84'/0'" };
       default:
-        return { bip: 84, pathPrefix: "m/84'/0'/0'" }; // Default to native SegWit
+        return { bip: 84, name: "Native SegWit (P2WPKH)", pathPrefix: "m/84'/0'" };
     }
-  },
+  };
 
-  // Helper to create derivation path array
-  createDerivationPath(scriptType: string, index: number): number[] {
-    const { bip } = this.getScriptTypeInfo(scriptType);
+  // Create derivation path array
+  const createDerivationPath = (scriptType: string, account: number, isChange: boolean, index: number): number[] => {
+    const { bip } = getScriptTypeInfo(scriptType);
     const hardened = 0x80000000;
     return [
-      hardened + bip,    // BIP number (44'/49'/84')
-      hardened + 0,      // Coin type (0' for Bitcoin)
-      hardened + 0,      // Account (0')
-      0,                 // External chain (0)
-      index              // Address index
+      hardened + bip,     // BIP number'
+      hardened + 0,       // Bitcoin'
+      hardened + account, // Account'
+      isChange ? 1 : 0,   // Change chain
+      index               // Address index
     ];
-  },
+  };
 
-  async getAddress(scriptType: string = 'p2wpkh', index: number = 0): Promise<string> {
+  // Format derivation path for display
+  const formatDerivationPath = (scriptType: string, account: number, isChange: boolean, index: number) => {
+    const { pathPrefix } = getScriptTypeInfo(scriptType);
+    const changeStr = isChange ? '1' : '0';
+    return `${pathPrefix}/${account}'/${changeStr}/${index}`;
+  };
+
+  // FORCE DEVICE VERIFICATION FIRST
+  const verifyOnDevice = async () => {
+    setVerifying(true);
+    setError(null);
+    
     try {
+      console.log("🔐 FORCING device verification before showing address...");
+      
+      const derivationPath = createDerivationPath(
+        walletState.selectedScriptType, 
+        walletState.selectedAccount, 
+        walletState.showChangeAddresses, 
+        walletState.currentAddressIndex
+      );
+      
+      console.log("Derivation path:", derivationPath);
+      console.log("Using index:", walletState.currentAddressIndex);
+      
+      const requestBody = {
+        coin: 'Bitcoin',
+        address_n: derivationPath,
+        script_type: walletState.selectedScriptType,
+        show_display: true // ALWAYS force device display first
+      };
+      
+      console.log("Request body:", JSON.stringify(requestBody, null, 2));
+      
       const response = await fetch('http://localhost:1646/addresses/utxo', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': 'Bearer 1fa0c776-eaa9-499d-a2e5-f76af6073912'
         },
-        body: JSON.stringify({
-          coin: 'Bitcoin',
-          address_n: this.createDerivationPath(scriptType, index),
-          script_type: scriptType,
-          show_display: false
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      return data.address;
-    } catch (error) {
-      console.error('Failed to get Bitcoin address:', error);
-      // Fallback to mock address for development
-      return 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
-    }
-  },
-
-  async generateNewAddress(scriptType: string = 'p2wpkh', index: number = 0): Promise<string> {
-    return this.getAddress(scriptType, index);
-  }
-};
-
-const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
-  const [bitcoinAddress, setBitcoinAddress] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [hasCopied, setHasCopied] = useState(false);
-  const [addressIndex, setAddressIndex] = useState(0);
-  const [scriptType] = useState('p2wpkh'); // Default to native SegWit
-  const [isViewingOnDevice, setIsViewingOnDevice] = useState(false);
-
-  // Helper function to get the correct derivation path format
-  const formatDerivationPath = (scriptType: string, index: number) => {
-    const { pathPrefix } = bitcoinService.getScriptTypeInfo(scriptType);
-    return `${pathPrefix}/0/${index}`;
-  };
-
-  const onCopy = () => {
-    navigator.clipboard.writeText(bitcoinAddress);
-    setHasCopied(true);
-    setTimeout(() => setHasCopied(false), 2000);
-  };
-
-  // View address on device
-  const viewOnDevice = async () => {
-    setIsViewingOnDevice(true);
-    try {
-      console.log("Displaying address on KeepKey device...");
-      
-      // Make API call with show_display: true
-      const response = await fetch('http://localhost:1646/api/v1/addresses/utxo', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          coin: 'Bitcoin',
-          address_n: bitcoinService.createDerivationPath(scriptType, addressIndex),
-          script_type: scriptType,
-          show_display: true // This will display the address on the device
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (response.ok) {
-        console.log("Address successfully displayed on device");
-        alert("Check your KeepKey device - the address is now displayed on the screen. Please verify it matches!");
+        const data = await response.json();
+        console.log("✅ Device verification successful, address:", data.address);
+        
+        // Set address state with verified address
+        setAddressState({
+          address: data.address,
+          addressIndex: walletState.currentAddressIndex,
+          derivationPath: formatDerivationPath(
+            walletState.selectedScriptType,
+            walletState.selectedAccount, 
+            walletState.showChangeAddresses, 
+            walletState.currentAddressIndex
+          ),
+          scriptType: walletState.selectedScriptType,
+          isChange: walletState.showChangeAddresses,
+          account: walletState.selectedAccount
+        });
+        
+        setDeviceVerified(true);
+        alert("✅ Address verified on device! You can now safely use this address.");
       } else {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
     } catch (error) {
-      console.error('Failed to display address on device:', error);
-      alert("Failed to display address on device. Please ensure your KeepKey is connected and try again.");
+      console.error('Device verification failed:', error);
+      setError('Device verification failed. Please ensure your KeepKey is connected and try again.');
     } finally {
-      setIsViewingOnDevice(false);
+      setVerifying(false);
     }
   };
 
-  // Load initial address
-  useEffect(() => {
-    const fetchAddress = async () => {
-      setLoading(true);
-      try {
-        const address = await bitcoinService.getAddress(scriptType, addressIndex);
-        setBitcoinAddress(address);
-      } catch (error) {
-        console.error('Failed to fetch address:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAddress();
-  }, [scriptType, addressIndex]);
-
+  // Generate new address (increment index)
   const generateNewAddress = async () => {
-    setLoading(true);
-    setHasCopied(false);
-    try {
-      const newIndex = addressIndex + 1;
-      const address = await bitcoinService.generateNewAddress(scriptType, newIndex);
-      setBitcoinAddress(address);
-      setAddressIndex(newIndex);
-    } catch (error) {
-      console.error('Failed to generate new address:', error);
-    } finally {
-      setLoading(false);
+    if (!deviceVerified) {
+      setError('Please verify on device first!');
+      return;
     }
+    
+    const newIndex = walletState.currentAddressIndex + 1;
+    setWalletState(prev => ({ ...prev, currentAddressIndex: newIndex }));
+    setDeviceVerified(false); // Force re-verification for new address
+    setAddressState(null);
+    setError('New address generated. Please verify on device before using.');
+  };
+
+  // Copy address to clipboard
+  const onCopy = () => {
+    if (addressState?.address) {
+      navigator.clipboard.writeText(addressState.address);
+      setHasCopied(true);
+      setTimeout(() => setHasCopied(false), 2000);
+    }
+  };
+
+  // Handle settings changes
+  const handleScriptTypeChange = (value: string) => {
+    setWalletState(prev => ({ ...prev, selectedScriptType: value as any }));
+    setDeviceVerified(false);
+    setAddressState(null);
+  };
+
+  const handleAccountChange = (value: number) => {
+    setWalletState(prev => ({ ...prev, selectedAccount: value }));
+    setDeviceVerified(false);
+    setAddressState(null);
+  };
+
+  const handleChangeToggle = (checked: boolean) => {
+    setWalletState(prev => ({ ...prev, showChangeAddresses: checked }));
+    setDeviceVerified(false);
+    setAddressState(null);
+  };
+
+  const handleIndexChange = (value: number) => {
+    setWalletState(prev => ({ ...prev, currentAddressIndex: value }));
+    setDeviceVerified(false);
+    setAddressState(null);
+  };
+
+  // Reset to fresh state
+  const resetToFresh = () => {
+    setDeviceVerified(false);
+    setAddressState(null);
+    setError(null);
+    setWalletState(prev => ({ ...prev, currentAddressIndex: 0 }));
   };
 
   return (
-    <Box height="100%" bg="gray.900" p={6}>
-      <VStack align="stretch" gap={6} maxW="400px" mx="auto">
-        {/* Header with back button */}
+    <Box height="100%" bg="transparent" display="flex" alignItems="center" justifyContent="center" p={6}>
+      <Box 
+        maxW="900px" 
+        w="100%"
+        bg="rgba(26, 32, 44, 0.95)" 
+        p={6} 
+        borderRadius="xl" 
+        backdropFilter="blur(20px)"
+        border="1px solid rgba(255, 255, 255, 0.1)"
+        boxShadow="2xl"
+      >
+        <VStack align="stretch" gap={6}>
+        {/* Header */}
         <HStack>
           <IconButton
             aria-label="Go back"
             onClick={onBack}
+            size="sm"
           >
             <FaArrowLeft />
           </IconButton>
@@ -185,132 +245,364 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
               Receive Bitcoin
             </Heading>
           </Flex>
-          <Box w="40px" /> {/* Spacer for centering */}
+          <Box w="40px" />
         </HStack>
 
-        {/* QR Code Area */}
-        <VStack gap={4} bg="gray.800" p={6} borderRadius="lg">
-          {/* Derivation Path */}
-          <Box textAlign="center">
-            <Text fontSize="xs" color="gray.500" mb={1}>
-              Derivation Path
-            </Text>
-                         <Text fontSize="sm" color="gray.300" fontFamily="mono">
-               {formatDerivationPath(scriptType, addressIndex)}
-             </Text>
-          </Box>
-          
-          <Box
-            w="200px"
-            h="200px"
-            bg="white"
-            borderRadius="md"
-            display="flex"
-            alignItems="center"
-            justifyContent="center"
-            mx="auto"
-            p={2}
-          >
-            {loading ? (
-              <Spinner size="xl" color="gray.600" />
-            ) : (
-              <QRCode
-                value={bitcoinAddress}
-                size={184}
-                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                viewBox={`0 0 184 184`}
-              />
-            )}
-          </Box>
+        {/* Main Content - Side by Side Layout */}
+        <HStack gap={6} align="stretch">
+          {/* Left Panel - Configuration */}
+          <VStack gap={4} flex="1" align="stretch">
+            {/* Configuration Controls */}
+            <VStack gap={4} bg="gray.800" p={4} borderRadius="lg">
+              <Text color="gray.300" fontSize="sm" fontWeight="bold">
+                Address Configuration
+              </Text>
+              
+              {/* Account Dropdown */}
+              <VStack align="stretch" gap={2}>
+                <Text color="gray.400" fontSize="xs">Account</Text>
+                <select
+                  value={walletState.selectedAccount}
+                  onChange={(e) => handleAccountChange(parseInt(e.target.value))}
+                  style={{ 
+                    backgroundColor: '#2D3748', 
+                    borderColor: '#4A5568', 
+                    color: 'white',
+                    border: '1px solid #4A5568',
+                    borderRadius: '6px',
+                    padding: '8px',
+                    fontSize: '14px',
+                    width: '100%'
+                  }}
+                >
+                  <option value={0}>Account 1</option>
+                  <option value={1}>Account 2</option>
+                  <option value={2}>Account 3</option>
+                </select>
+              </VStack>
 
-          {/* Bitcoin Address */}
-          <Box w="100%">
-            <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
-              Your Bitcoin Address
-            </Text>
-            {loading ? (
-              <Box bg="gray.700" p={3} borderRadius="md" display="flex" alignItems="center" justifyContent="center">
-                <Spinner size="sm" color="blue.400" />
+              {/* Script Type Dropdown */}
+              <VStack align="stretch" gap={2}>
+                <Text color="gray.400" fontSize="xs">Address Type</Text>
+                <select
+                  value={walletState.selectedScriptType}
+                  onChange={(e) => handleScriptTypeChange(e.target.value)}
+                  style={{ 
+                    backgroundColor: '#2D3748', 
+                    borderColor: '#4A5568', 
+                    color: 'white',
+                    border: '1px solid #4A5568',
+                    borderRadius: '6px',
+                    padding: '8px',
+                    fontSize: '14px',
+                    width: '100%'
+                  }}
+                >
+                  <option value="p2wpkh">Native SegWit (P2WPKH) - Recommended</option>
+                  <option value="p2sh-p2wpkh">SegWit (P2SH-P2WPKH)</option>
+                  <option value="p2pkh">Legacy (P2PKH)</option>
+                </select>
+              </VStack>
+
+              {/* Change Address Toggle */}
+              <HStack justify="space-between" align="center">
+                <Text color="gray.400" fontSize="xs">Change Addresses</Text>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={walletState.showChangeAddresses}
+                    onChange={(e) => handleChangeToggle(e.target.checked)}
+                    style={{ accentColor: '#3182ce' }}
+                  />
+                  <Text color="gray.400" fontSize="xs">
+                    {walletState.showChangeAddresses ? 'ON' : 'OFF'}
+                  </Text>
+                </label>
+              </HStack>
+
+
+
+              {/* Current Path Display with Edit */}
+              <VStack align="stretch" gap={2}>
+                <HStack justify="space-between" align="center">
+                  <Text color="gray.400" fontSize="xs">Derivation Path</Text>
+                  <IconButton
+                    aria-label="Edit path manually"
+                    size="xs"
+                    variant="ghost"
+                    color="blue.300"
+                    onClick={() => setEditingPath(true)}
+                  >
+                    <FaPencilAlt />
+                  </IconButton>
+                </HStack>
+                {editingPath ? (
+                  <HStack>
+                    <Input
+                      value={customPath || formatDerivationPath(
+                        walletState.selectedScriptType,
+                        walletState.selectedAccount, 
+                        walletState.showChangeAddresses, 
+                        walletState.currentAddressIndex
+                      )}
+                      onChange={(e) => setCustomPath(e.target.value)}
+                      bg="gray.700"
+                      borderColor="gray.600"
+                      color="white"
+                      size="sm"
+                      fontSize="xs"
+                      fontFamily="mono"
+                      placeholder="m/84'/0'/0'/0/0"
+                    />
+                    <Button size="xs" colorScheme="green" onClick={() => setEditingPath(false)}>
+                      ✓
+                    </Button>
+                    <Button size="xs" variant="ghost" onClick={() => { setEditingPath(false); setCustomPath(''); }}>
+                      ✗
+                    </Button>
+                  </HStack>
+                ) : (
+                  <Text color="blue.300" fontSize="xs" fontFamily="mono" bg="gray.700" p={2} borderRadius="md">
+                    {formatDerivationPath(
+                      walletState.selectedScriptType,
+                      walletState.selectedAccount, 
+                      walletState.showChangeAddresses, 
+                      walletState.currentAddressIndex
+                    )} (Index: {walletState.currentAddressIndex})
+                  </Text>
+                )}
+              </VStack>
+            </VStack>
+
+            {/* Error Display */}
+            {error && (
+              <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
+                <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
               </Box>
-            ) : (
-              <HStack>
-                <Input
-                  value={bitcoinAddress}
-                  color="white"
-                  bg="gray.700"
-                  border="1px solid"
-                  borderColor="gray.600"
-                  readOnly
-                  fontSize="sm"
-                  flex="1"
-                />
-                <IconButton
-                  aria-label={hasCopied ? "Copied!" : "Copy address"}
-                  onClick={onCopy}
-                  colorScheme={hasCopied ? "green" : "blue"}
+            )}
+
+            {/* Action Buttons - Only when verified */}
+            {deviceVerified && (
+              <VStack gap={3}>
+                <HStack gap={3} width="100%">
+                  <Button
+                    colorScheme="blue"
+                    size="lg"
+                    onClick={generateNewAddress}
+                    flex="1"
+                  >
+                    <HStack gap={2}>
+                      <FaRedo />
+                      <Text>Generate Next</Text>
+                    </HStack>
+                  </Button>
+                  <Button
+                    colorScheme="purple"
+                    size="lg"
+                    onClick={verifyOnDevice}
+                    disabled={verifying}
+                    flex="1"
+                  >
+                    <HStack gap={2}>
+                      {verifying ? <Spinner size="sm" /> : <FaEye />}
+                      <Text>Re-verify</Text>
+                    </HStack>
+                  </Button>
+                </HStack>
+                
+                <Button
+                  variant="ghost"
+                  color="gray.400"
+                  onClick={resetToFresh}
                   size="sm"
                 >
-                  {hasCopied ? <FaCheck /> : <FaCopy />}
-                </IconButton>
-              </HStack>
+                  Reset to Fresh
+                </Button>
+              </VStack>
             )}
-            {hasCopied && (
-              <Text fontSize="xs" color="green.400" mt={1}>
-                Address copied to clipboard!
-              </Text>
+          </VStack>
+
+          {/* Right Panel - Always Present */}
+          <VStack gap={4} bg="gray.800" p={4} borderRadius="lg" flex="1" minH="400px">
+            {deviceVerified && addressState ? (
+              /* Address Display When Verified */
+              <>
+                {/* Address Info Header */}
+                <HStack w="100%" justify="space-between" align="center">
+                  <VStack align="start" gap={1}>
+                    <Text color="green.300" fontSize="sm" fontWeight="bold">
+                      ✅ Device Verified Address
+                    </Text>
+                    <Text color="gray.400" fontSize="xs" fontFamily="mono">
+                      {addressState.derivationPath}
+                    </Text>
+                  </VStack>
+                  <VStack align="end" gap={1}>
+                    <Text color="blue.300" fontSize="xs" bg="blue.900" px={2} py={1} borderRadius="md">
+                      Index: {addressState.addressIndex}
+                    </Text>
+                    <Text color="green.300" fontSize="xs" bg="green.900" px={2} py={1} borderRadius="md">
+                      Receive
+                    </Text>
+                  </VStack>
+                </HStack>
+
+                {/* QR Code */}
+                <Box
+                  w="200px"
+                  h="200px"
+                  bg="white"
+                  borderRadius="md"
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  mx="auto"
+                  p={2}
+                >
+                  <QRCode
+                    value={addressState.address}
+                    size={184}
+                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                    viewBox={`0 0 184 184`}
+                  />
+                </Box>
+
+                {/* Address String */}
+                <VStack w="100%" gap={2}>
+                  <Text color="gray.300" fontSize="sm" fontWeight="medium">
+                    Bitcoin Address
+                  </Text>
+                  <HStack w="100%">
+                    <Input
+                      value={addressState.address}
+                      color="white"
+                      bg="gray.700"
+                      border="1px solid"
+                      borderColor="gray.600"
+                      readOnly
+                      fontSize="sm"
+                      flex="1"
+                    />
+                    <IconButton
+                      aria-label={hasCopied ? "Copied!" : "Copy address"}
+                      onClick={onCopy}
+                      colorScheme={hasCopied ? "green" : "blue"}
+                      size="sm"
+                    >
+                      {hasCopied ? <FaCheck /> : <FaCopy />}
+                    </IconButton>
+                  </HStack>
+                  {hasCopied && (
+                    <Text fontSize="xs" color="green.400">
+                      Address copied to clipboard!
+                    </Text>
+                  )}
+                </VStack>
+              </>
+            ) : (
+              /* Device Verification In Place of QR Code */
+              <>
+                {/* Path Info Header Even When Not Verified */}
+                <HStack w="100%" justify="space-between" align="center">
+                  <VStack align="start" gap={1}>
+                    <Text color="gray.400" fontSize="sm" fontWeight="bold">
+                      Address Preview
+                    </Text>
+                    <Text color="gray.400" fontSize="xs" fontFamily="mono">
+                      {formatDerivationPath(
+                        walletState.selectedScriptType,
+                        walletState.selectedAccount, 
+                        walletState.showChangeAddresses, 
+                        walletState.currentAddressIndex
+                      )}
+                    </Text>
+                  </VStack>
+                  <VStack align="end" gap={1}>
+                    <Text color="blue.300" fontSize="xs" bg="blue.900" px={2} py={1} borderRadius="md">
+                      Index: {walletState.currentAddressIndex}
+                    </Text>
+                    <Text color="orange.300" fontSize="xs" bg="orange.900" px={2} py={1} borderRadius="md">
+                      Pending
+                    </Text>
+                  </VStack>
+                </HStack>
+
+                {/* Device Verification Instead of QR Code */}
+                <VStack 
+                  gap={4} 
+                  bg="blue.900" 
+                  p={4} 
+                  borderRadius="lg" 
+                  border="2px solid" 
+                  borderColor="blue.600" 
+                  w="100%"
+                  minH="200px"
+                  justify="center"
+                >
+                  <HStack gap={2} align="center">
+                    <Box color="blue.300" fontSize="2xl">
+                      <FiShield />
+                    </Box>
+                    <Text color="blue.200" fontWeight="bold" fontSize="lg">
+                      Device Verification
+                    </Text>
+                  </HStack>
+                  <Text color="blue.200" fontSize="sm" textAlign="center">
+                    Verify address on your KeepKey device to display QR code
+                  </Text>
+                  <Button
+                    colorScheme="blue"
+                    size="lg"
+                    onClick={verifyOnDevice}
+                    disabled={verifying}
+                    w="100%"
+                  >
+                    <HStack gap={2}>
+                      {verifying ? <Spinner size="sm" /> : <FaEye />}
+                      <Text>{verifying ? 'Verifying...' : 'Verify on KeepKey'}</Text>
+                    </HStack>
+                  </Button>
+                </VStack>
+
+                {/* Address Placeholder */}
+                <VStack w="100%" gap={2}>
+                  <Text color="gray.300" fontSize="sm" fontWeight="medium">
+                    Bitcoin Address
+                  </Text>
+                  <Box
+                    w="100%"
+                    p={3}
+                    bg="gray.700"
+                    borderRadius="md"
+                    border="1px solid"
+                    borderColor="gray.600"
+                    textAlign="center"
+                  >
+                    <Text color="gray.500" fontSize="sm">
+                      Address will appear after device verification
+                    </Text>
+                  </Box>
+                </VStack>
+              </>
             )}
-          </Box>
+          </VStack>
+        </HStack>
 
-          {/* Address Info */}
-          <Box w="100%" bg="blue.900" p={3} borderRadius="md">
-            <Text fontSize="xs" color="blue.200">
-              <strong>Notice:</strong> This is a fresh Bitcoin address. 
-              For privacy, a new address is generated for each transaction.
-            </Text>
-          </Box>
-        </VStack>
-
-        {/* Action Buttons */}
-        <VStack gap={3}>
-          <HStack gap={3} width="100%">
-            <Button
-              colorScheme="blue"
-              size="lg"
-              onClick={generateNewAddress}
-              disabled={loading}
-              flex="1"
-            >
-              {loading ? <Spinner size="sm" /> : "Generate New"}
-            </Button>
-            <Button
-              colorScheme="purple"
-              size="lg"
-              onClick={viewOnDevice}
-              disabled={loading || isViewingOnDevice}
-              flex="1"
-            >
-              {isViewingOnDevice ? (
-                <HStack gap={2}>
-                  <Spinner size="sm" />
-                  <Text>Viewing...</Text>
-                </HStack>
-              ) : (
-                <HStack gap={2}>
-                  <FaEye />
-                  <Text>View on Device</Text>
-                </HStack>
-              )}
-            </Button>
-          </HStack>
+        {/* Bottom Navigation */}
+        <HStack justify="center">
           <Button
             variant="ghost"
             color="gray.400"
             onClick={onBack}
+            size="lg"
           >
             Done
           </Button>
-        </VStack>
-      </VStack>
+        </HStack>
+
+
+              </VStack>
+      </Box>
     </Box>
   );
 };

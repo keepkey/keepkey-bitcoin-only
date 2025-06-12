@@ -62,7 +62,12 @@ export const AppsView = () => {
   };
 
   return (
-    <Box p={6} height="100%" bg="rgba(0, 0, 0, 0.4)">
+    <Box 
+      p={6} 
+      height="100%" 
+      bg="rgba(26, 32, 44, 0.8)"
+      backdropFilter="blur(20px)"
+    >
       <Stack direction="column" gap={6} align="stretch" height="100%">
         {/* Header */}
         <Flex justify="space-between" align="center">
