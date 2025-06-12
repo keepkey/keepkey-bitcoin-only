@@ -4,8 +4,6 @@
 
 - `firmware/`: Bitcoin-only KeepKey firmware
 - `kkcli/`: CLI for KeepKey Bitcoin-only operations
-- `keepkey-rest/`: Shared REST API crate (Rust, used by both kkcli and Vault)
-- `vault-ui/`: Vite-based UI, shared between kkcli (web) and Vault (Tauri)
 - `vault/`: Tauri desktop app
 
 ## Shared REST API

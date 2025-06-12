@@ -130,43 +130,80 @@ impl DeviceFrontloader {
 
         match physical_device {
             Some(device) => {
-                // Try USB transport first
-                match crate::transport::UsbTransport::new(&device, 0) {
-                    Ok((transport, _, _)) => {
+                // Wrap USB transport creation in panic catch to prevent app crash
+                let usb_result = std::panic::catch_unwind(|| {
+                    crate::transport::UsbTransport::new(&device, 0)
+                });
+                
+                match usb_result {
+                    Ok(Ok((transport, _, _))) => {
                         info!("✅ Created USB transport for device {}", device_info.unique_id);
                         Ok(Box::new(transport))
                     }
-                    Err(usb_err) => {
+                    Ok(Err(usb_err)) => {
                         warn!("⚠️  USB transport failed for device {}: {}, trying HID fallback", device_info.unique_id, usb_err);
                         
-                        // Try HID fallback - try with unique_id first, then serial number
-                        let hid_result = crate::transport::HidTransport::new_for_device(Some(&device_info.unique_id))
-                            .or_else(|_| {
-                                if let Some(serial) = &device_info.serial_number {
-                                    crate::transport::HidTransport::new_for_device(Some(serial))
-                                } else {
-                                    Err(anyhow::anyhow!("No serial number for HID fallback"))
-                                }
-                            })
-                            .or_else(|_| {
-                                // Last resort: try without serial number (will use first available)
-                                warn!("⚠️  Trying HID without serial number filter");
-                                crate::transport::HidTransport::new_for_device(None)
-                            });
+                        // Wrap HID transport creation in panic catch to prevent app crash
+                        let hid_result = std::panic::catch_unwind(|| {
+                            crate::transport::HidTransport::new_for_device(Some(&device_info.unique_id))
+                                .or_else(|_| {
+                                    if let Some(serial) = &device_info.serial_number {
+                                        crate::transport::HidTransport::new_for_device(Some(serial))
+                                    } else {
+                                        Err(anyhow::anyhow!("No serial number for HID fallback"))
+                                    }
+                                })
+                                .or_else(|_| {
+                                    // Last resort: try without serial number (will use first available)
+                                    warn!("⚠️  Trying HID without serial number filter");
+                                    crate::transport::HidTransport::new_for_device(None)
+                                })
+                        });
                         
                         match hid_result {
-                            Ok(hid_transport) => {
+                            Ok(Ok(hid_transport)) => {
                                 info!("✅ Created HID transport for device {}", device_info.unique_id);
                                 Ok(Box::new(hid_transport))
                             }
-                            Err(hid_err) => {
+                            Ok(Err(hid_err)) => {
                                 error!("❌ Both USB and HID transports failed for device {}", device_info.unique_id);
                                 error!("   USB error: {}", usb_err);
                                 error!("   HID error: {}", hid_err);
                                 
-                                // DEVELOPMENT MODE: Return error to prevent going to "device ready" state
-                                error!("🚨 FAILING FAST: No transport available, preventing device ready state");
-                                Err(anyhow::anyhow!("Failed with both USB ({}) and HID ({})", usb_err, hid_err))
+                                // Return error without crashing app
+                                warn!("⚠️  Transport creation failed, device may not be accessible");
+                                Err(anyhow::anyhow!("Transport creation failed: USB ({}), HID ({})", usb_err, hid_err))
+                            }
+                            Err(panic_info) => {
+                                error!("❌ HID transport creation panicked for device {}", device_info.unique_id);
+                                error!("   Panic info: {:?}", panic_info);
+                                
+                                // Return error without crashing app  
+                                warn!("⚠️  HID transport creation panicked, device not accessible");
+                                Err(anyhow::anyhow!("HID transport creation panicked for device {}", device_info.unique_id))
+                            }
+                        }
+                    }
+                    Err(panic_info) => {
+                        error!("❌ USB transport creation panicked for device {}", device_info.unique_id);
+                        error!("   Panic info: {:?}", panic_info);
+                        
+                        // Try HID as fallback even after USB panic
+                        warn!("⚠️  USB panicked, trying HID fallback");
+                        let hid_result = std::panic::catch_unwind(|| {
+                            crate::transport::HidTransport::new_for_device(Some(&device_info.unique_id))
+                                .or_else(|_| crate::transport::HidTransport::new_for_device(None))
+                        });
+                        
+                        match hid_result {
+                            Ok(Ok(hid_transport)) => {
+                                info!("✅ Created HID transport after USB panic for device {}", device_info.unique_id);
+                                Ok(Box::new(hid_transport))
+                            }
+                            _ => {
+                                error!("❌ Both USB (panicked) and HID failed for device {}", device_info.unique_id);
+                                warn!("⚠️  All transport creation failed, device not accessible");
+                                Err(anyhow::anyhow!("USB transport panicked and HID fallback failed for device {}", device_info.unique_id))
                             }
                         }
                     }
@@ -182,8 +219,8 @@ impl DeviceFrontloader {
                     }
                 }
                 
-                // DEVELOPMENT MODE: Return error to prevent going to "device ready" state
-                error!("🚨 FAILING FAST: Physical device not found, preventing device ready state");
+                // Return error without crashing app
+                warn!("⚠️  Physical device not found, device may have disconnected");
                 Err(anyhow::anyhow!("Physical device not found for {}", device_info.unique_id))
             }
         }
@@ -542,11 +579,11 @@ impl DeviceFrontloader {
         
         info!("📍 Populated {} missing addresses and xpubs from database paths", count);
         
-        // DEVELOPMENT MODE: Fail if we had transport failures to prevent "device ready" state
+        // If we had transport failures, log them but don't fail the entire process
         if transport_failures > 0 {
-            error!("🚨 FAILING FRONTLOAD: Had {} transport failures - device is not accessible", transport_failures);
-            error!("🚨 This prevents the device from going to 'ready' state when it can't actually be used");
-            return Err(anyhow::anyhow!("Frontload failed due to {} transport failures - device not accessible", transport_failures));
+            warn!("⚠️  Had {} transport failures during frontload - some addresses may not be cached", transport_failures);
+            warn!("⚠️  Device may not be fully accessible, but app will continue with cached data");
+            // Don't return error - let the app continue with what it could cache
         }
         
         Ok(count)

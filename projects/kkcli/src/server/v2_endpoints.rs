@@ -299,13 +299,38 @@ pub async fn get_pubkeys(
             let address_path = &path.address_n_list_master;
             
             // Check if this address is cached - ONLY USE REAL DATA
-            if let Some(cached_addr) = cache.get_cached_address(&coin_name, &script_type, address_path) {
+            let cached_addr = cache.get_cached_address(&coin_name, &script_type, address_path)
+                .or_else(|| {
+                    // For Bitcoin networks, also check for XPUB variants (e.g., p2wpkh_xpub)
+                    if coin_name == "Bitcoin" {
+                        let xpub_script_type = format!("{}_xpub", script_type);
+                        cache.get_cached_address(&coin_name, &xpub_script_type, address_path)
+                    } else {
+                        None
+                    }
+                });
+            
+            if let Some(cached_addr) = cached_addr {
                 // Format BIP32 path strings
                 let path_str = format_bip32_path(&path.address_n_list);
                 let path_master_str = format_bip32_path(address_path);
                 
+                // Determine if this is an XPUB based on the address content
+                let key_type = if cached_addr.address.starts_with("xpub") || 
+                                 cached_addr.address.starts_with("ypub") || 
+                                 cached_addr.address.starts_with("zpub") {
+                    match cached_addr.address.chars().next() {
+                        Some('x') => "xpub".to_string(),
+                        Some('y') => "ypub".to_string(), 
+                        Some('z') => "zpub".to_string(),
+                        _ => path.path_type.clone(),
+                    }
+                } else {
+                    path.path_type.clone()
+                };
+                
                 let pubkey_response = PubkeyResponse {
-                    key_type: path.path_type.clone(),
+                    key_type,
                     master: None,
                     address: cached_addr.address.clone(),
                     pubkey: cached_addr.pubkey.unwrap_or_else(|| cached_addr.address.clone()),

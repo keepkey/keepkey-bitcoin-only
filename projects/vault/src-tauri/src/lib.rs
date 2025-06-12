@@ -161,129 +161,194 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                             let _ = emitter_clone.emit("application:state", &payload);
                         }
                         
-                        // Spawn async task to handle frontload
-                        tauri::async_runtime::spawn(async move {
-                            log::info!("Starting frontload process for device {}", device_id_clone);
+                        // Start device frontload in background with crash protection
+                        tokio::spawn(async move {
+                            log::info!("Device {} is ready for frontload", device_id_clone);
                             
-                            // Initialize cache database  
-                            let cache = match cache::DeviceCache::open() {
-                                Ok(cache) => cache,
-                                Err(e) => {
-                                    log::error!("Failed to initialize cache: {}", e);
-                                    return;
-                                }
-                            };
-                            
-                            // Get the device from registry to access USB info
-                            let device_entry = match device_registry::get_all_device_entries() {
-                                Ok(entries) => entries.into_iter()
-                                    .find(|e| e.device.unique_id == device_id_clone),
-                                Err(e) => {
-                                    log::error!("Failed to get device from registry: {}", e);
-                                    None
-                                }
-                            };
-                            
-                            if let Some(ref _entry) = device_entry {
-                                // Use existing device connection instead of creating new transport
-                                // This avoids "Entity not found" errors from concurrent device access
-                                log::info!("🔗 Using existing device connection for frontload: {}", device_id_clone);
-                                
-                                // Validate device cache before frontloading
-                                // Check if the device wallet state has changed (wiped/reinitialized)
-                                match crate::server::context::clear_device_cache_if_invalid(&device_id_clone).await {
-                                    Ok(cache_cleared) => {
-                                        if cache_cleared {
-                                            log::info!("🧹 Device cache cleared for {} due to wallet state change", device_id_clone);
+                            // Wrap entire frontload in panic protection to prevent app crash
+                            let frontload_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                tokio::runtime::Handle::current().block_on(async {
+                                    // Find the device entry in the registry
+                                    let device_entry = match device_registry::get_all_device_entries() {
+                                        Ok(entries) => entries.into_iter()
+                                            .find(|e| e.device.unique_id == device_id_clone),
+                                        Err(e) => {
+                                            log::error!("Failed to get device entries from registry: {}", e);
+                                            return Err(anyhow::anyhow!("Registry access failed: {}", e));
+                                        }
+                                    };
+                                    
+                                    if let Some(device_entry) = device_entry {
+                                        log::info!("Found device entry for frontload: {}", device_id_clone);
+
+                                        // Get cache from device manager if available
+                                        let cache = match cache::DeviceCache::open() {
+                                            Ok(cache) => cache,
+                                            Err(e) => {
+                                                log::error!("Failed to open device cache for frontload: {}", e);
+                                                return Err(anyhow::anyhow!("Cache open failed: {}", e));
+                                            }
+                                        };
+
+                                        // Validate device cache before frontload
+                                        let cache_valid = crate::server::context::validate_device_cache(&device_id_clone).await;
+                                        if cache_valid {
+                                            log::info!("✅ Device cache validated for {}", device_id_clone);
                                         } else {
-                                            log::info!("✅ Device cache is valid for {}", device_id_clone);
+                                            log::warn!("⚠️  Device cache validation failed for {}", device_id_clone);
+                                        }
+
+                                        // Create frontloader using the new factory pattern with device info
+                                        // This ensures proper transport creation with USB/HID fallback
+                                        let frontloader = cache::DeviceFrontloader::new_with_device(
+                                            cache,
+                                            device_entry.device.clone()
+                                        );
+                                                    
+                                        // Track progress for UI updates
+                                        let _last_progress = 0;
+                                        let _total_steps = 50; // Approximate number of addresses to load
+                                                    
+                                        // Create progress callback that emits to frontend
+                                        let emitter_for_progress = emitter_clone.clone();
+                                        let progress_callback = move |msg: String| {
+                                            log::info!("Frontload progress: {}", msg);
+                                            if let Ok(entries) = device_registry::get_all_device_entries() {
+                                                let payload = ApplicationState {
+                                                    status: msg,
+                                                    connected: !entries.is_empty(),
+                                                    devices: entries,
+                                                    blocking_actions_count: 0,
+                                                };
+                                                let _ = emitter_for_progress.emit("application:state", &payload);
+                                            }
+                                        };
+                                        
+                                        // Start frontload with progress tracking
+                                        frontloader.frontload_all_with_progress(Some(progress_callback)).await
+                                    } else {
+                                        log::error!("Device {} not found in registry for frontload", device_id_clone);
+                                        Err(anyhow::anyhow!("Device not found in registry"))
+                                    }
+                                })
+                            }));
+                            
+                            // Handle the result of frontload (whether successful, failed, or panicked)
+                            match frontload_result {
+                                Ok(Ok(_)) => {
+                                    log::info!("Frontload completed successfully for device {}", device_id_clone);
+                                    
+                                    // Automatically set device context for the successfully frontloaded device
+                                    // This ensures V1 API calls will work without manual context setup
+                                    log::info!("Setting device context to {}", device_id_clone);
+                                    
+                                    // Try to get device label from registry
+                                    let device_label = device_registry::get_all_device_entries()
+                                        .ok()
+                                        .and_then(|entries| {
+                                            entries.into_iter()
+                                                .find(|e| e.device.unique_id == device_id_clone)
+                                                .and_then(|entry| entry.features)
+                                                .and_then(|features| features.label)
+                                        });
+                                    
+                                    // Use the helper function that gets real Ethereum address from device
+                                    let _status = crate::server::context::set_context_with_real_eth_address(
+                                        device_id_clone.clone(),
+                                        device_label.clone()
+                                    ).await;
+                                    log::info!("Device context set successfully for device {} with label: {:?}", device_id_clone, device_label);
+                                    
+                                    // Update status to "Device ready"
+                                    if let Ok(entries) = device_registry::get_all_device_entries() {
+                                        let payload = ApplicationState {
+                                            status: "Device ready".to_string(),
+                                            connected: !entries.is_empty(),
+                                            devices: entries,
+                                            blocking_actions_count: 0,
+                                        };
+                                        let _ = emitter_clone.emit("application:state", &payload);
+                                    }
+                                }
+                                Ok(Err(e)) => {
+                                    log::error!("Frontload failed for device {}: {}", device_id_clone, e);
+                                    
+                                    // Check if this is a transport/device access error that requires troubleshooting
+                                    let error_msg = e.to_string();
+                                    let needs_troubleshooter = error_msg.contains("Physical device not found") ||
+                                                             error_msg.contains("No transport available") ||
+                                                             error_msg.contains("transport failures") ||
+                                                             error_msg.contains("Failed with both USB") ||
+                                                             error_msg.contains("Entity not found") ||
+                                                             error_msg.contains("Transport creation failed");
+                                    
+                                    if needs_troubleshooter {
+                                        log::warn!("Device connection issue detected, triggering troubleshooter wizard");
+                                        
+                                        // Emit troubleshooter event instead of crashing
+                                        let troubleshoot_payload = serde_json::json!({
+                                            "device_id": device_id_clone,
+                                            "error_type": "connection_failed",
+                                            "error_message": error_msg,
+                                            "suggested_actions": [
+                                                "Check USB cable connection",
+                                                "Try a different USB port",
+                                                "Restart the device",
+                                                "Check device permissions"
+                                            ]
+                                        });
+                                        let _ = emitter_clone.emit("device:troubleshooter_needed", &troubleshoot_payload);
+                                        
+                                        // Update status to show troubleshooter is needed
+                                        if let Ok(entries) = device_registry::get_all_device_entries() {
+                                            let payload = ApplicationState {
+                                                status: "Device needs troubleshooting - click for help".to_string(),
+                                                connected: !entries.is_empty(),
+                                                devices: entries,
+                                                blocking_actions_count: 0,
+                                            };
+                                            let _ = emitter_clone.emit("application:state", &payload);
+                                        }
+                                    } else {
+                                        // Other types of errors (not connection-related)
+                                        if let Ok(entries) = device_registry::get_all_device_entries() {
+                                            let payload = ApplicationState {
+                                                status: format!("Device registration failed: {}", e),
+                                                connected: !entries.is_empty(),
+                                                devices: entries,
+                                                blocking_actions_count: 0,
+                                            };
+                                            let _ = emitter_clone.emit("application:state", &payload);
                                         }
                                     }
-                                    Err(e) => {
-                                        log::warn!("⚠️  Failed to validate device cache for {}: {}", device_id_clone, e);
+                                }
+                                Err(panic_info) => {
+                                    log::error!("Frontload process panicked for device {}: {:?}", device_id_clone, panic_info);
+                                    log::error!("This is a critical bug that needs investigation");
+                                    
+                                    // Even on panic, don't crash the app - just show error state
+                                    let troubleshoot_payload = serde_json::json!({
+                                        "device_id": device_id_clone,
+                                        "error_type": "internal_error", 
+                                        "error_message": "Internal error during device setup",
+                                        "suggested_actions": [
+                                            "Restart the application",
+                                            "Check device connection",
+                                            "Contact support if issue persists"
+                                        ]
+                                    });
+                                    let _ = emitter_clone.emit("device:troubleshooter_needed", &troubleshoot_payload);
+                                    
+                                    if let Ok(entries) = device_registry::get_all_device_entries() {
+                                        let payload = ApplicationState {
+                                            status: "Device setup failed - restart may help".to_string(),
+                                            connected: !entries.is_empty(),
+                                            devices: entries,
+                                            blocking_actions_count: 0,
+                                        };
+                                        let _ = emitter_clone.emit("application:state", &payload);
                                     }
                                 }
-
-                                // Create frontloader using the new factory pattern with device info
-                                // This ensures proper transport creation with USB/HID fallback
-                                let frontloader = cache::DeviceFrontloader::new_with_device(
-                                    cache,
-                                    device_entry.as_ref().unwrap().device.clone()
-                                );
-                                            
-                                            // Track progress for UI updates
-                                                                        let _last_progress = 0;
-                            let _total_steps = 50; // Approximate number of addresses to load
-                                            
-                                            // Create progress callback that emits to frontend
-                                            let emitter_for_progress = emitter_clone.clone();
-                                            let progress_callback = move |msg: String| {
-                                                log::info!("Frontload progress: {}", msg);
-                                                if let Ok(entries) = device_registry::get_all_device_entries() {
-                                                    let payload = ApplicationState {
-                                                        status: msg,
-                                                        connected: !entries.is_empty(),
-                                                        devices: entries,
-                                                        blocking_actions_count: 0,
-                                                    };
-                                                    let _ = emitter_for_progress.emit("application:state", &payload);
-                                                }
-                                            };
-                                            
-                                            // Start frontload with progress tracking
-                                            match frontloader.frontload_all_with_progress(Some(progress_callback)).await {
-                                                Ok(_) => {
-                                                    log::info!("Frontload completed successfully for device {}", device_id_clone);
-                                                    
-                                                    // Automatically set device context for the successfully frontloaded device
-                                                    // This ensures V1 API calls will work without manual context setup
-                                                    log::info!("Setting device context to {}", device_id_clone);
-                                                    
-                                                    // Try to get device label from registry
-                                                    let device_label = device_registry::get_all_device_entries()
-                                                        .ok()
-                                                        .and_then(|entries| {
-                                                            entries.into_iter()
-                                                                .find(|e| e.device.unique_id == device_id_clone)
-                                                                .and_then(|entry| entry.features)
-                                                                .and_then(|features| features.label)
-                                                        });
-                                                    
-                                                    // Use the helper function that gets real Ethereum address from device
-                                                    let _status = crate::server::context::set_context_with_real_eth_address(
-                                                        device_id_clone.clone(),
-                                                        device_label.clone()
-                                                    ).await;
-                                                    log::info!("Device context set successfully for device {} with label: {:?}", device_id_clone, device_label);
-                                                    
-                                                    // Update status to "Device ready"
-                                                    if let Ok(entries) = device_registry::get_all_device_entries() {
-                                                        let payload = ApplicationState {
-                                                            status: "Device ready".to_string(),
-                                                            connected: !entries.is_empty(),
-                                                            devices: entries,
-                                                            blocking_actions_count: 0,
-                                                        };
-                                                        let _ = emitter_clone.emit("application:state", &payload);
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    log::error!("Frontload failed for device {}: {}", device_id_clone, e);
-                                                    
-                                                    // Update status to show error
-                                                    if let Ok(entries) = device_registry::get_all_device_entries() {
-                                                        let payload = ApplicationState {
-                                                            status: format!("Device registration failed: {}", e),
-                                                            connected: !entries.is_empty(),
-                                                            devices: entries,
-                                                            blocking_actions_count: 0,
-                                                        };
-                                                        let _ = emitter_clone.emit("application:state", &payload);
-                                                    }
-                                                }
-                                            }
-                            } else {
-                                log::error!("Device {} not found in registry for frontload", device_id_clone);
                             }
                         });
                     }
