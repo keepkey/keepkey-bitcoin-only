@@ -18,12 +18,55 @@ console.log('');
 // Configuration
 const LOCAL_PIONEER_BASE = 'http://127.0.0.1:9001';
 
-// Test XPUBs from real KeepKey devices (only valid ones for now)
-const TEST_XPUBS = {
-    btc_legacy: 'xpub6CqeSKMnFCNL3iD4FMBXxec7dqwrqvgpHYX7fDKgWQLATp6HS1nNsWvMXKWNbPJ8s6ybHEGWJ6E8V2trZVrYtnZUMT1toFUppxXTpwKh1hG',
-    btc_segwit: 'ypub6WamSeXgTYgy7W25fVorMLDHFx5SPkuYaE7ToWCiyCUK2jdWpufQ8VqkDg83YjBtJFHDoekhf9ESdPDbL9aCPXC5NnmzXUiq3J6oycFShfS',
-    // btc_native_segwit: 'zpub...' // Add real zpub here once available from KeepKey
-};
+// Get real XPUBs from vault dynamically - NO HARDCODED/FAKE DATA
+let TEST_XPUBS = {};
+
+async function getRealXPUBsFromVault() {
+    try {
+        console.log('🔑 Getting REAL XPUBs from vault at localhost:1646...');
+        
+        const pubkeysResponse = await axios.get('http://localhost:1646/api/v2/pubkeys');
+        const pubkeys = pubkeysResponse.data;
+        
+        // Find Bitcoin XPUBs
+        const bitcoinXpubs = pubkeys.filter(p => 
+            p.scriptType && p.scriptType.includes('_xpub') &&
+            p.address && (
+                p.address.startsWith('xpub') || 
+                p.address.startsWith('ypub') || 
+                p.address.startsWith('zpub')
+            ) &&
+            p.context && p.context.includes('bip122:000000000019d6689c085ae165831e93')
+        );
+        
+        console.log(`✅ Found ${bitcoinXpubs.length} real Bitcoin XPUBs from vault`);
+        
+        // Map to test structure
+        for (const xpub of bitcoinXpubs) {
+            if (xpub.address.startsWith('xpub')) {
+                TEST_XPUBS.btc_legacy = xpub.address;
+                console.log(`   btc_legacy (P2PKH): ${xpub.address.substring(0, 20)}...`);
+            } else if (xpub.address.startsWith('ypub')) {
+                TEST_XPUBS.btc_segwit = xpub.address;
+                console.log(`   btc_segwit (P2SH-P2WPKH): ${xpub.address.substring(0, 20)}...`);
+            } else if (xpub.address.startsWith('zpub')) {
+                TEST_XPUBS.btc_native_segwit = xpub.address;
+                console.log(`   btc_native_segwit (P2WPKH): ${xpub.address.substring(0, 20)}...`);
+            }
+        }
+        
+        if (Object.keys(TEST_XPUBS).length === 0) {
+            throw new Error('No Bitcoin XPUBs found in vault - is device frontloaded?');
+        }
+        
+        return TEST_XPUBS;
+    } catch (error) {
+        console.log('❌ CRITICAL: Cannot get real XPUBs from vault');
+        console.log(`   Error: ${error.message}`);
+        console.log('   Fix: Make sure vault is running and device is frontloaded');
+        throw new Error('NO_REAL_XPUBS_FROM_VAULT');
+    }
+}
 
 async function testPioneerHealth() {
     try {
@@ -237,6 +280,12 @@ async function testPioneerPortfolioEndpoint() {
 async function runPioneerOnlyTests() {
     try {
         console.log('🚀 Starting Pioneer Only Test Suite - FAIL FAST MODE\n');
+        
+        // Step 0: Get Real XPUBs from Vault
+        console.log('Step 0: Get Real XPUBs from Vault');
+        console.log('─'.repeat(33));
+        await getRealXPUBsFromVault();
+        console.log('');
         
         // Step 1: Health Check
         console.log('Step 1: Pioneer Health Check');

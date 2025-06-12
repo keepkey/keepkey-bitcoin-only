@@ -930,8 +930,8 @@ impl DeviceCache {
         match self.get_config("pioneer_server_url").await? {
             Some(url) => Ok(url),
             None => {
-                // Set default if not found
-                let default_url = "https://pioneers.dev";
+                // Set default to local pioneer server (not remote)
+                let default_url = "http://127.0.0.1:9001";
                 self.set_config("pioneer_server_url", default_url, Some("Pioneer server URL for balance and market data")).await?;
                 Ok(default_url.to_string())
             }

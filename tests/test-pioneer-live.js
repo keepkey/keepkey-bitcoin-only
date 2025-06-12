@@ -49,32 +49,65 @@ async function getRealXPUBsFromVault() {
     try {
         console.log('\n🔑 Getting REAL XPUBs from connected KeepKey device...');
         
-        // Get actual pubkeys from vault - NO MOCKING
-        const response = await axios.get(`${LOCALHOST_VAULT}/api/v2/pubkeys`);
-        console.log(`📊 Retrieved ${response.data.length} pubkeys from vault`);
+        // Check pubkeys using simple fetch approach that works
+        const pubkeysResponse = await fetch('http://localhost:1646/api/v2/pubkeys');
+        if (!pubkeysResponse.ok) {
+            throw new Error(`Pubkeys API returned ${pubkeysResponse.status}`);
+        }
+        const pubkeys = await pubkeysResponse.json();
+        console.log(`📊 Retrieved ${pubkeys.length} pubkeys from vault`);
         
-        // Extract REAL Bitcoin XPUBs
-        const bitcoinXpubs = response.data.filter(p => 
-            p.key_type && ['xpub', 'ypub', 'zpub'].includes(p.key_type) &&
+        // DEBUG: Show all pubkeys to understand what we're getting
+        console.log('\n🔍 DEBUG: All pubkeys returned:');
+        for (let i = 0; i < Math.min(pubkeys.length, 5); i++) {
+            const p = pubkeys[i];
+            console.log(`   ${i+1}. scriptType: "${p.scriptType}", address: "${p.address?.substring(0, 30)}...", context: "${p.context}"`);
+        }
+        if (pubkeys.length > 5) {
+            console.log(`   ... and ${pubkeys.length - 5} more entries`);
+        }
+        
+        // Find REAL Bitcoin XPUBs by checking scriptType and address format
+        const bitcoinXpubs = pubkeys.filter(p => 
+            p.scriptType && p.scriptType.includes('_xpub') &&
+            p.address && (
+                p.address.startsWith('xpub') || 
+                p.address.startsWith('ypub') || 
+                p.address.startsWith('zpub')
+            ) &&
             p.context && p.context.includes('bip122:000000000019d6689c085ae165831e93')
         );
-        
-        console.log(`✅ Found ${bitcoinXpubs.length} REAL Bitcoin XPUBs:`);
+        console.log('bitcoinXpubs: ',bitcoinXpubs);
+        console.log(`\n✅ Found ${bitcoinXpubs.length} REAL Bitcoin XPUBs:`);
         
         for (const xpub of bitcoinXpubs) {
-            console.log(`   ${xpub.key_type}: ${xpub.address.substring(0, 20)}... (${xpub.scriptType})`);
+            // Determine type from address prefix
+            let key_type = 'unknown';
+            if (xpub.address.startsWith('xpub')) key_type = 'xpub';
+            else if (xpub.address.startsWith('ypub')) key_type = 'ypub'; 
+            else if (xpub.address.startsWith('zpub')) key_type = 'zpub';
+            
+            console.log(`   ${key_type}: ${xpub.address.substring(0, 20)}... (${xpub.scriptType})`);
             
             // Store real XPUBs by type
-            if (xpub.key_type === 'xpub') {
+            if (key_type === 'xpub') {
                 REAL_XPUBS.legacy = xpub.address;
-            } else if (xpub.key_type === 'ypub') {
+            } else if (key_type === 'ypub') {
                 REAL_XPUBS.segwit = xpub.address;
-            } else if (xpub.key_type === 'zpub') {
+            } else if (key_type === 'zpub') {
                 REAL_XPUBS.native_segwit = xpub.address;
             }
         }
         
         if (bitcoinXpubs.length === 0) {
+            console.log('\n🔍 DEBUG: No XPUBs found - showing what we have:');
+            const xpubEntries = pubkeys.filter(p => p.scriptType && p.scriptType.includes('_xpub'));
+            console.log(`   ${xpubEntries.length} entries with _xpub scriptType`);
+            const addressEntries = pubkeys.filter(p => p.address && (p.address.startsWith('xpub') || p.address.startsWith('ypub') || p.address.startsWith('zpub')));
+            console.log(`   ${addressEntries.length} entries with xpub/ypub/zpub address format`);
+            const bitcoinEntries = pubkeys.filter(p => p.context && p.context.includes('bip122:000000000019d6689c085ae165831e93'));
+            console.log(`   ${bitcoinEntries.length} entries with Bitcoin context`);
+            
             throw new Error('NO REAL XPUBs FOUND - Device not frontloaded or not connected');
         }
         

@@ -467,6 +467,15 @@ pub async fn get_pubkeys(
                         path.path_type.clone()
                     };
                     
+                    // Use proper Bitcoin CAIP-2 context for Bitcoin mainnet
+                    let bitcoin_context = if network == "bitcoin" || network == "mainnet" {
+                        "bip122:000000000019d6689c085ae165831e93"  // Bitcoin mainnet genesis hash
+                    } else if network == "testnet" {
+                        "bip122:000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"  // Bitcoin testnet genesis hash
+                    } else {
+                        &format!("XPUB for {}", network)
+                    };
+
                     let pubkey_response = PubkeyResponse {
                         key_type: key_type.clone(),
                         master: None,
@@ -478,7 +487,7 @@ pub async fn get_pubkeys(
                         note: path.note.clone(),
                         available_scripts_types: path.available_script_types.clone(),
                         networks: vec![network.clone()],
-                        context: Some(format!("XPUB for {}", network)),
+                        context: Some(bitcoin_context.to_string()),
                     };
                     
                     pubkey_responses.push(pubkey_response);
@@ -527,6 +536,15 @@ pub async fn get_pubkeys(
                     
                     let key_type = path.path_type.clone();
                     
+                    // Use proper CAIP-2 context
+                    let context = if network == "bitcoin" || network == "mainnet" {
+                        "bip122:000000000019d6689c085ae165831e93"  // Bitcoin mainnet genesis hash
+                    } else if network == "testnet" {
+                        "bip122:000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"  // Bitcoin testnet genesis hash
+                    } else {
+                        &format!("Real cached address for {}", network)
+                    };
+
                     let pubkey_response = PubkeyResponse {
                         key_type,
                         master: None,
@@ -538,7 +556,7 @@ pub async fn get_pubkeys(
                         note: path.note.clone(),
                         available_scripts_types: path.available_script_types.clone(),
                         networks: vec![network.clone()],
-                        context: Some(format!("Real cached address for {}", network)),
+                        context: Some(context.to_string()),
                     };
                     
                     pubkey_responses.push(pubkey_response);
@@ -923,15 +941,24 @@ async fn refresh_balances_from_pioneer(cache: &DeviceCache, device_id: &str) -> 
                 }
             };
             
-            if let Some(cached_addr) = cache.get_cached_address(&coin_name, &script_type, &path.address_n_list_master) {
+            // For UTXO networks (Bitcoin), look for XPUBs at account level with _xpub suffix
+            // For account-based networks, look at master level with regular script type
+            let is_utxo_network = network.starts_with("bip122:");
+            let (lookup_script_type, lookup_path) = if is_utxo_network {
+                (format!("{}_xpub", script_type), &path.address_n_list) // Bitcoin XPUBs stored as p2wpkh_xpub etc.
+            } else {
+                (script_type.clone(), &path.address_n_list_master) // Ethereum addresses etc.
+            };
+            
+            if let Some(cached_addr) = cache.get_cached_address(&coin_name, &lookup_script_type, lookup_path) {
                 let pubkey = cached_addr.pubkey.unwrap_or_else(|| cached_addr.address.clone());
-                info!("{}: Adding asset query: caip={}, pubkey={}, address={}", tag, caip, pubkey, cached_addr.address);
+                info!("{}: Adding asset query: caip={}, pubkey={}, address={} ({})", tag, caip, pubkey, cached_addr.address, lookup_script_type);
                 asset_queries.push(serde_json::json!({
                     "caip": caip,
                     "pubkey": pubkey
                 }));
             } else {
-                warn!("{}: No cached address found for {} {} at path {:?}", tag, coin_name, script_type, path.address_n_list_master);
+                warn!("{}: No cached address found for {} {} at path {:?} (looked for script_type: {})", tag, coin_name, script_type, lookup_path, lookup_script_type);
             }
         }
     }
@@ -1248,7 +1275,7 @@ pub async fn debug_device_cache(State(app_state): State<Arc<AppState>>) -> impl 
     })).into_response()
 }
 
-/// Manual device sync endpoint - force sync device from registry to cache
+/// Manual device sync endpoint - force sync device from registry to cache AND refresh balances
 pub async fn sync_device_to_cache(State(app_state): State<Arc<AppState>>) -> impl IntoResponse {
     let tag = "sync_device_to_cache";
     
@@ -1275,29 +1302,53 @@ pub async fn sync_device_to_cache(State(app_state): State<Arc<AppState>>) -> imp
     if let Some(features) = &device_entry.features {
         // Convert device registry features to cache features format
         let cache_features = crate::cache::device_cache::CachedFeatures {
-    device_id: device_id.clone(),
-    label: features.label.clone(),
-    vendor: features.vendor.clone(),
-    major_version: None, // No longer present in DeviceFeatures
-    minor_version: None, // No longer present in DeviceFeatures
-    patch_version: None, // No longer present in DeviceFeatures
-    revision: features.version.clone().into(), // Use version string as revision
-    firmware_hash: features.firmware_hash.clone(),
-    bootloader_hash: features.bootloader_hash.clone(),
-    features_json: serde_json::to_string(features).unwrap_or_else(|_| "{}".to_string()),
-    last_seen: chrono::Utc::now().timestamp(),
-};
+            device_id: device_id.clone(),
+            label: features.label.clone(),
+            vendor: features.vendor.clone(),
+            major_version: None, // No longer present in DeviceFeatures
+            minor_version: None, // No longer present in DeviceFeatures
+            patch_version: None, // No longer present in DeviceFeatures
+            revision: features.version.clone().into(), // Use version string as revision
+            firmware_hash: features.firmware_hash.clone(),
+            bootloader_hash: features.bootloader_hash.clone(),
+            features_json: serde_json::to_string(features).unwrap_or_else(|_| "{}".to_string()),
+            last_seen: chrono::Utc::now().timestamp(),
+        };
         
         // Force-set device in memory cache using the new method
         app_state.device_cache.force_set_device_features(device_id.clone(), cache_features);
         
-        info!("{}: Successfully synced device {} to cache", tag, device_id);
+        info!("{}: ✅ Device {} synced to cache, now refreshing balances...", tag, device_id);
         
-        Json(serde_json::json!({
-            "success": true,
-            "device_id": device_id,
-            "message": "Device synced to cache successfully"
-        })).into_response()
+        // Also refresh balances from Pioneer API to ensure portfolio endpoints work
+        match refresh_balances_from_pioneer(&*app_state.device_cache, device_id).await {
+            Ok(_) => {
+                // Get balance count for confirmation
+                let balance_count = match app_state.device_cache.get_cached_balances(device_id).await {
+                    Ok(balances) => balances.len(),
+                    Err(_) => 0,
+                };
+                
+                info!("{}: ✅ Successfully synced device {} and refreshed {} balances", tag, device_id, balance_count);
+                
+                Json(serde_json::json!({
+                    "success": true,
+                    "device_id": device_id,
+                    "balances_cached": balance_count,
+                    "message": format!("Device synced and {} balances refreshed successfully", balance_count)
+                })).into_response()
+            }
+            Err(e) => {
+                warn!("{}: Device synced but balance refresh failed: {}", tag, e);
+                Json(serde_json::json!({
+                    "success": true,
+                    "device_id": device_id,
+                    "balances_cached": 0,
+                    "warning": format!("Device synced but balance refresh failed: {}", e),
+                    "message": "Device synced successfully but balances may be stale"
+                })).into_response()
+            }
+        }
     } else {
         (StatusCode::BAD_REQUEST, Json(serde_json::json!({
             "error": "Device has no features in registry"
@@ -1353,7 +1404,7 @@ pub struct AddressGenerationResponse {
 // Pioneer API client for comparison
 async fn call_pioneer_api(endpoint: &str) -> Result<reqwest::Response, Box<dyn std::error::Error + Send + Sync>> {
     let client = reqwest::Client::new();
-    let url = format!("https://pioneers.dev{}", endpoint);
+    let url = format!("http://127.0.0.1:9001{}", endpoint);
     
     debug!("Calling Pioneer API: {}", url);
     let response = client
