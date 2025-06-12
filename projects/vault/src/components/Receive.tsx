@@ -56,6 +56,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [editingPath, setEditingPath] = useState(false);
   const [customPath, setCustomPath] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Script type info mapping
   const getScriptTypeInfo = (scriptType: string) => {
@@ -201,12 +202,6 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     setAddressState(null);
   };
 
-  const handleIndexChange = (value: number) => {
-    setWalletState(prev => ({ ...prev, currentAddressIndex: value }));
-    setDeviceVerified(false);
-    setAddressState(null);
-  };
-
   // Reset to fresh state
   const resetToFresh = () => {
     setDeviceVerified(false);
@@ -228,398 +223,424 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
         boxShadow="2xl"
       >
         <VStack align="stretch" gap={6}>
-        {/* Header */}
-        <HStack>
-          <IconButton
-            aria-label="Go back"
-            onClick={onBack}
-            size="sm"
-          >
-            <FaArrowLeft />
-          </IconButton>
-          <Flex align="center" justify="center" flex="1" gap={2}>
-            <Box color="orange.400" fontSize="xl">
-              <SiBitcoin />
-            </Box>
-            <Heading size="lg" color="white">
-              Receive Bitcoin
-            </Heading>
-          </Flex>
-          <Box w="40px" />
-        </HStack>
+          {/* Header */}
+          <HStack>
+            <IconButton
+              aria-label="Go back"
+              onClick={onBack}
+              size="sm"
+            >
+              <FaArrowLeft />
+            </IconButton>
+            <Flex align="center" justify="center" flex="1" gap={2}>
+              <Box color="orange.400" fontSize="xl">
+                <SiBitcoin />
+              </Box>
+              <Heading size="lg" color="white">
+                Receive Bitcoin
+              </Heading>
+            </Flex>
+            <Button
+              size="sm"
+              variant={showAdvanced ? "solid" : "outline"}
+              colorScheme="gray"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              bg={showAdvanced ? "gray.600" : "transparent"}
+              color="white"
+              _hover={{ bg: showAdvanced ? "gray.500" : "gray.700" }}
+            >
+              {showAdvanced ? "Hide Advanced" : "Advanced"}
+            </Button>
+          </HStack>
 
-        {/* Main Content - Side by Side Layout */}
-        <HStack gap={6} align="stretch" minH="500px">
-          {/* Left Panel - Configuration */}
-          <VStack gap={4} flex="1" align="stretch" maxW="50%">
-            {/* Configuration Controls */}
-            <VStack gap={4} bg="gray.800" p={4} borderRadius="lg" h="500px" justify="space-between">
-              {/* Top Section - Configuration Controls */}
-              <VStack gap={4} align="stretch" w="100%">
-                <Text color="gray.300" fontSize="sm" fontWeight="bold">
-                  Address Configuration
-                </Text>
-                
-                {/* Account Dropdown */}
-                <VStack align="stretch" gap={2}>
-                  <Text color="gray.400" fontSize="xs">Account</Text>
-                  <select
-                    value={walletState.selectedAccount}
-                    onChange={(e) => handleAccountChange(parseInt(e.target.value))}
-                    style={{ 
-                      backgroundColor: '#2D3748', 
-                      borderColor: '#4A5568', 
-                      color: 'white',
-                      border: '1px solid #4A5568',
-                      borderRadius: '6px',
-                      padding: '8px',
-                      fontSize: '14px',
-                      width: '100%'
-                    }}
-                  >
-                    <option value={0}>Account 1</option>
-                    <option value={1}>Account 2</option>
-                    <option value={2}>Account 3</option>
-                  </select>
-                </VStack>
-
-                {/* Script Type Dropdown */}
-                <VStack align="stretch" gap={2}>
-                  <Text color="gray.400" fontSize="xs">Address Type</Text>
-                  <select
-                    value={walletState.selectedScriptType}
-                    onChange={(e) => handleScriptTypeChange(e.target.value)}
-                    style={{ 
-                      backgroundColor: '#2D3748', 
-                      borderColor: '#4A5568', 
-                      color: 'white',
-                      border: '1px solid #4A5568',
-                      borderRadius: '6px',
-                      padding: '8px',
-                      fontSize: '14px',
-                      width: '100%'
-                    }}
-                  >
-                    <option value="p2wpkh">Native SegWit (P2WPKH) - Recommended</option>
-                    <option value="p2sh-p2wpkh">SegWit (P2SH-P2WPKH)</option>
-                    <option value="p2pkh">Legacy (P2PKH)</option>
-                  </select>
-                </VStack>
-
-                {/* Change Address Toggle */}
-                <HStack justify="space-between" align="center">
-                  <Text color="gray.400" fontSize="xs">Change Addresses</Text>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      type="checkbox"
-                      checked={walletState.showChangeAddresses}
-                      onChange={(e) => handleChangeToggle(e.target.checked)}
-                      style={{ accentColor: '#3182ce' }}
-                    />
-                    <Text color="gray.400" fontSize="xs">
-                      {walletState.showChangeAddresses ? 'ON' : 'OFF'}
+          {/* Main Content - Responsive Layout */}
+          <HStack gap={6} align="stretch" minH="500px" justify="center">
+            {/* Left Panel - Configuration (Hidden by default) */}
+            {showAdvanced && (
+              <VStack gap={4} flex="1" align="stretch" maxW="50%">
+                {/* Configuration Controls */}
+                <VStack gap={4} bg="gray.800" p={4} borderRadius="lg" h="500px" justify="space-between">
+                  {/* Top Section - Configuration Controls */}
+                  <VStack gap={4} align="stretch" w="100%">
+                    <Text color="gray.300" fontSize="sm" fontWeight="bold">
+                      Address Configuration
                     </Text>
-                  </label>
-                </HStack>
+                    
+                    {/* Account Dropdown */}
+                    <VStack align="stretch" gap={2}>
+                      <Text color="gray.400" fontSize="xs">Account</Text>
+                      <select
+                        value={walletState.selectedAccount}
+                        onChange={(e) => handleAccountChange(parseInt(e.target.value))}
+                        style={{ 
+                          backgroundColor: '#2D3748', 
+                          borderColor: '#4A5568', 
+                          color: 'white',
+                          border: '1px solid #4A5568',
+                          borderRadius: '6px',
+                          padding: '8px',
+                          fontSize: '14px',
+                          width: '100%'
+                        }}
+                      >
+                        <option value={0}>Account 1</option>
+                        <option value={1}>Account 2</option>
+                        <option value={2}>Account 3</option>
+                      </select>
+                    </VStack>
 
-                {/* Current Path Display with Edit */}
-                <VStack align="stretch" gap={2}>
-                  <HStack justify="space-between" align="center">
-                    <Text color="gray.400" fontSize="xs">Derivation Path</Text>
-                    <IconButton
-                      aria-label="Edit path manually"
-                      size="xs"
-                      variant="ghost"
-                      color="gray.300"
-                      onClick={() => setEditingPath(true)}
-                    >
-                      <FaPencilAlt />
-                    </IconButton>
+                    {/* Script Type Dropdown */}
+                    <VStack align="stretch" gap={2}>
+                      <Text color="gray.400" fontSize="xs">Address Type</Text>
+                      <select
+                        value={walletState.selectedScriptType}
+                        onChange={(e) => handleScriptTypeChange(e.target.value)}
+                        style={{ 
+                          backgroundColor: '#2D3748', 
+                          borderColor: '#4A5568', 
+                          color: 'white',
+                          border: '1px solid #4A5568',
+                          borderRadius: '6px',
+                          padding: '8px',
+                          fontSize: '14px',
+                          width: '100%'
+                        }}
+                      >
+                        <option value="p2wpkh">Native SegWit (P2WPKH) - Recommended</option>
+                        <option value="p2sh-p2wpkh">SegWit (P2SH-P2WPKH)</option>
+                        <option value="p2pkh">Legacy (P2PKH)</option>
+                      </select>
+                    </VStack>
+
+                    {/* Change Address Toggle */}
+                    <HStack justify="space-between" align="center">
+                      <Text color="gray.400" fontSize="xs">Change Addresses</Text>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="checkbox"
+                          checked={walletState.showChangeAddresses}
+                          onChange={(e) => handleChangeToggle(e.target.checked)}
+                          style={{ accentColor: '#3182ce' }}
+                        />
+                        <Text color="gray.400" fontSize="xs">
+                          {walletState.showChangeAddresses ? 'ON' : 'OFF'}
+                        </Text>
+                      </label>
+                    </HStack>
+
+                    {/* Current Path Display with Edit */}
+                    <VStack align="stretch" gap={2}>
+                      <HStack justify="space-between" align="center">
+                        <Text color="gray.400" fontSize="xs">Derivation Path</Text>
+                        <IconButton
+                          aria-label="Edit path manually"
+                          size="xs"
+                          variant="ghost"
+                          color="gray.300"
+                          onClick={() => setEditingPath(true)}
+                        >
+                          <FaPencilAlt />
+                        </IconButton>
+                      </HStack>
+                      {editingPath ? (
+                        <HStack>
+                          <Input
+                            value={customPath || formatDerivationPath(
+                              walletState.selectedScriptType,
+                              walletState.selectedAccount, 
+                              walletState.showChangeAddresses, 
+                              walletState.currentAddressIndex
+                            )}
+                            onChange={(e) => setCustomPath(e.target.value)}
+                            bg="gray.700"
+                            borderColor="gray.600"
+                            color="white"
+                            size="sm"
+                            fontSize="xs"
+                            fontFamily="mono"
+                            placeholder="m/84'/0'/0'/0/0"
+                          />
+                          <Button size="xs" colorScheme="green" onClick={() => setEditingPath(false)}>
+                            ✓
+                          </Button>
+                          <Button size="xs" variant="ghost" onClick={() => { setEditingPath(false); setCustomPath(''); }}>
+                            ✗
+                          </Button>
+                        </HStack>
+                      ) : (
+                        <Text color="gray.300" fontSize="xs" fontFamily="mono" bg="gray.700" p={2} borderRadius="md">
+                          {formatDerivationPath(
+                            walletState.selectedScriptType,
+                            walletState.selectedAccount, 
+                            walletState.showChangeAddresses, 
+                            walletState.currentAddressIndex
+                          )} (Index: {walletState.currentAddressIndex})
+                        </Text>
+                      )}
+                    </VStack>
+                  </VStack>
+
+                  {/* Bottom Section - Action Buttons */}
+                  <VStack gap={3} w="100%">
+                    {deviceVerified ? (
+                      <>
+                        <HStack gap={3} width="100%">
+                          <Button
+                            colorScheme="gray"
+                            size="lg"
+                            onClick={generateNewAddress}
+                            flex="1"
+                            bg="gray.600"
+                            _hover={{ bg: "gray.500" }}
+                            color="white"
+                          >
+                            <HStack gap={2}>
+                              <FaRedo />
+                              <Text>Generate Next</Text>
+                            </HStack>
+                          </Button>
+                          <Button
+                            colorScheme="gray"
+                            size="lg"
+                            onClick={verifyOnDevice}
+                            disabled={verifying}
+                            flex="1"
+                            bg="gray.600"
+                            _hover={{ bg: "gray.500" }}
+                            color="white"
+                          >
+                            <HStack gap={2}>
+                              {verifying ? <Spinner size="sm" /> : <FaEye />}
+                              <Text>Re-verify</Text>
+                            </HStack>
+                          </Button>
+                        </HStack>
+                        
+                        <Button
+                          variant="ghost"
+                          color="gray.400"
+                          onClick={resetToFresh}
+                          size="sm"
+                        >
+                          Reset to Fresh
+                        </Button>
+                      </>
+                    ) : (
+                      /* Spacer when not verified to maintain height */
+                      <Box minH="90px" />
+                    )}
+                  </VStack>
+                </VStack>
+
+                {/* Error Display */}
+                {error && (
+                  <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
+                    <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
+                  </Box>
+                )}
+              </VStack>
+            )}
+
+            {/* Right Panel - Address Display (Always Present) */}
+            <VStack 
+              gap={4} 
+              bg="gray.800" 
+              p={4} 
+              borderRadius="lg" 
+              flex="1" 
+              minH="500px" 
+              maxW={showAdvanced ? "50%" : "600px"}
+              w="100%"
+            >
+              {deviceVerified && addressState ? (
+                /* Address Display When Verified */
+                <>
+                  {/* Address Info Header */}
+                  <HStack w="100%" justify="space-between" align="center">
+                    <VStack align="start" gap={1}>
+                      <Text color="green.300" fontSize="sm" fontWeight="bold">
+                        ✅ Device Verified Address
+                      </Text>
+                      <Text color="gray.400" fontSize="xs" fontFamily="mono">
+                        {addressState.derivationPath}
+                      </Text>
+                    </VStack>
+                    <VStack align="end" gap={1}>
+                      <Text color="gray.300" fontSize="xs" bg="gray.700" px={2} py={1} borderRadius="md">
+                        Index: {addressState.addressIndex}
+                      </Text>
+                      <Text color="green.300" fontSize="xs" bg="gray.700" px={2} py={1} borderRadius="md">
+                        Receive
+                      </Text>
+                    </VStack>
                   </HStack>
-                  {editingPath ? (
-                    <HStack>
+
+                  {/* QR Code */}
+                  <Box
+                    w="200px"
+                    h="200px"
+                    bg="white"
+                    borderRadius="md"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    mx="auto"
+                    p={2}
+                  >
+                    <QRCode
+                      value={addressState.address}
+                      size={184}
+                      style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                      viewBox={`0 0 184 184`}
+                    />
+                  </Box>
+
+                  {/* Address String */}
+                  <VStack w="100%" gap={2}>
+                    <Text color="gray.300" fontSize="sm" fontWeight="medium">
+                      Bitcoin Address
+                    </Text>
+                    <HStack w="100%">
                       <Input
-                        value={customPath || formatDerivationPath(
+                        value={addressState.address}
+                        color="white"
+                        bg="gray.700"
+                        border="1px solid"
+                        borderColor="gray.600"
+                        readOnly
+                        fontSize="sm"
+                        flex="1"
+                      />
+                      <IconButton
+                        aria-label={hasCopied ? "Copied!" : "Copy address"}
+                        onClick={onCopy}
+                        colorScheme={hasCopied ? "green" : "gray"}
+                        size="sm"
+                      >
+                        {hasCopied ? <FaCheck /> : <FaCopy />}
+                      </IconButton>
+                    </HStack>
+                    {hasCopied && (
+                      <Text fontSize="xs" color="green.400">
+                        Address copied to clipboard!
+                      </Text>
+                    )}
+                  </VStack>
+                </>
+              ) : (
+                /* Device Verification In Place of QR Code */
+                <>
+                  {/* Path Info Header Even When Not Verified */}
+                  <HStack w="100%" justify="space-between" align="center">
+                    <VStack align="start" gap={1}>
+                      <Text color="gray.400" fontSize="sm" fontWeight="bold">
+                        Address Preview
+                      </Text>
+                      <Text color="gray.400" fontSize="xs" fontFamily="mono">
+                        {formatDerivationPath(
                           walletState.selectedScriptType,
                           walletState.selectedAccount, 
                           walletState.showChangeAddresses, 
                           walletState.currentAddressIndex
                         )}
-                        onChange={(e) => setCustomPath(e.target.value)}
-                        bg="gray.700"
-                        borderColor="gray.600"
-                        color="white"
-                        size="sm"
-                        fontSize="xs"
-                        fontFamily="mono"
-                        placeholder="m/84'/0'/0'/0/0"
-                      />
-                      <Button size="xs" colorScheme="green" onClick={() => setEditingPath(false)}>
-                        ✓
-                      </Button>
-                      <Button size="xs" variant="ghost" onClick={() => { setEditingPath(false); setCustomPath(''); }}>
-                        ✗
-                      </Button>
-                    </HStack>
-                  ) : (
-                    <Text color="gray.300" fontSize="xs" fontFamily="mono" bg="gray.700" p={2} borderRadius="md">
-                      {formatDerivationPath(
-                        walletState.selectedScriptType,
-                        walletState.selectedAccount, 
-                        walletState.showChangeAddresses, 
-                        walletState.currentAddressIndex
-                      )} (Index: {walletState.currentAddressIndex})
-                    </Text>
-                  )}
-                </VStack>
-              </VStack>
+                      </Text>
+                    </VStack>
+                    <VStack align="end" gap={1}>
+                      <Text color="gray.300" fontSize="xs" bg="gray.700" px={2} py={1} borderRadius="md">
+                        Index: {walletState.currentAddressIndex}
+                      </Text>
+                      <Text color="gray.400" fontSize="xs" bg="gray.700" px={2} py={1} borderRadius="md">
+                        Pending
+                      </Text>
+                    </VStack>
+                  </HStack>
 
-              {/* Bottom Section - Action Buttons */}
-              <VStack gap={3} w="100%">
-                {deviceVerified ? (
-                  <>
-                    <HStack gap={3} width="100%">
-                      <Button
-                        colorScheme="gray"
-                        size="lg"
-                        onClick={generateNewAddress}
-                        flex="1"
-                        bg="gray.600"
-                        _hover={{ bg: "gray.500" }}
-                        color="white"
-                      >
-                        <HStack gap={2}>
-                          <FaRedo />
-                          <Text>Generate Next</Text>
-                        </HStack>
-                      </Button>
-                      <Button
-                        colorScheme="gray"
-                        size="lg"
-                        onClick={verifyOnDevice}
-                        disabled={verifying}
-                        flex="1"
-                        bg="gray.600"
-                        _hover={{ bg: "gray.500" }}
-                        color="white"
-                      >
-                        <HStack gap={2}>
-                          {verifying ? <Spinner size="sm" /> : <FaEye />}
-                          <Text>Re-verify</Text>
-                        </HStack>
-                      </Button>
+                  {/* Device Verification Instead of QR Code */}
+                  <VStack 
+                    gap={4} 
+                    bg="gray.700" 
+                    p={4} 
+                    borderRadius="lg" 
+                    border="2px solid" 
+                    borderColor="gray.500" 
+                    w="100%"
+                    minH="200px"
+                    justify="center"
+                  >
+                    <HStack gap={2} align="center">
+                      <Box color="gray.300" fontSize="2xl">
+                        <FiShield />
+                      </Box>
+                      <Text color="white" fontWeight="bold" fontSize="lg">
+                        Device Verification
+                      </Text>
                     </HStack>
-                    
+                    <Text color="gray.300" fontSize="sm" textAlign="center">
+                      Verify address on your KeepKey device to display QR code
+                    </Text>
                     <Button
-                      variant="ghost"
-                      color="gray.400"
-                      onClick={resetToFresh}
-                      size="sm"
-                    >
-                      Reset to Fresh
-                    </Button>
-                  </>
-                ) : (
-                  /* Spacer when not verified to maintain height */
-                  <Box minH="90px" />
-                )}
-              </VStack>
-            </VStack>
-
-            {/* Error Display */}
-            {error && (
-              <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
-                <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
-              </Box>
-            )}
-          </VStack>
-
-          {/* Right Panel - Always Present */}
-          <VStack gap={4} bg="gray.800" p={4} borderRadius="lg" flex="1" minH="400px" maxW="50%">
-            {deviceVerified && addressState ? (
-              /* Address Display When Verified */
-              <>
-                {/* Address Info Header */}
-                <HStack w="100%" justify="space-between" align="center">
-                  <VStack align="start" gap={1}>
-                    <Text color="green.300" fontSize="sm" fontWeight="bold">
-                      ✅ Device Verified Address
-                    </Text>
-                    <Text color="gray.400" fontSize="xs" fontFamily="mono">
-                      {addressState.derivationPath}
-                    </Text>
-                  </VStack>
-                  <VStack align="end" gap={1}>
-                                      <Text color="gray.300" fontSize="xs" bg="gray.700" px={2} py={1} borderRadius="md">
-                    Index: {addressState.addressIndex}
-                  </Text>
-                  <Text color="green.300" fontSize="xs" bg="gray.700" px={2} py={1} borderRadius="md">
-                    Receive
-                  </Text>
-                  </VStack>
-                </HStack>
-
-                {/* QR Code */}
-                <Box
-                  w="200px"
-                  h="200px"
-                  bg="white"
-                  borderRadius="md"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  mx="auto"
-                  p={2}
-                >
-                  <QRCode
-                    value={addressState.address}
-                    size={184}
-                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                    viewBox={`0 0 184 184`}
-                  />
-                </Box>
-
-                {/* Address String */}
-                <VStack w="100%" gap={2}>
-                  <Text color="gray.300" fontSize="sm" fontWeight="medium">
-                    Bitcoin Address
-                  </Text>
-                  <HStack w="100%">
-                    <Input
-                      value={addressState.address}
+                      colorScheme="gray"
+                      size="lg"
+                      onClick={verifyOnDevice}
+                      disabled={verifying}
+                      w="100%"
+                      bg="gray.600"
+                      _hover={{ bg: "gray.500" }}
                       color="white"
+                    >
+                      <HStack gap={2}>
+                        {verifying ? <Spinner size="sm" /> : <FaEye />}
+                        <Text>{verifying ? 'Verifying...' : 'Verify on KeepKey'}</Text>
+                      </HStack>
+                    </Button>
+                  </VStack>
+
+                  {/* Address Placeholder */}
+                  <VStack w="100%" gap={2}>
+                    <Text color="gray.300" fontSize="sm" fontWeight="medium">
+                      Bitcoin Address
+                    </Text>
+                    <Box
+                      w="100%"
+                      p={3}
                       bg="gray.700"
+                      borderRadius="md"
                       border="1px solid"
                       borderColor="gray.600"
-                      readOnly
-                      fontSize="sm"
-                      flex="1"
-                    />
-                                      <IconButton
-                    aria-label={hasCopied ? "Copied!" : "Copy address"}
-                    onClick={onCopy}
-                    colorScheme={hasCopied ? "green" : "gray"}
-                    size="sm"
-                  >
-                      {hasCopied ? <FaCheck /> : <FaCopy />}
-                    </IconButton>
-                  </HStack>
-                  {hasCopied && (
-                    <Text fontSize="xs" color="green.400">
-                      Address copied to clipboard!
-                    </Text>
-                  )}
-                </VStack>
-              </>
-            ) : (
-              /* Device Verification In Place of QR Code */
-              <>
-                {/* Path Info Header Even When Not Verified */}
-                <HStack w="100%" justify="space-between" align="center">
-                  <VStack align="start" gap={1}>
-                    <Text color="gray.400" fontSize="sm" fontWeight="bold">
-                      Address Preview
-                    </Text>
-                    <Text color="gray.400" fontSize="xs" fontFamily="mono">
-                      {formatDerivationPath(
-                        walletState.selectedScriptType,
-                        walletState.selectedAccount, 
-                        walletState.showChangeAddresses, 
-                        walletState.currentAddressIndex
-                      )}
-                    </Text>
-                  </VStack>
-                  <VStack align="end" gap={1}>
-                    <Text color="gray.300" fontSize="xs" bg="gray.700" px={2} py={1} borderRadius="md">
-                      Index: {walletState.currentAddressIndex}
-                    </Text>
-                    <Text color="gray.400" fontSize="xs" bg="gray.700" px={2} py={1} borderRadius="md">
-                      Pending
-                    </Text>
-                  </VStack>
-                </HStack>
-
-                {/* Device Verification Instead of QR Code */}
-                <VStack 
-                  gap={4} 
-                  bg="gray.700" 
-                  p={4} 
-                  borderRadius="lg" 
-                  border="2px solid" 
-                  borderColor="gray.500" 
-                  w="100%"
-                  minH="200px"
-                  justify="center"
-                >
-                  <HStack gap={2} align="center">
-                    <Box color="gray.300" fontSize="2xl">
-                      <FiShield />
+                      textAlign="center"
+                    >
+                      <Text color="gray.500" fontSize="sm">
+                        Address will appear after device verification
+                      </Text>
                     </Box>
-                    <Text color="white" fontWeight="bold" fontSize="lg">
-                      Device Verification
-                    </Text>
-                  </HStack>
-                  <Text color="gray.300" fontSize="sm" textAlign="center">
-                    Verify address on your KeepKey device to display QR code
-                  </Text>
-                  <Button
-                    colorScheme="gray"
-                    size="lg"
-                    onClick={verifyOnDevice}
-                    disabled={verifying}
-                    w="100%"
-                    bg="gray.600"
-                    _hover={{ bg: "gray.500" }}
-                    color="white"
-                  >
-                    <HStack gap={2}>
-                      {verifying ? <Spinner size="sm" /> : <FaEye />}
-                      <Text>{verifying ? 'Verifying...' : 'Verify on KeepKey'}</Text>
-                    </HStack>
-                  </Button>
-                </VStack>
+                  </VStack>
 
-                {/* Address Placeholder */}
-                <VStack w="100%" gap={2}>
-                  <Text color="gray.300" fontSize="sm" fontWeight="medium">
-                    Bitcoin Address
-                  </Text>
-                  <Box
-                    w="100%"
-                    p={3}
-                    bg="gray.700"
-                    borderRadius="md"
-                    border="1px solid"
-                    borderColor="gray.600"
-                    textAlign="center"
-                  >
-                    <Text color="gray.500" fontSize="sm">
-                      Address will appear after device verification
-                    </Text>
-                  </Box>
-                </VStack>
-              </>
-            )}
-          </VStack>
-        </HStack>
+                  {/* Error Display (when not in advanced mode) */}
+                  {!showAdvanced && error && (
+                    <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
+                      <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
+                    </Box>
+                  )}
+                </>
+              )}
+            </VStack>
+          </HStack>
 
-        {/* Bottom Navigation */}
-        <HStack justify="center">
-          <Button
-            variant="ghost"
-            color="gray.400"
-            onClick={onBack}
-            size="lg"
-          >
-            Done
-          </Button>
-        </HStack>
-
-
-              </VStack>
+          {/* Bottom Navigation */}
+          <HStack justify="center">
+            <Button
+              variant="ghost"
+              color="gray.400"
+              onClick={onBack}
+              size="lg"
+            >
+              Done
+            </Button>
+          </HStack>
+        </VStack>
       </Box>
     </Box>
   );
 };
 
-export default Receive;
+export default Receive; 
