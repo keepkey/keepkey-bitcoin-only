@@ -1,4 +1,13 @@
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
+
+// Modules for better organization
+mod db;
+mod device_queue;
+mod commands;
+
+// Re-export commonly used types
+pub use db::{Database, DeviceInfo, XpubInfo};
+pub use device_queue::{DeviceQueueManager, MockDeviceQueue};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -89,13 +98,22 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .setup(|app| {
+            // Initialize the device queue manager
+            let queue_manager = DeviceQueueManager::new();
+            app.manage(queue_manager);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             is_first_time_install,
             get_blocking_actions,
             vault_change_view,
             vault_open_support,
-            restart_backend_startup
+            restart_backend_startup,
+            // Only queue operations allowed from frontend
+            commands::add_to_device_queue,
+            commands::get_queue_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
