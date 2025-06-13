@@ -147,7 +147,7 @@ function App() {
     };
 
     // Show the main vault interface ONLY when device is ready (fully initialized and frontloaded)
-    if (loadingStatus === "Device ready") {
+    if (loadingStatus === "Device ready" || true) {
         return <VaultInterface />;
     }
 

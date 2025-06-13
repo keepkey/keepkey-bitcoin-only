@@ -14,7 +14,7 @@ import {
   Icon,
 } from '@chakra-ui/react';
 import { FaSearch, FaArrowUp, FaArrowDown, FaExchangeAlt } from 'react-icons/fa';
-import { useAssets } from '../../contexts/AssetContext';
+import { useWallet } from '../../contexts/WalletContext';
 
 // Theme colors
 const theme = {
@@ -26,7 +26,7 @@ const theme = {
 };
 
 export const AssetView: React.FC = () => {
-  const { portfolio, loading, error, selectAsset, selectedAsset } = useAssets();
+  const { portfolio, loading, error, selectAsset, selectedAsset } = useWallet();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Filter assets based on search query

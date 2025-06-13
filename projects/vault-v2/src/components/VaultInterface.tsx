@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
 import { AppsView, BrowserView, PairingsView, VaultView, AssetView } from './views';
-import { AssetProvider } from '../contexts/AssetContext';
+import { WalletProvider } from '../contexts/WalletContext';
 import Send from './Send';
 import Receive from './Receive';
 
@@ -127,7 +127,7 @@ export const VaultInterface = () => {
   };
 
   return (
-    <AssetProvider>
+    <WalletProvider>
       <Box 
         height="100vh" 
         width="100vw" 
@@ -208,6 +208,6 @@ export const VaultInterface = () => {
         </Box>
       )}
       </Box>
-    </AssetProvider>
+    </WalletProvider>
   );
 }; 
