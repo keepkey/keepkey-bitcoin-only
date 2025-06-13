@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "vault-v2",
-        "width": 800,
-        "height": 600
+        "title": "KeepKey Vault v2",
+        "width": 1400,
+        "height": 920
       }
     ],
     "security": {

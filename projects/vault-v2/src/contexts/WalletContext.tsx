@@ -13,6 +13,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import Database from '@tauri-apps/plugin-sql';
+import paths from '../consts/default-paths.json'
 
 const TAG = " | WalletContext | "
 
@@ -49,57 +50,6 @@ const assetApiService = {
   async getPortfolio(): Promise<Portfolio> {
     let tag = TAG + " | getPortfolio | "
     try {
-
-      //isOnbarded
-      let isOnboarded = true
-      console.log(tag,'isOnboarded: ',isOnboarded)
-
-      //get all devices from db
-
-      //get xpubs from db
-      let xpubs : any = [
-        {
-          "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
-          "pubkey": "xpub6BxKtd6aAuz23XqtWXeSqxShJZn8yqiUmaTdvsPWS3riKkNRcXEPmn1CXmKM1M43mrWfN5QwjdLRghZLrgwMLCeRZqZNuYhVNXr6Pp7aDsH"
-        },
-        {
-          "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
-          "pubkey": "ypub6WamSeXgTYgy7W25fVorMLDHFx5SPkuYaE7ToWCiyCUK2jdWpufQ8VqkDg83YjBtJFHDoekhf9ESdPDbL9aCPXC5NnmzXUiq3J6oycFShfS"
-        },
-        {
-          "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
-          "pubkey": "zpub6rm1EEJg4JasiTqacdouiUVncAc5ymhKReiPZfLTGnH2GSZquRn9reJhj6sfs73PoSJNXzpERKPVLYbwwUGHNF6jkMX5R58vWaLB9FVyJuX"
-        }
-      ]
-      console.log(tag, xpubs);
-
-      //get balances for all
-
-      let calculatedTotalUsd = 297.51
-
-      let balances: any = [
-        {
-          "symbol": "BTC",
-          "name": "Bitcoin",
-          "balance": "0.00285985",
-          "value_usd": 297.51,
-          "network_id": "bitcoin",
-          "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
-          "priceUsd": "104030.00",
-          "pubkey": "zpub6rm1EEJg4JasiTqacdouiUVncAc5ymhKReiPZfLTGnH2GSZquRn9reJhj6sfs73PoSJNXzpERKPVLYbwwUGHNF6jkMX5R58vWaLB9FVyJuX",
-          "valueUsd": "297.51"
-        }
-      ]
-
-      let networks: any = [
-        {
-          id: 1,
-          network_name: "Bitcoin",
-          symbol: "BTC",
-          chain_id_caip2: "bip122:000000000019d6689c085ae165831e93",
-          is_evm: false
-        }
-      ]
 
       return {
         total_value_usd: calculatedTotalUsd.toFixed(2), // Use calculated value instead of dashboard
@@ -207,6 +157,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [inSync, setInSync] = useState(false);
 
   const onStart = useCallback(async () => {
     let tag = TAG+" | onStart | "
@@ -217,6 +168,88 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       await insertHelloWorld(db);
       const rows = await getAllFooBar(db);
       console.log(tag,rows);
+
+      //isOnbarded
+      let isOnboarded = true
+      console.log(tag,'isOnboarded: ',isOnboarded)
+
+      //get all devices from db
+      let devices: any = [
+        {
+          deviceId: 'testingDevice123'
+        }
+      ]
+
+      //get all xpubs from db for deviceId
+      let allPubkeys = db.getPubkeys({deviceId: 'testingDevice123'});
+
+      //verify we have for defaults
+      console.log('paths: ',paths);
+      for(let i=0; i<paths.paths.length; i++) {
+        let path = paths[i];
+
+      }
+
+      //any missing, send to backend queue for device query
+
+      //if complete
+      setInSync(true);
+
+
+      //get xpubs from db
+      let xpubs : any = [
+        {
+          "device":"testingDevice123",
+          "path":path,
+          "label":" defualt x path",
+          "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
+          "pubkey": "xpub6BxKtd6aAuz23XqtWXeSqxShJZn8yqiUmaTdvsPWS3riKkNRcXEPmn1CXmKM1M43mrWfN5QwjdLRghZLrgwMLCeRZqZNuYhVNXr6Pp7aDsH"
+        },
+        {
+          "device":"testingDevice123",
+          "path":path,
+          "label":" defualt x path",
+          "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
+          "pubkey": "ypub6WamSeXgTYgy7W25fVorMLDHFx5SPkuYaE7ToWCiyCUK2jdWpufQ8VqkDg83YjBtJFHDoekhf9ESdPDbL9aCPXC5NnmzXUiq3J6oycFShfS"
+        },
+        {
+          "device":"testingDevice123",
+          "path":path,
+          "label":" defualt x path",
+          "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
+          "pubkey": "zpub6rm1EEJg4JasiTqacdouiUVncAc5ymhKReiPZfLTGnH2GSZquRn9reJhj6sfs73PoSJNXzpERKPVLYbwwUGHNF6jkMX5R58vWaLB9FVyJuX"
+        }
+      ]
+      console.log(tag, xpubs);
+
+      //get balances for all
+
+      let calculatedTotalUsd = 297.51
+
+      let balances: any = [
+        {
+          "symbol": "BTC",
+          "name": "Bitcoin",
+          "balance": "0.00285985",
+          "value_usd": 297.51,
+          "network_id": "bitcoin",
+          "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
+          "priceUsd": "104030.00",
+          "pubkey": "zpub6rm1EEJg4JasiTqacdouiUVncAc5ymhKReiPZfLTGnH2GSZquRn9reJhj6sfs73PoSJNXzpERKPVLYbwwUGHNF6jkMX5R58vWaLB9FVyJuX",
+          "valueUsd": "297.51"
+        }
+      ]
+
+      let networks: any = [
+        {
+          id: 1,
+          network_name: "Bitcoin",
+          symbol: "BTC",
+          chain_id_caip2: "bip122:000000000019d6689c085ae165831e93",
+          is_evm: false
+        }
+      ]
+
 
       // Get portfolio data and set it immediately
       const portfolioData = await assetApiService.getPortfolio();
