@@ -1,4 +1,5 @@
 import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex, Link, Stack } from '@chakra-ui/react'
+import { Switch } from '@chakra-ui/react'
 import { 
   DialogRoot,
   DialogContent,
@@ -34,6 +35,11 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   // Copy state for URLs
   const [hasCopiedMcp, setHasCopiedMcp] = useState(false)
   const [hasCopiedRest, setHasCopiedRest] = useState(false)
+  
+  // API enable/disable state
+  const [apiEnabled, setApiEnabled] = useState(false)
+  const [apiStatus, setApiStatus] = useState<any>(null)
+  const [isTogglingApi, setIsTogglingApi] = useState(false)
   
   // Seed verification wizard state
   const [verificationWizardOpen, setVerificationWizardOpen] = useState(false)
@@ -83,7 +89,61 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     fetchDeviceStatus()
   }, [selectedDeviceId])
 
-  // Remove firmware version fetching - backend handles this
+  // Load API status when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      loadApiStatus()
+    }
+  }, [isOpen])
+
+  const loadApiStatus = async () => {
+    try {
+      const enabled = await invoke<boolean>('get_api_enabled')
+      const status = await invoke<any>('get_api_status')
+      setApiEnabled(enabled)
+      setApiStatus(status)
+      console.log('API Status loaded:', { enabled, status })
+    } catch (error) {
+      console.error('Failed to load API status:', error)
+    }
+  }
+
+  const handleToggleApi = async (enabled: boolean) => {
+    if (isTogglingApi) return
+    
+    setIsTogglingApi(true)
+    try {
+      console.log('Toggling API to:', enabled)
+      
+      // Set the preference
+      await invoke('set_api_enabled', { enabled })
+      setApiEnabled(enabled)
+      
+      if (enabled) {
+        // If enabling, try to start the server
+        console.log('Starting API server...')
+        const started = await invoke<boolean>('restart_api_server')
+        console.log('API server start result:', started)
+        
+        // Wait a moment for server to start, then refresh status
+        setTimeout(async () => {
+          await loadApiStatus()
+        }, 1000)
+      } else {
+        // If disabling, just update the preference (server will stay running until restart)
+        console.log('API disabled - server will stop on next app restart')
+        await loadApiStatus()
+      }
+      
+    } catch (error) {
+      console.error('Failed to toggle API:', error)
+      alert(`Failed to ${enabled ? 'enable' : 'disable'} API: ${error}`)
+      // Revert the toggle on error
+      setApiEnabled(!enabled)
+    } finally {
+      setIsTogglingApi(false)
+    }
+  }
 
   const handleBootloaderUpdate = async (deviceId: string) => {
     console.log('handleBootloaderUpdate called with deviceId:', deviceId)
@@ -366,10 +426,74 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                 <VStack align="stretch" gap={4}>
                   <Text color="white" fontSize="lg" fontWeight="semibold">MCP & API Access</Text>
                   
-                  {/* API URLs Section */}
+                  {/* API Enable/Disable Section */}
                   <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={4}>
-                      <Text color="white" fontWeight="medium">API Endpoints</Text>
+                      <HStack justify="space-between" align="center">
+                        <VStack align="start" gap={1}>
+                          <Text color="white" fontWeight="medium">Enable REST & MCP APIs</Text>
+                          <Text color="gray.400" fontSize="sm">
+                            Allow external applications and AI assistants to connect to your KeepKey
+                          </Text>
+                        </VStack>
+                        <Switch.Root
+                          checked={apiEnabled}
+                          onCheckedChange={(details) => handleToggleApi(details.checked)}
+                          disabled={isTogglingApi}
+                          colorPalette="blue"
+                        >
+                          <Switch.Thumb />
+                        </Switch.Root>
+                      </HStack>
+                      
+                      {/* Status indicator */}
+                      <HStack justify="space-between" align="center">
+                        <Text color="gray.300" fontSize="sm">Current Status</Text>
+                        <HStack gap={2}>
+                          <Box w={2} h={2} bg={apiStatus?.running ? "green.400" : "gray.500"} borderRadius="full" />
+                          <Text 
+                            color={apiStatus?.running ? "green.400" : "gray.500"} 
+                            fontSize="sm" 
+                            fontWeight="medium"
+                          >
+                            {apiStatus?.running ? "Running" : "Stopped"}
+                          </Text>
+                        </HStack>
+                      </HStack>
+                      
+                      {/* Warning when disabled */}
+                      {!apiEnabled && (
+                        <Box bg="orange.900" p={3} borderRadius="md" border="1px solid" borderColor="orange.700">
+                          <VStack align="stretch" gap={2}>
+                            <Text color="orange.200" fontSize="sm" fontWeight="medium">APIs Disabled</Text>
+                            <Text color="orange.100" fontSize="xs">
+                              External applications and AI assistants cannot connect to your KeepKey while APIs are disabled. 
+                              Enable this setting to use MCP with Claude or access the REST API documentation.
+                            </Text>
+                          </VStack>
+                        </Box>
+                      )}
+                    </VStack>
+                  </Box>
+
+                  {/* API URLs Section */}
+                  <Box 
+                    bg="gray.800" 
+                    p={4} 
+                    borderRadius="md" 
+                    border="1px solid" 
+                    borderColor="gray.700"
+                    opacity={apiEnabled ? 1 : 0.6}
+                  >
+                    <VStack align="stretch" gap={4}>
+                      <HStack justify="space-between" align="center">
+                        <Text color="white" fontWeight="medium">API Endpoints</Text>
+                        {!apiEnabled && (
+                          <Text color="orange.300" fontSize="xs" fontWeight="medium">
+                            (Disabled)
+                          </Text>
+                        )}
+                      </HStack>
                       
                       {/* REST API */}
                       <Box bg="gray.900" p={3} borderRadius="md">
@@ -462,15 +586,33 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     <VStack align="stretch" gap={3}>
                       <Text color="white" fontWeight="medium">Service Status</Text>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.300" fontSize="sm">Backend Server</Text>
+                        <Text color="gray.300" fontSize="sm">API Server</Text>
                         <HStack gap={2}>
-                          <Box w={2} h={2} bg="green.400" borderRadius="full" />
-                          <Text color="green.400" fontSize="sm" fontWeight="medium">Running</Text>
+                          <Box w={2} h={2} bg={apiStatus?.running ? "green.400" : "gray.500"} borderRadius="full" />
+                          <Text 
+                            color={apiStatus?.running ? "green.400" : "gray.500"} 
+                            fontSize="sm" 
+                            fontWeight="medium"
+                          >
+                            {apiStatus?.running ? "Running" : "Stopped"}
+                          </Text>
                         </HStack>
                       </HStack>
                       <HStack justify="space-between" align="center">
                         <Text color="gray.300" fontSize="sm">API Port</Text>
-                        <Text color="gray.400" fontSize="sm" fontFamily="mono">1646</Text>
+                        <Text color="gray.400" fontSize="sm" fontFamily="mono">
+                          {apiStatus?.port || 1646}
+                        </Text>
+                      </HStack>
+                      <HStack justify="space-between" align="center">
+                        <Text color="gray.300" fontSize="sm">Settings</Text>
+                        <Text 
+                          color={apiEnabled ? "blue.400" : "orange.400"} 
+                          fontSize="sm" 
+                          fontWeight="medium"
+                        >
+                          {apiEnabled ? "Enabled" : "Disabled"}
+                        </Text>
                       </HStack>
                     </VStack>
                   </Box>

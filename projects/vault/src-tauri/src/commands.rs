@@ -7,6 +7,7 @@ use crate::index_db::IndexDb;
 use crate::device_update::{evaluate_device_status, DeviceStatus};
 use crate::blocking_actions::{BlockingAction, BlockingActionType, BlockingActionsState};
 use crate::usb_manager::FriendlyUsbDevice;
+use tauri::{Manager, Emitter};
 // use std::sync::Arc;
 // use tauri::State;
 
@@ -275,6 +276,108 @@ pub fn set_preference(key: String, value: String) -> Result<(), String> {
     db.set_preference(&key, &value).map_err(|e| e.to_string())?;
     log::info!("Preference saved");
     Ok(())
+}
+
+/// Get API enable status
+#[tauri::command]
+pub fn get_api_enabled() -> Result<bool, String> {
+    log::debug!("Getting API enabled status");
+    let db = IndexDb::open().map_err(|e| e.to_string())?;
+    let enabled = db.get_preference("api_enabled").map_err(|e| e.to_string())?;
+    // Default to false (disabled) if not set
+    let is_enabled = enabled.as_deref() == Some("true");
+    log::debug!("API enabled status: {}", is_enabled);
+    Ok(is_enabled)
+}
+
+/// Set API enable status
+#[tauri::command]
+pub fn set_api_enabled(enabled: bool) -> Result<(), String> {
+    log::info!("Setting API enabled status: {}", enabled);
+    let db = IndexDb::open().map_err(|e| e.to_string())?;
+    let value = if enabled { "true" } else { "false" };
+    db.set_preference("api_enabled", value).map_err(|e| e.to_string())?;
+    log::info!("API enabled status saved: {}", enabled);
+    Ok(())
+}
+
+/// Get API status (running or not)
+#[tauri::command]
+pub fn get_api_status() -> Result<serde_json::Value, String> {
+    log::debug!("Getting API status");
+    let db = IndexDb::open().map_err(|e| e.to_string())?;
+    let enabled = db.get_preference("api_enabled").map_err(|e| e.to_string())?;
+    let is_enabled = enabled.as_deref() == Some("true");
+    
+    // Check if server is actually running by trying to connect to it
+    let is_running = if is_enabled {
+        // Simple check - try to connect to the port
+        match std::net::TcpStream::connect_timeout(
+            &"127.0.0.1:1646".parse().unwrap(),
+            std::time::Duration::from_millis(100)
+        ) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
+    
+    let status = serde_json::json!({
+        "enabled": is_enabled,
+        "running": is_running,
+        "port": 1646,
+        "endpoints": {
+            "rest_docs": "http://127.0.0.1:1646/docs",
+            "mcp": "http://127.0.0.1:1646/mcp"
+        }
+    });
+    
+    log::debug!("API status: {}", status);
+    Ok(status)
+}
+
+/// Restart API server based on current enabled setting
+#[tauri::command]
+pub async fn restart_api_server(app_handle: tauri::AppHandle) -> Result<bool, String> {
+    log::info!("Restarting API server based on current settings");
+    
+    let db = IndexDb::open().map_err(|e| e.to_string())?;
+    let enabled = db.get_preference("api_enabled").map_err(|e| e.to_string())?;
+    let is_enabled = enabled.as_deref() == Some("true");
+    
+    if is_enabled {
+        log::info!("API is enabled, starting server...");
+        
+        // Get device manager from app state
+        let device_manager = app_handle.state::<std::sync::Arc<std::sync::Mutex<crate::usb_manager::DeviceManager>>>();
+        let dm = device_manager.inner().clone();
+        
+        // Start server in background
+        let server_handle = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = crate::server::start_server(dm).await {
+                log::error!("Failed to start API server: {}", e);
+                // Emit error event
+                server_handle.emit("api:error", serde_json::json!({
+                    "error": format!("Failed to start API server: {}", e)
+                })).ok();
+            } else {
+                log::info!("API server started successfully");
+                // Emit success event
+                server_handle.emit("api:started", serde_json::json!({
+                    "message": "API server started successfully"
+                })).ok();
+            }
+        });
+        
+        Ok(true)
+    } else {
+        log::info!("API is disabled, not starting server");
+        // Note: We don't implement server shutdown here as it's more complex
+        // The server will need to be stopped by restarting the application
+        Ok(false)
+    }
 }
 
 // Device tracking commands

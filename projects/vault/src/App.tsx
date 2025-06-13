@@ -2,8 +2,7 @@ import { useState, useEffect } from "react";
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import "./App.css";
-import { Box, Text, Flex, Link, Stack, Button, Spinner } from "@chakra-ui/react";
-import { FaCopy, FaCheck } from "react-icons/fa";
+import { Box, Text, Flex, Spinner } from "@chakra-ui/react";
 
 import { Logo } from './components/logo/logo';
 import splashBg from './assets/splash-bg.png'
@@ -137,15 +136,6 @@ function App() {
         };
     }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
 
-    const mcpUrl = "http://127.0.0.1:1646/mcp";
-    const [hasCopied, setHasCopied] = useState(false);
-    
-    const handleCopy = () => {
-      navigator.clipboard.writeText(mcpUrl);
-      setHasCopied(true);
-      setTimeout(() => setHasCopied(false), 2000);
-    };
-
     // Show the main vault interface ONLY when device is ready (fully initialized and frontloaded)
     if (loadingStatus === "Device ready") {
         return <VaultInterface />;
@@ -226,59 +216,7 @@ function App() {
             }}
           />
 
-          {/* REST and MCP links in bottom right corner */}
-          <Box
-            position="absolute"
-            bottom="20px"
-            right="20px"
-            background="rgba(0, 0, 0, 0.7)"
-            borderRadius="md"
-            boxShadow="md"
-            padding={2}
-            border="1px solid rgba(100, 255, 100, 0.3)"
-          >
-            <Flex direction="column" gap={1}>
-              <Stack direction="row" gap={2} align="center">
-                <Text fontSize="2xs" color="gray.300">REST:</Text>
-                <Link 
-                  href="http://127.0.0.1:1646/docs" 
-                  target="_blank" 
-                  fontSize="xs" 
-                  color="blue.300"
-                  _hover={{ color: "blue.200", textDecoration: "underline" }}
-                >
-                  http://127.0.0.1:1646/docs
-                </Link>
-              </Stack>
-              <Stack direction="row" gap={2} align="center">
-                <Text fontSize="2xs" color="gray.300">MCP:</Text>
-                <Link 
-                  href="http://127.0.0.1:1646/mcp" 
-                  target="_blank" 
-                  fontSize="xs" 
-                  color="blue.300"
-                  _hover={{ color: "blue.200", textDecoration: "underline" }}
-                >
-                  http://127.0.0.1:1646/mcp
-                </Link>
-                <Box position="relative">
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    colorScheme={hasCopied ? "green" : "blue"}
-                    aria-label="Copy MCP URL to clipboard"
-                    title={hasCopied ? "Copied!" : "Copy to clipboard"}
-                    onClick={handleCopy}
-                    p={1}
-                    minW={0}
-                    height="16px"
-                  >
-                    {hasCopied ? <FaCheck size="10px" /> : <FaCopy size="10px" />}
-                  </Button>
-                </Box>
-              </Stack>
-            </Flex>
-          </Box>
+
         </Flex>
       </Box>
     );

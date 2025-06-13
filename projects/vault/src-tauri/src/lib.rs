@@ -698,21 +698,36 @@ pub fn run() {
             };
             app_handle.emit("application:state", &initial).ok();
 
-            // 3️⃣  Start REST / MCP server in background
+            // 3️⃣  Start REST / MCP server in background (only if enabled in preferences)
             let server_handle = app_handle.clone();
             let server_dm = dm.clone(); // Use the same device manager instance instead of creating a new one
             tauri::async_runtime::spawn(async move {
-                log::info!("{TAG} Starting server...");
+                // Check if API is enabled in preferences
+                let api_enabled = match index_db::IndexDb::open() {
+                    Ok(db) => {
+                        match db.get_preference("api_enabled") {
+                            Ok(Some(value)) => value == "true",
+                            _ => false, // Default to disabled if not set or error
+                        }
+                    }
+                    Err(_) => false, // Default to disabled if database error
+                };
                 
-                if let Err(e) = server::start_server(server_dm).await {
-                    log::error!("{TAG} Server error: {e}");
-                    let err_payload = ApplicationState {
-                        status: format!("Server error: {e}"),
-                        connected: false,
-                        devices: vec![],
-                        blocking_actions_count: 0, // Add count of blocking actions
-                    };
-                    server_handle.emit("application:state", &err_payload).ok();
+                if api_enabled {
+                    log::info!("{TAG} API is enabled in preferences, starting server...");
+                    
+                    if let Err(e) = server::start_server(server_dm).await {
+                        log::error!("{TAG} Server error: {e}");
+                        let err_payload = ApplicationState {
+                            status: format!("Server error: {e}"),
+                            connected: false,
+                            devices: vec![],
+                            blocking_actions_count: 0, // Add count of blocking actions
+                        };
+                        server_handle.emit("application:state", &err_payload).ok();
+                    }
+                } else {
+                    log::info!("{TAG} API is disabled in preferences, skipping server startup");
                 }
             });
 
@@ -742,6 +757,10 @@ pub fn run() {
             commands::debug_onboarding_state,
             commands::get_preference,
             commands::set_preference,
+            commands::get_api_enabled,
+            commands::set_api_enabled,
+            commands::get_api_status,
+            commands::restart_api_server,
             usb_manager::list_usb_devices,
             commands::get_blocking_actions,
             commands::resolve_blocking_action,
