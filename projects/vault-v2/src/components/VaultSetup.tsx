@@ -35,12 +35,7 @@ export function VaultSetup() {
   }
 
   const getKeepKeySignature = async (): Promise<string> => {
-    // TODO: Implement actual KeepKey signing
-    // For now, return a mock signature for testing
-    console.log('TODO: Request signature from KeepKey device')
-    // This should trigger: bitcoinSignMessage("Unlock KeepKey Vault <timestamp>")
-    return '304402207f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f02207f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f'
-  }
+   }
 
   const handleCreateVault = async () => {
     if (!password) {

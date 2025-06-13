@@ -30,29 +30,16 @@ export interface Portfolio {
 const assetApiService = {
   async getPortfolio(): Promise<Portfolio> {
     try {
-      const [dashboardRes, networksRes, balancesRes] = await Promise.all([
-        fetch('http://localhost:1646/api/v2/portfolio/summary'),
-        fetch('http://localhost:1646/api/v2/networks'),
-        fetch('http://localhost:1646/api/v2/balances')
-      ]);
 
-      if (!dashboardRes.ok || !networksRes.ok || !balancesRes.ok) {
-        throw new Error('Failed to fetch data');
-      }
+      //get xpubs from db
 
-      const [dashboard, networks, balances] = await Promise.all([
-        dashboardRes.json(),
-        networksRes.json(),
-        balancesRes.json()
-      ]);
+      //get balances for all
 
-      // Calculate total USD from individual balances (bypass stale cache)
-      const calculatedTotalUsd = balances.reduce((sum: number, balance: any) => {
-        const usdValue = parseFloat(String(balance.value_usd || '0'));
-        return sum + usdValue;
-      }, 0);
+      let calculatedTotalUsd = 0
 
-      console.log('🔄 [AssetContext] Calculated total USD from balances:', calculatedTotalUsd.toFixed(2));
+      let balances: any = []
+
+      let networks: any = []
 
       return {
         total_value_usd: calculatedTotalUsd.toFixed(2), // Use calculated value instead of dashboard
@@ -79,29 +66,22 @@ const assetApiService = {
   },
 
   async sendAsset(asset: Asset, toAddress: string, amount: string): Promise<boolean> {
+    let tag = " | sendAsset | "
     try {
-      const response = await fetch('http://localhost:1646/api/v2/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          caip: asset.caip,
-          to: toAddress,
-          amount: amount
-        })
-      });
-      return response.ok;
+      console.log(tag,'params: ',{asset, toAddress, amount})
+      return true
     } catch (error) {
       console.error('Send transaction error:', error);
       return false;
     }
   },
 
-  async getReceiveAddress(asset: Asset): Promise<string | null> {
+  async getReceiveAddress(asset: Asset): Promise<string> {
+    let tag = " | sendAsset | "
     try {
-      const response = await fetch(`http://localhost:1646/api/v2/address/${asset.caip}`);
-      if (!response.ok) throw new Error('Failed to get address');
-      const data = await response.json();
-      return data.address;
+      //
+      console.log(tag,asset);
+      return 'lol'
     } catch (error) {
       console.error('Get address error:', error);
       return null;
@@ -137,19 +117,16 @@ export const AssetProvider: React.FC<AssetProviderProps> = ({ children }) => {
   const [error, setError] = useState<string | null>(null);
 
   const refreshPortfolio = useCallback(async () => {
-    console.log('🔄 [AssetContext] Refreshing portfolio data');
+    let tag = " | refreshPortfolio | "
     setLoading(true);
-    
     try {
-      const response = await fetch('http://localhost:1646/api/v2/portfolio/summary');
-      if (!response.ok) throw new Error('Failed to fetch portfolio summary');
-      
-      const portfolioData = await response.json();
-      console.log('✅ [AssetContext] Portfolio updated:', JSON.stringify(portfolioData, null, 2));
-      
+      let portfolioData = await assetApiService.getPortfolio();
+      console.log(tag,'portfolioData: ',portfolioData);
+
       setPortfolio(portfolioData);
     } catch (error) {
       console.error('❌ [AssetContext] Failed to refresh portfolio:', error);
+      setError('❌ [AssetContext] Failed to refresh portfolio:')
     } finally {
       setLoading(false);
     }

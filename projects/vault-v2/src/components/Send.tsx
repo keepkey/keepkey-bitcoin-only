@@ -18,7 +18,7 @@ import {
   FeeEstimate, 
   SendPageProps
 } from '../types/send';
-import { sendService } from '../services/sendService';
+// import { sendService } from '../services/sendService';
 
 const Send: React.FC<SendPageProps> = ({ onBack }) => {
   // State according to planning document 
@@ -63,7 +63,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   // Validate address when it changes
   useEffect(() => {
     if (recipientAddress) {
-      const validation = sendService.validateBitcoinAddress(recipientAddress, 'mainnet');
+
       setAddressValidation(validation);
     } else {
       setAddressValidation({ valid: false });
@@ -76,21 +76,21 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       setError(null);
       
       // Load fee estimates and BTC price
-      const estimates = await sendService.getFeeEstimates();
-      setFeeEstimates(estimates);
-
-      // Load UTXOs (using dummy device ID for now)
-      const fetchedUtxos = await sendService.getUtxos('keepkey-001', 0, 'p2wpkh');
-      console.log('🔍 Fetched UTXOs:', fetchedUtxos.map(u => ({ txid: u.txid.substring(0, 8), vout: u.vout, amount_sat: u.amount_sat, type: typeof u.amount_sat })));
-      setUtxos(fetchedUtxos);
+      // const estimates = await sendService.getFeeEstimates();
+      // setFeeEstimates(estimates);
+      //
+      // // Load UTXOs (using dummy device ID for now)
+      // const fetchedUtxos = await sendService.getUtxos('keepkey-001', 0, 'p2wpkh');
+      // console.log('🔍 Fetched UTXOs:', fetchedUtxos.map(u => ({ txid: u.txid.substring(0, 8), vout: u.vout, amount_sat: u.amount_sat, type: typeof u.amount_sat })));
+      // setUtxos(fetchedUtxos);
 
       // Fetch BTC price (could be from same API as portfolio)
       try {
-        const response = await fetch('http://localhost:1646/api/v2/portfolio/summary');
-        if (response.ok) {
-          // For now, use a reasonable default price - could be enhanced to get real price
-          setBtcPrice(43000);
-        }
+        // const response = await fetch('http://localhost:1646/api/v2/portfolio/summary');
+        // if (response.ok) {
+        //   // For now, use a reasonable default price - could be enhanced to get real price
+        //   setBtcPrice(43000);
+        // }
       } catch (e) {
         console.log('Could not fetch BTC price, using default');
         setBtcPrice(43000);
@@ -269,7 +269,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
                 📊 Using {selectedUtxos.length} of {utxos.length} UTXOs
               </Text>
               <Text fontSize="xs" color="green.400" fontWeight="medium">
-                💎 Available: {sendService.satToBtc(spendableBalance)} BTC
+                {/*💎 Available: {sendService.satToBtc(spendableBalance)} BTC*/}
               </Text>
             </HStack>
           </Box>
@@ -373,8 +373,8 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             <HStack gap={1}>
               {(['slow', 'medium', 'fast'] as const).map((preset) => {
                 const presetFeeRate = feeEstimates[preset];
-                const feeSats = selectedUtxos.length > 0 ? sendService.calculateFee(selectedUtxos, [{ amount: amount || '0' }], presetFeeRate) : 0;
-                const feeUsd = convertBtcToUsd(parseFloat(sendService.satToBtc(feeSats)));
+                // const feeSats = selectedUtxos.length > 0 ? sendService.calculateFee(selectedUtxos, [{ amount: amount || '0' }], presetFeeRate) : 0;
+                // const feeUsd = convertBtcToUsd(parseFloat(sendService.satToBtc(feeSats)));
                 
                 return (
                   <Button
@@ -391,14 +391,14 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
                     <VStack gap={0} align="center">
                       <Text fontSize="xs" fontWeight="bold">{preset}</Text>
                       <Text fontSize="2xs" opacity={0.8}>{presetFeeRate} sat/vB</Text>
-                      <Text fontSize="2xs" opacity={0.6}>${feeUsd.toFixed(2)}</Text>
+                      {/*<Text fontSize="2xs" opacity={0.6}>${feeUsd.toFixed(2)}</Text>*/}
                     </VStack>
                   </Button>
                 );
               })}
             </HStack>
             <Text fontSize="xs" color="gray.500" mt={2}>
-              Estimated fee: {sendService.satToBtc(estimatedFeeSats)} BTC (${convertBtcToUsd(parseFloat(sendService.satToBtc(estimatedFeeSats))).toFixed(2)} USD)
+              {/*Estimated fee: {sendService.satToBtc(estimatedFeeSats)} BTC (${convertBtcToUsd(parseFloat(sendService.satToBtc(estimatedFeeSats))).toFixed(2)} USD)*/}
             </Text>
           </Box>
 

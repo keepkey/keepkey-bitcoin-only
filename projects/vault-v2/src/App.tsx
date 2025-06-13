@@ -227,58 +227,58 @@ function App() {
           />
 
           {/* REST and MCP links in bottom right corner */}
-          <Box
-            position="absolute"
-            bottom="20px"
-            right="20px"
-            background="rgba(0, 0, 0, 0.7)"
-            borderRadius="md"
-            boxShadow="md"
-            padding={2}
-            border="1px solid rgba(100, 255, 100, 0.3)"
-          >
-            <Flex direction="column" gap={1}>
-              <Stack direction="row" gap={2} align="center">
-                <Text fontSize="2xs" color="gray.300">REST:</Text>
-                <Link 
-                  href="http://127.0.0.1:1646/docs" 
-                  target="_blank" 
-                  fontSize="xs" 
-                  color="blue.300"
-                  _hover={{ color: "blue.200", textDecoration: "underline" }}
-                >
-                  http://127.0.0.1:1646/docs
-                </Link>
-              </Stack>
-              <Stack direction="row" gap={2} align="center">
-                <Text fontSize="2xs" color="gray.300">MCP:</Text>
-                <Link 
-                  href="http://127.0.0.1:1646/mcp" 
-                  target="_blank" 
-                  fontSize="xs" 
-                  color="blue.300"
-                  _hover={{ color: "blue.200", textDecoration: "underline" }}
-                >
-                  http://127.0.0.1:1646/mcp
-                </Link>
-                <Box position="relative">
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    colorScheme={hasCopied ? "green" : "blue"}
-                    aria-label="Copy MCP URL to clipboard"
-                    title={hasCopied ? "Copied!" : "Copy to clipboard"}
-                    onClick={handleCopy}
-                    p={1}
-                    minW={0}
-                    height="16px"
-                  >
-                    {hasCopied ? <FaCheck size="10px" /> : <FaCopy size="10px" />}
-                  </Button>
-                </Box>
-              </Stack>
-            </Flex>
-          </Box>
+          {/*<Box*/}
+          {/*  position="absolute"*/}
+          {/*  bottom="20px"*/}
+          {/*  right="20px"*/}
+          {/*  background="rgba(0, 0, 0, 0.7)"*/}
+          {/*  borderRadius="md"*/}
+          {/*  boxShadow="md"*/}
+          {/*  padding={2}*/}
+          {/*  border="1px solid rgba(100, 255, 100, 0.3)"*/}
+          {/*>*/}
+          {/*  <Flex direction="column" gap={1}>*/}
+          {/*    <Stack direction="row" gap={2} align="center">*/}
+          {/*      <Text fontSize="2xs" color="gray.300">REST:</Text>*/}
+          {/*      <Link */}
+          {/*        href="http://127.0.0.1:1646/docs" */}
+          {/*        target="_blank" */}
+          {/*        fontSize="xs" */}
+          {/*        color="blue.300"*/}
+          {/*        _hover={{ color: "blue.200", textDecoration: "underline" }}*/}
+          {/*      >*/}
+          {/*        http://127.0.0.1:1646/docs*/}
+          {/*      </Link>*/}
+          {/*    </Stack>*/}
+          {/*    <Stack direction="row" gap={2} align="center">*/}
+          {/*      <Text fontSize="2xs" color="gray.300">MCP:</Text>*/}
+          {/*      <Link */}
+          {/*        href="http://127.0.0.1:1646/mcp" */}
+          {/*        target="_blank" */}
+          {/*        fontSize="xs" */}
+          {/*        color="blue.300"*/}
+          {/*        _hover={{ color: "blue.200", textDecoration: "underline" }}*/}
+          {/*      >*/}
+          {/*        http://127.0.0.1:1646/mcp*/}
+          {/*      </Link>*/}
+          {/*      <Box position="relative">*/}
+          {/*        <Button*/}
+          {/*          size="xs"*/}
+          {/*          variant="ghost"*/}
+          {/*          colorScheme={hasCopied ? "green" : "blue"}*/}
+          {/*          aria-label="Copy MCP URL to clipboard"*/}
+          {/*          title={hasCopied ? "Copied!" : "Copy to clipboard"}*/}
+          {/*          onClick={handleCopy}*/}
+          {/*          p={1}*/}
+          {/*          minW={0}*/}
+          {/*          height="16px"*/}
+          {/*        >*/}
+          {/*          {hasCopied ? <FaCheck size="10px" /> : <FaCopy size="10px" />}*/}
+          {/*        </Button>*/}
+          {/*      </Box>*/}
+          {/*    </Stack>*/}
+          {/*  </Flex>*/}
+          {/*</Box>*/}
         </Flex>
       </Box>
     );
