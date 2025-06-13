@@ -79,13 +79,6 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           border="1px solid rgba(255, 255, 255, 0.1)"
         >
           <Text color="red.400" textAlign="center">{error}</Text>
-          <Button 
-            colorScheme="blue" 
-            size="sm" 
-            onClick={refreshPortfolio}
-          >
-            Retry
-          </Button>
         </VStack>
       </Box>
     );
@@ -134,7 +127,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
         border="1px solid rgba(255, 255, 255, 0.1)"
       >
         {/* Bitcoin Logo */}
-        <Box color="orange.400" fontSize="4xl">
+        <Box color="orange.400" fontSize="4xl" onClick={debugUsdValues}>
           <SiBitcoin />
         </Box>
         
@@ -185,28 +178,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
             </HStack>
           </Button>
         </HStack>
-        
-        {/* Refresh Button */}
-        <Button 
-          size="sm" 
-          colorScheme="gray" 
-          variant="outline"
-          onClick={refreshPortfolio}
-          mt={2}
-        >
-          🔄 Refresh
-        </Button>
-        
-        {/* Debug Button - Remove this in production */}
-        <Button 
-          size="sm" 
-          colorScheme="gray" 
-          variant="outline"
-          onClick={debugUsdValues}
-          mt={2}
-        >
-          🔍 Debug USD Values
-        </Button>
+
       </VStack>
     </Flex>
   );

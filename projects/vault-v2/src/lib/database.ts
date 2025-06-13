@@ -30,12 +30,37 @@ export class WalletDatabase {
       FOREIGN KEY (device_id) REFERENCES devices(device_id) ON DELETE CASCADE
     )`);
 
-    // Create indexes
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id)`);
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_xpubs_device_id ON xpubs(device_id)`);
-    await db.execute(`CREATE INDEX IF NOT EXISTS idx_xpubs_lookup ON xpubs(device_id, path, caip)`);
+      // Create balance cache table for Pioneer API data
+  await db.execute(`CREATE TABLE IF NOT EXISTS balance_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pubkey TEXT NOT NULL,
+    caip TEXT NOT NULL,
+    balance TEXT NOT NULL,
+    balance_usd TEXT NOT NULL,
+    price_usd TEXT NOT NULL,
+    symbol TEXT,
+    last_updated INTEGER NOT NULL,
+    UNIQUE(pubkey, caip)
+  )`);
 
-    return db;
+  // Create fee rate cache table
+  await db.execute(`CREATE TABLE IF NOT EXISTS fee_rate_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    caip TEXT NOT NULL UNIQUE,
+    fastest INTEGER NOT NULL,
+    fast INTEGER NOT NULL,
+    average INTEGER NOT NULL,
+    last_updated INTEGER NOT NULL
+  )`);
+
+  // Create indexes
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_xpubs_device_id ON xpubs(device_id)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_xpubs_lookup ON xpubs(device_id, path, caip)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_balance_cache_updated ON balance_cache(last_updated)`);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_fee_cache_updated ON fee_rate_cache(last_updated)`);
+
+  return db;
   }
 
   static async getDevices(): Promise<DeviceInfo[]> {
@@ -83,5 +108,50 @@ export class WalletDatabase {
       { path: "m/49'/0'/0'", label: "Bitcoin Segwit", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },
       { path: "m/84'/0'/0'", label: "Bitcoin Native Segwit", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" }
     ];
+  }
+
+  static async insertXpubFromQueue(deviceId: string, path: string, xpub: string): Promise<void> {
+    const db = await Database.load(DB_PATH);
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Find the matching required path to get the label and caip
+    const requiredPaths = this.getRequiredPaths();
+    const pathInfo = requiredPaths.find(p => p.path === path);
+    
+    if (!pathInfo) {
+      throw new Error(`Unknown path: ${path}`);
+    }
+
+    await db.execute(
+      'INSERT OR REPLACE INTO xpubs (device_id, path, label, caip, pubkey, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [deviceId, path, pathInfo.label, pathInfo.caip, xpub, now]
+    );
+
+    console.log(`✅ Stored xpub for ${deviceId} path ${path}: ${xpub.substring(0, 20)}...`);
+  }
+
+  static async getAllXpubs(): Promise<XpubInfo[]> {
+    const db = await Database.load(DB_PATH);
+    const xpubs = await db.select('SELECT * FROM xpubs ORDER BY created_at ASC');
+    return xpubs as XpubInfo[];
+  }
+
+  static async clearBalanceCache(): Promise<void> {
+    const db = await Database.load(DB_PATH);
+    // Drop and recreate table to handle schema changes
+    await db.execute('DROP TABLE IF EXISTS balance_cache');
+    await db.execute(`CREATE TABLE balance_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pubkey TEXT NOT NULL,
+      caip TEXT NOT NULL,
+      balance TEXT NOT NULL,
+      balance_usd TEXT NOT NULL,
+      price_usd TEXT NOT NULL,
+      symbol TEXT,
+      last_updated INTEGER NOT NULL,
+      UNIQUE(pubkey, caip)
+    )`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_balance_cache_updated ON balance_cache(last_updated)`);
+    console.log('🧹 Balance cache cleared and recreated');
   }
 } 

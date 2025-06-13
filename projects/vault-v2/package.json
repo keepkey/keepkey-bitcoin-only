@@ -17,6 +17,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-sql": "^2.2.0",
     "@types/qrcode": "^1.5.5",
+    "axios": "^1.9.0",
     "bitcoin-address-validation": "^3.0.0",
     "framer-motion": "^12.15.0",
     "qrcode": "^1.5.4",

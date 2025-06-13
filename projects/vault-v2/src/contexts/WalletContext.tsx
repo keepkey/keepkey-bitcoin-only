@@ -182,6 +182,46 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     return DeviceQueueAPI.getQueueStatus(deviceId);
   };
 
+  // Queue monitoring - check for completed xpub requests every 5 seconds
+  useEffect(() => {
+    const monitorQueue = async () => {
+      try {
+        const devices = await WalletDatabase.getDevices();
+        
+        for (const device of devices) {
+          const status = await getQueueStatus(device.device_id);
+          
+          if (status.last_response && status.last_response.success) {
+            const { device_id, path, xpub } = status.last_response;
+            
+            // Check if we already have this xpub in the database
+            const existingXpubs = await WalletDatabase.getXpubs(device_id);
+            const exists = existingXpubs.some(x => x.path === path && x.pubkey === xpub);
+            
+            if (!exists) {
+              console.log('📥 Storing completed xpub request:', path, '->', xpub.substring(0, 20) + '...');
+              await WalletDatabase.insertXpubFromQueue(device_id, path, xpub);
+              
+              // Clear balance cache to force refresh with new xpub
+              await WalletDatabase.clearBalanceCache();
+              
+              // Refresh portfolio to include new xpub data
+              await refreshPortfolio();
+            }
+          }
+        }
+      } catch (error) {
+        // Silently ignore errors in queue monitoring
+        console.debug('Queue monitoring error:', error);
+      }
+    };
+
+    // Monitor every 5 seconds
+    const interval = setInterval(monitorQueue, 5000);
+    
+    return () => clearInterval(interval);
+  }, [getQueueStatus, refreshPortfolio]);
+
   // Initial load
   useEffect(() => {
     onStart();
