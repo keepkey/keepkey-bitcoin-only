@@ -48,6 +48,14 @@ export const sendService = {
         }
       }
       
+      console.log('🔑 Available Bitcoin XPUBs:', {
+        legacy: result.legacy ? 'FOUND' : 'MISSING',
+        segwit: result.segwit ? 'FOUND' : 'MISSING', 
+        native_segwit: result.native_segwit ? 'FOUND' : 'MISSING',
+        total_pubkeys: pubkeys.length,
+        bitcoin_xpubs: bitcoinXpubs.length
+      });
+      
       return result;
     } catch (error) {
       console.error('Error fetching Bitcoin XPUBs:', error);
@@ -56,31 +64,72 @@ export const sendService = {
   },
 
   /**
-   * Get UTXOs from pioneers.dev using XPUBs
+   * Get the best available XPUB with fallback logic
    */
-  async getUtxos(deviceId: string, account: number, scriptType: string): Promise<UTXO[]> {
+  async getBestAvailableXpub(): Promise<{ xpub: string; scriptType: string }> {
+    const xpubs = await this.getBitcoinXpubs();
+    
+    // Priority order: Native SegWit > SegWit > Legacy
+    if (xpubs.native_segwit) {
+      return { xpub: xpubs.native_segwit, scriptType: 'p2wpkh' };
+    }
+    if (xpubs.segwit) {
+      return { xpub: xpubs.segwit, scriptType: 'p2sh-p2wpkh' };
+    }
+    if (xpubs.legacy) {
+      return { xpub: xpubs.legacy, scriptType: 'p2pkh' };
+    }
+    
+    throw new Error('No Bitcoin XPUBs found. Device may not be frontloaded or connected properly.');
+  },
+
+  /**
+   * Get UTXOs from pioneers.dev using XPUBs - now with smart fallback
+   */
+  async getUtxos(deviceId: string, account: number, preferredScriptType?: string): Promise<{ utxos: UTXO[]; actualScriptType: string }> {
     try {
       // Get XPUBs from vault first
       const xpubs = await this.getBitcoinXpubs();
       
-      // Map script type to XPUB
-      let xpub: string;
-      switch (scriptType) {
-        case 'p2pkh':
-          if (!xpubs.legacy) throw new Error('Legacy XPUB not found');
-          xpub = xpubs.legacy;
-          break;
-        case 'p2sh-p2wpkh':
-          if (!xpubs.segwit) throw new Error('SegWit XPUB not found');
-          xpub = xpubs.segwit;
-          break;
-        case 'p2wpkh':
-          if (!xpubs.native_segwit) throw new Error('Native SegWit XPUB not found');
-          xpub = xpubs.native_segwit;
-          break;
-        default:
-          throw new Error(`Unsupported script type: ${scriptType}`);
+      let xpub: string | undefined;
+      let actualScriptType: string | undefined;
+      
+      // Try preferred script type first, then fall back to best available
+      if (preferredScriptType) {
+        switch (preferredScriptType) {
+          case 'p2pkh':
+            if (xpubs.legacy) {
+              xpub = xpubs.legacy;
+              actualScriptType = 'p2pkh';
+            }
+            break;
+          case 'p2sh-p2wpkh':
+            if (xpubs.segwit) {
+              xpub = xpubs.segwit;
+              actualScriptType = 'p2sh-p2wpkh';
+            }
+            break;
+          case 'p2wpkh':
+            if (xpubs.native_segwit) {
+              xpub = xpubs.native_segwit;
+              actualScriptType = 'p2wpkh';
+            }
+            break;
+        }
       }
+      
+      // If preferred type failed or not specified, use best available
+      if (!xpub || !actualScriptType) {
+        const best = await this.getBestAvailableXpub();
+        xpub = best.xpub;
+        actualScriptType = best.scriptType;
+        
+        if (preferredScriptType && preferredScriptType !== actualScriptType) {
+          console.warn(`⚠️ Preferred script type ${preferredScriptType} not available, using ${actualScriptType} instead`);
+        }
+      }
+
+      console.log(`🔍 Using ${actualScriptType} XPUB: ${xpub.substring(0, 20)}...`);
 
       // Call pioneers.dev for UTXOs
       const response = await fetch(`${PIONEER_API_BASE}/api/v1/listUnspent/BTC/${xpub}`, {
@@ -94,7 +143,7 @@ export const sendService = {
       const utxos = await response.json();
       
       // Convert to our UTXO format
-      return utxos.map((utxo: any) => ({
+      const formattedUtxos = utxos.map((utxo: any) => ({
         txid: utxo.txid,
         vout: utxo.vout,
         address: utxo.address || '',
@@ -103,6 +152,8 @@ export const sendService = {
         is_locked: false, // UTXOs from pioneers.dev aren't locked by default
         label: utxo.label || undefined
       }));
+      
+      return { utxos: formattedUtxos, actualScriptType };
     } catch (error) {
       console.error('Error fetching UTXOs:', error);
       throw error;

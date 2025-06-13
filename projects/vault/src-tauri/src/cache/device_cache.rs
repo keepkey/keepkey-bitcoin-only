@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use rusqlite::{Connection, params, OptionalExtension};
 use serde::{Serialize, Deserialize};
 use utoipa::ToSchema;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
@@ -310,6 +310,22 @@ impl DeviceCache {
         let mut missing_addresses = 0;
         let mut total_required = 0;
         
+        // Build DB-backed set of cached entries for fast lookup
+        let mut cached_set: HashSet<(String,String,String)> = HashSet::new();
+        {
+            let db2 = self.db.lock().await;
+            let mut stmt2 = db2.prepare("SELECT coin, script_type, derivation_path FROM cached_addresses WHERE device_id = ?1")?;
+            let rows2 = stmt2.query_map(params![clean_device_id], |row| {
+                let coin: String = row.get(0)?;
+                let script_type: String = row.get(1)?;
+                let path_json: String = row.get(2)?;
+                Ok((coin, script_type, path_json))
+            })?;
+            for r in rows2 {
+                if let Ok(tuple) = r { cached_set.insert(tuple); }
+            }
+        }
+        
         // Check each path to see if its required addresses are cached
         for path in &paths {
             for network in &path.networks {
@@ -325,37 +341,18 @@ impl DeviceCache {
                     // UTXO networks need xpub cached (use addressNList for account-level path)
                     let account_path = &path.address_n_list;
                     let xpub_script_type = format!("{}_xpub", script_type);
-                    total_required += 1;
-                    
-                    if self.get_cached_address(&coin_name, &xpub_script_type, account_path).is_none() {
+                    total_required += 1; // only xpub required
+                    let account_json = serde_json::to_string(account_path)?;
+                    if !cached_set.contains(&(coin_name.clone(), xpub_script_type.clone(), account_json)) {
                         missing_addresses += 1;
                         debug!("❌ Missing xpub for {} {} at path {:?}", coin_name, script_type, account_path);
-                    }
-                    
-                    // Also need first 5 individual addresses (generated from account path)
-                    for i in 0..5 {
-                        let mut address_path = account_path.to_vec();
-                        // Account path is always 3 elements for UTXO networks
-                        if address_path.len() == 3 {
-                            address_path.push(0); // change = 0 (receiving)
-                            address_path.push(i); // address_index
-                        } else {
-                            warn!("Unexpected account path length {} for UTXO network {}", address_path.len(), network);
-                            continue;
-                        }
-                        total_required += 1;
-                        
-                        if self.get_cached_address(&coin_name, &script_type, &address_path).is_none() {
-                            missing_addresses += 1;
-                            debug!("❌ Missing address for {} {} at path {:?}", coin_name, script_type, address_path);
-                        }
                     }
                 } else {
                     // Account-based networks need master address cached (use addressNListMaster)
                     let address_path = &path.address_n_list_master;
                     total_required += 1;
-                    
-                    if self.get_cached_address(&coin_name, &script_type, address_path).is_none() {
+                    let addr_json = serde_json::to_string(address_path)?;
+                    if !cached_set.contains(&(coin_name.clone(), script_type.clone(), addr_json)) {
                         missing_addresses += 1;
                         debug!("❌ Missing address for {} {} at path {:?}", coin_name, script_type, address_path);
                     }
@@ -725,19 +722,30 @@ impl DeviceCache {
         }
     }
     
-    /// Get first device ID from database (fallback method)
+    /// Non-blocking attempt to read first device ID from DB.
+    /// Uses `try_lock` to avoid blocking Tokio runtime threads. If the mutex is
+    /// currently locked by another async task we simply return `Ok(None)` and
+    /// let the caller fall back to other strategies.
     pub fn get_first_device_from_db(&self) -> Result<Option<String>> {
-        let db = self.db.blocking_lock();
-        
-        let device_id: Option<String> = db.query_row(
-            "SELECT device_id FROM devices LIMIT 1",
-            [],
-            |row| Ok(row.get::<_, String>(0)?),
-        ).optional()?;
-        
-        Ok(device_id)
+        match self.db.try_lock() {
+            Ok(db) => {
+                let device_id: Option<String> = db
+                    .query_row(
+                        "SELECT device_id FROM devices LIMIT 1",
+                        [],
+                        |row| Ok(row.get::<_, String>(0)?),
+                    )
+                    .optional()?;
+                Ok(device_id)
+            }
+            Err(_e) => {
+                // Mutex is busy – avoid blocking the runtime thread.
+                debug!("🔄 DeviceCache DB mutex busy, skipping blocking fallback");
+                Ok(None)
+            }
+        }
     }
-    
+
     /// Clear all caches for a device
     pub async fn clear_device(&self, device_id: &str) -> Result<()> {
         let db = self.db.lock().await;

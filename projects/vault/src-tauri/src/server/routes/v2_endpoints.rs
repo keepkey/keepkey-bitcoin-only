@@ -376,7 +376,7 @@ pub async fn get_pubkeys(
             debug!("{}: Memory cache empty, trying to load device from database", tag);
             
             // Get first device from database (not async)
-            match app_state.device_cache.get_first_device_from_db() { // ✅ FIXED: Remove .await
+            match app_state.device_cache.get_first_device_from_db() { // 
                 Ok(Some(device_id)) => {
                     debug!("{}: Found device {} in database, loading into memory", tag, device_id);
                     // Load device into memory cache
@@ -1299,7 +1299,15 @@ pub async fn sync_device_to_cache(State(app_state): State<Arc<AppState>>) -> imp
         }))).into_response();
     }
     
-    let device_entry = &entries[0]; // Use first device
+    // Find first device that has fetched features
+    let device_entry_opt = entries.iter().find(|e| e.features.is_some());
+    
+    let Some(device_entry) = device_entry_opt else {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error": "No connected device with features found in registry"
+        }))).into_response();
+    };
+    
     let device_id = &device_entry.device.unique_id;
     
     if let Some(features) = &device_entry.features {
@@ -1322,6 +1330,14 @@ pub async fn sync_device_to_cache(State(app_state): State<Arc<AppState>>) -> imp
         app_state.device_cache.force_set_device_features(device_id.clone(), cache_features);
         
         info!("{}: ✅ Device {} synced to cache, now refreshing balances...", tag, device_id);
+        
+        // Also load existing cached addresses from the database into the in-memory cache so that
+        //     refresh_balances_from_pioneer can look them up immediately (it only searches the
+        //     memory cache). Without this, balance refresh would log "No cached address found" even
+        //     though the DB already contains the addresses loaded during frontload.
+        if let Err(e) = app_state.device_cache.load_device(device_id).await {
+            warn!("{}: Failed to load cached addresses into memory: {}", tag, e);
+        }
         
         // Also refresh balances from Pioneer API to ensure portfolio endpoints work
         match refresh_balances_from_pioneer(&*app_state.device_cache, device_id).await {
@@ -1539,7 +1555,7 @@ pub async fn get_change_address_v2(
 
 // ===== TRANSACTION BUILDING API =====
 
-/// 🚨 SAFETY CONSTANTS - NEVER ALLOW FEES ABOVE THESE LIMITS
+/// SAFETY CONSTANTS - NEVER ALLOW FEES ABOVE THESE LIMITS
 const MAX_FEE_BTC: f64 = 0.1; // 0.1 BTC absolute maximum
 const MAX_FEE_PERCENT: f64 = 50.0; // 50% of transaction value maximum  
 const MIN_FEE_RATE: f64 = 1.0; // 1 sat/vByte minimum
@@ -1639,9 +1655,8 @@ pub async fn build_transaction_v2(
     let tag = "build_transaction_v2";
     info!("{}: Building transaction", tag);
     
-    let _device_id = request.device_id.trim(); // ✅ FIXED: Prefixed with underscore
-    
-    // 🚨 PHASE 1: INPUT VALIDATION - FAIL FAST
+    let _device_id = request.device_id.trim(); // 
+    // PHASE 1: INPUT VALIDATION - FAIL FAST
     if let Err(error_msg) = validate_build_request(&request) {
         warn!("{}: Validation failed: {}", tag, error_msg);
         return (StatusCode::BAD_REQUEST, Json(BuildTxResponse {
@@ -1652,7 +1667,7 @@ pub async fn build_transaction_v2(
         })).into_response();
     }
     
-    // 🚨 PHASE 2: GET DEVICE AND UTXOS - FAIL FAST IF NO DATA
+    // PHASE 2: GET DEVICE AND UTXOS - FAIL FAST IF NO DATA
     let device_id = request.device_id.trim();
     let script_type = request.script_type.as_deref().unwrap_or("p2wpkh");
     
@@ -1694,7 +1709,7 @@ pub async fn build_transaction_v2(
         })).into_response();
     }
     
-    // 🚨 PHASE 3: UTXO SELECTION
+    // PHASE 3: UTXO SELECTION
     let selected_utxos = match select_utxos(&all_utxos, &request.input_selection) {
         Ok(utxos) => utxos,
         Err(e) => {
@@ -1708,7 +1723,7 @@ pub async fn build_transaction_v2(
         }
     };
     
-    // 🚨 PHASE 4: COIN SELECTION & TRANSACTION BUILDING
+    // PHASE 4: COIN SELECTION & TRANSACTION BUILDING
     let is_max_send = matches!(request.input_selection, InputSelection::Max);
     
     match build_bitcoin_transaction(selected_utxos, request.recipients, request.fee_rate, is_max_send, request.max_fee_btc).await {
@@ -1876,13 +1891,13 @@ fn select_utxos(all_utxos: &[UtxoResponse], selection: &InputSelection) -> Resul
             
             Ok(sorted_utxos.into_iter().take(count).collect())
         }
-        InputSelection::Manual { utxos: selected_outpoints } => {
+        InputSelection::Manual { utxos } => {
             let mut selected = Vec::new();
             
-            for outpoint in selected_outpoints {
+            for outpoint in utxos {
                 let parts: Vec<&str> = outpoint.split(':').collect();
                 if parts.len() != 2 {
-                    return Err(format!("Invalid outpoint format: {}", outpoint));
+                    return Err(format!("Invalid outpoint format: {} (expected txid:vout)", outpoint));
                 }
                 
                 let txid = parts[0];
@@ -1927,7 +1942,7 @@ async fn build_bitcoin_transaction(
     let estimated_size = estimate_tx_size(utxos.len(), recipients.len() + 1); // +1 for potential change
     let estimated_fee_sats = (estimated_size as f64 * fee_rate).ceil() as u64;
     
-    // 🚨 CRITICAL SAFETY CHECK: Validate fee
+    // CRITICAL SAFETY CHECK: Validate fee
     validate_fee_safety(estimated_fee_sats, total_output_sats, max_fee_override)?;
     
     // Check if we have enough funds
@@ -2004,12 +2019,12 @@ async fn build_bitcoin_transaction(
     Ok((unsigned_tx, warnings))
 }
 
-/// 🚨 CRITICAL SAFETY FUNCTION: Validate fee safety
+/// CRITICAL SAFETY FUNCTION: Validate fee safety
 fn validate_fee_safety(fee_sats: u64, total_output_sats: u64, max_fee_override: Option<f64>) -> Result<(), String> {
     let fee_btc = fee_sats as f64 / 100_000_000.0;
     let max_allowed = max_fee_override.unwrap_or(MAX_FEE_BTC);
     
-    // 🚨 HARD LIMIT: Never allow fees > 0.1 BTC (or override limit)
+    // HARD LIMIT: Never allow fees > 0.1 BTC (or override limit)
     if fee_btc > max_allowed {
         return Err(format!(
             "Fee of {:.8} BTC exceeds maximum allowed limit of {:.1} BTC. This appears to be an error.",
@@ -2017,7 +2032,7 @@ fn validate_fee_safety(fee_sats: u64, total_output_sats: u64, max_fee_override: 
         ));
     }
     
-    // 🚨 PERCENTAGE CHECK: Fee shouldn't exceed 50% of transaction value
+    // PERCENTAGE CHECK: Fee shouldn't exceed 50% of transaction value
     if total_output_sats > 0 {
         let fee_percentage = (fee_sats as f64 / total_output_sats as f64) * 100.0;
         if fee_percentage > MAX_FEE_PERCENT {
@@ -2092,8 +2107,8 @@ fn format_user_friendly_error(error: &str) -> String {
     tag = "debug"
 )]
 pub async fn debug_database(
-    State(state): State<Arc<AppState>>, // ✅ FIXED: Use AppState directly
-) -> Result<Json<Value>, (axum::http::StatusCode, Json<Value>)> {
+    State(state): State<Arc<AppState>>, // 
+    ) -> Result<Json<Value>, (axum::http::StatusCode, Json<Value>)> {
     let cache = &state.device_cache;
     
     // Collect raw database contents
