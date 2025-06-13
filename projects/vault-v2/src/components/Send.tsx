@@ -13,14 +13,15 @@ import {
 } from '@chakra-ui/react';
 import { FaArrowLeft, FaQrcode, FaPaperPlane } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
-import { 
-  UTXO, 
-  FeeEstimate, 
-  SendPageProps
-} from '../types/send';
-// import { sendService } from '../services/sendService';
+import { useWallet } from '../contexts/WalletContext';
+
+interface SendPageProps {
+  onBack: () => void;
+}
 
 const Send: React.FC<SendPageProps> = ({ onBack }) => {
+  const { portfolio, sendAsset, loading: walletLoading, error: walletError } = useWallet();
+  
   // State according to planning document 
   const [recipientAddress, setRecipientAddress] = useState('');
   const [amount, setAmount] = useState('');
@@ -29,92 +30,40 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [addressValidation, setAddressValidation] = useState<{ valid: boolean; error?: string }>({ valid: false });
-  const [feeEstimates, setFeeEstimates] = useState<FeeEstimate>({ slow: 1, medium: 5, fast: 10 });
-  const [utxos, setUtxos] = useState<UTXO[]>([]);
-  const [sliderPercent, setSliderPercent] = useState<number>(100); // Key addition: slider for UTXO selection
-  const [amountCurrency, setAmountCurrency] = useState<'BTC' | 'USD'>('BTC'); // Currency toggle
-  const [btcPrice, setBtcPrice] = useState<number>(43000); // BTC/USD price
+  const [amountCurrency, setAmountCurrency] = useState<'BTC' | 'USD'>('BTC');
+  const [btcPrice, setBtcPrice] = useState<number>(43000);
 
-  // Computed values
-  const sortedUtxos = [...utxos].sort((a, b) => {
-    // Sort by ascending age/value as per planning document
-    if (a.confirmations !== b.confirmations) {
-      return a.confirmations - b.confirmations; // Older first (more confirmations)
-    }
-    return a.amount_sat - b.amount_sat; // Smaller amounts first
-  });
-
-  // Selected UTXOs based on slider percentage
-  const selectedUtxosCount = Math.ceil((sortedUtxos.length * sliderPercent) / 100);
-  const selectedUtxos = sortedUtxos.slice(0, selectedUtxosCount);
-  
-  // Calculate spendable balance from selected UTXOs only
-  const spendableBalance = selectedUtxos.reduce((sum, utxo) => {
-    // FIXED: Ensure amount_sat is treated as number and handle NaN values
-    const sats = Number(utxo.amount_sat) || 0;
-    return sum + sats;
-  }, 0);
+  // Get BTC asset from portfolio
+  const btcAsset = portfolio?.assets.find(asset => asset.symbol === 'BTC');
+  const availableBalance = btcAsset ? parseFloat(btcAsset.balance) : 0;
 
   // Load initial data
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    // Set BTC price from portfolio if available
+    if (btcAsset && btcAsset.price_usd) {
+      setBtcPrice(btcAsset.price_usd);
+    }
+  }, [btcAsset]);
 
   // Validate address when it changes
   useEffect(() => {
     if (recipientAddress) {
-
-      setAddressValidation(validation);
+      // Simple Bitcoin address validation (basic check)
+      const isValidAddress = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^bc1[a-z0-9]{39,59}$/.test(recipientAddress);
+      setAddressValidation({ 
+        valid: isValidAddress,
+        error: isValidAddress ? undefined : 'Invalid Bitcoin address format'
+      });
     } else {
       setAddressValidation({ valid: false });
     }
   }, [recipientAddress]);
 
-  const loadInitialData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Load fee estimates and BTC price
-      // const estimates = await sendService.getFeeEstimates();
-      // setFeeEstimates(estimates);
-      //
-      // // Load UTXOs (using dummy device ID for now)
-      // const fetchedUtxos = await sendService.getUtxos('keepkey-001', 0, 'p2wpkh');
-      // console.log('🔍 Fetched UTXOs:', fetchedUtxos.map(u => ({ txid: u.txid.substring(0, 8), vout: u.vout, amount_sat: u.amount_sat, type: typeof u.amount_sat })));
-      // setUtxos(fetchedUtxos);
-
-      // Fetch BTC price (could be from same API as portfolio)
-      try {
-        // const response = await fetch('http://localhost:1646/api/v2/portfolio/summary');
-        // if (response.ok) {
-        //   // For now, use a reasonable default price - could be enhanced to get real price
-        //   setBtcPrice(43000);
-        // }
-      } catch (e) {
-        console.log('Could not fetch BTC price, using default');
-        setBtcPrice(43000);
-      }
-      
-    } catch (error) {
-      console.error('Error loading initial data:', error);
-      setError('Failed to load wallet data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleMaxAmount = () => {
-    if (selectedUtxos.length === 0) return;
-    
-    // Calculate max using selected UTXOs minus estimated fee
-    const totalSats = spendableBalance;
-    const estimatedFeeSats = sendService.calculateFee(selectedUtxos, [{ amount: '0' }], feeEstimates[feeRate]);
-    const maxAmountSats = totalSats - estimatedFeeSats;
-    
-    if (maxAmountSats > 0) {
-      const maxBtc = sendService.satToBtc(maxAmountSats);
-      setAmount(maxBtc);
+    if (availableBalance > 0) {
+      // Reserve some amount for fees (simplified)
+      const maxAmount = Math.max(0, availableBalance - 0.0001); // Reserve 0.0001 BTC for fees
+      setAmount(maxAmount.toFixed(8));
     }
   };
 
@@ -124,49 +73,34 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       return;
     }
 
+    const sendAmount = parseFloat(amount);
+    if (sendAmount <= 0) {
+      setError('Amount must be greater than 0');
+      return;
+    }
+
+    if (sendAmount > availableBalance) {
+      setError('Insufficient balance');
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       setSuccess(null);
 
-      // Build transaction with slider percentage
-      const buildRequest = {
-        recipients: [{ address: recipientAddress, amount }],
-        feeRate: feeEstimates[feeRate],
-        sliderPercent: sliderPercent // Use actual slider value
-      };
-
-      const buildResult = await sendService.buildTransaction(buildRequest);
+      // Use WalletContext to send
+      const success = await sendAsset(recipientAddress, amount);
       
-      if (!buildResult.success || !buildResult.tx) {
-        throw new Error(buildResult.error || 'Failed to build transaction');
+      if (success) {
+        setSuccess(`Transaction sent successfully! Amount: ${amount} BTC to ${recipientAddress.substring(0, 20)}...`);
+        
+        // Reset form
+        setRecipientAddress('');
+        setAmount('');
+      } else {
+        throw new Error('Transaction failed');
       }
-
-      // Sign transaction
-      const signResult = await sendService.signTransaction(
-        buildResult.tx.psbt,
-        'keepkey-001' // TODO: Get from device context
-      );
-
-      if (!signResult.success || !signResult.tx) {
-        throw new Error(signResult.error || 'Failed to sign transaction');
-      }
-
-      // Broadcast transaction
-      const broadcastResult = await sendService.broadcastTransaction(signResult.tx.psbt);
-
-      if (!broadcastResult.success) {
-        throw new Error(broadcastResult.error || 'Failed to broadcast transaction');
-      }
-
-      setSuccess(`Transaction sent successfully! TXID: ${broadcastResult.txid}`);
-      
-      // Reset form
-      setRecipientAddress('');
-      setAmount('');
-      
-      // Reload data
-      await loadInitialData();
 
     } catch (error) {
       console.error('Error sending transaction:', error);
@@ -175,10 +109,6 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       setLoading(false);
     }
   };
-
-  const estimatedFeeSats = selectedUtxos.length > 0 && amount 
-    ? sendService.calculateFee(selectedUtxos, [{ amount }], feeEstimates[feeRate])
-    : 0;
 
   // Currency conversion helpers
   const convertBtcToUsd = (btc: number): number => btc * btcPrice;
@@ -208,6 +138,17 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
     
     setAmount(formatCurrency(convertedAmount, amountCurrency === 'BTC' ? 'USD' : 'BTC'));
   };
+
+  if (walletLoading) {
+    return (
+      <Box height="100%" display="flex" alignItems="center" justifyContent="center" bg="transparent">
+        <VStack gap={4}>
+          <Spinner size="xl" color="blue.400" />
+          <Text color="gray.300" fontSize="lg">Loading Wallet...</Text>
+        </VStack>
+      </Box>
+    );
+  }
 
   return (
     <Box height="100%" bg="transparent" display="flex" alignItems="center" justifyContent="center" p={6}>
@@ -243,37 +184,19 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
           <Box w="40px" /> {/* Spacer for centering */}
         </HStack>
 
-        {/* Phase 1 MVP - Easy Mode Send Form */}
-        <VStack gap={6} bg="gray.800" p={6} borderRadius="lg">
-          {/* UTXO Selection - Choose which UTXOs to make available */}
-          <Box w="100%">
-            <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
-              💰 Coin Selection ({sliderPercent}% of UTXOs)
-            </Text>
-            <HStack gap={2}>
-              {[25, 50, 75, 100].map((percent) => (
-                <Button
-                  key={percent}
-                  size="sm"
-                  variant={sliderPercent === percent ? "solid" : "outline"}
-                  colorScheme={sliderPercent === percent ? "green" : "gray"}
-                  onClick={() => setSliderPercent(percent)}
-                  flex="1"
-                >
-                  {percent}%
-                </Button>
-              ))}
-            </HStack>
-            <HStack justify="space-between" mt={1}>
-              <Text fontSize="xs" color="gray.500">
-                📊 Using {selectedUtxos.length} of {utxos.length} UTXOs
-              </Text>
-              <Text fontSize="xs" color="green.400" fontWeight="medium">
-                {/*💎 Available: {sendService.satToBtc(spendableBalance)} BTC*/}
-              </Text>
-            </HStack>
-          </Box>
+        {/* Balance Display */}
+        <Box bg="gray.800" p={4} borderRadius="lg" textAlign="center">
+          <Text color="gray.400" fontSize="sm">Available Balance</Text>
+          <Text color="white" fontSize="2xl" fontWeight="bold">
+            {availableBalance.toFixed(8)} BTC
+          </Text>
+          <Text color="gray.400" fontSize="sm">
+            ≈ ${convertBtcToUsd(availableBalance).toFixed(2)} USD
+          </Text>
+        </Box>
 
+        {/* Send Form */}
+        <VStack gap={6} bg="gray.800" p={6} borderRadius="lg">
           {/* Recipient Address */}
           <Box w="100%">
             <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
@@ -295,7 +218,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
                 aria-label="Scan QR code"
                 size="md"
                 onClick={() => {
-                  alert('QR code scanning will be implemented in Phase 2');
+                  alert('QR code scanning will be implemented later');
                 }}
               >
                 <FaQrcode />
@@ -315,28 +238,28 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
           {/* Amount with BTC/USD Toggle */}
           <Box w="100%">
-                          <HStack justify="space-between" mb={2}>
-                <HStack gap={2}>
-                  <Text color="gray.300" fontSize="sm" fontWeight="medium">
-                    Amount
-                  </Text>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    color="blue.400"
-                    onClick={toggleCurrency}
-                    fontWeight="bold"
-                    _hover={{ color: "blue.300" }}
-                  >
-                    ({amountCurrency})
-                  </Button>
-                </HStack>
+            <HStack justify="space-between" mb={2}>
+              <HStack gap={2}>
+                <Text color="gray.300" fontSize="sm" fontWeight="medium">
+                  Amount
+                </Text>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  color="blue.400"
+                  onClick={toggleCurrency}
+                  fontWeight="bold"
+                  _hover={{ color: "blue.300" }}
+                >
+                  ({amountCurrency})
+                </Button>
+              </HStack>
               <Button
                 size="xs"
                 variant="outline"
                 colorScheme="blue"
                 onClick={handleMaxAmount}
-                disabled={selectedUtxos.length === 0}
+                disabled={availableBalance === 0}
               >
                 Max
               </Button>
@@ -372,9 +295,8 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             </Text>
             <HStack gap={1}>
               {(['slow', 'medium', 'fast'] as const).map((preset) => {
-                const presetFeeRate = feeEstimates[preset];
-                // const feeSats = selectedUtxos.length > 0 ? sendService.calculateFee(selectedUtxos, [{ amount: amount || '0' }], presetFeeRate) : 0;
-                // const feeUsd = convertBtcToUsd(parseFloat(sendService.satToBtc(feeSats)));
+                const feeRates = { slow: 1, medium: 5, fast: 10 };
+                const presetFeeRate = feeRates[preset];
                 
                 return (
                   <Button
@@ -391,21 +313,17 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
                     <VStack gap={0} align="center">
                       <Text fontSize="xs" fontWeight="bold">{preset}</Text>
                       <Text fontSize="2xs" opacity={0.8}>{presetFeeRate} sat/vB</Text>
-                      {/*<Text fontSize="2xs" opacity={0.6}>${feeUsd.toFixed(2)}</Text>*/}
                     </VStack>
                   </Button>
                 );
               })}
             </HStack>
-            <Text fontSize="xs" color="gray.500" mt={2}>
-              {/*Estimated fee: {sendService.satToBtc(estimatedFeeSats)} BTC (${convertBtcToUsd(parseFloat(sendService.satToBtc(estimatedFeeSats))).toFixed(2)} USD)*/}
-            </Text>
           </Box>
 
           {/* Error Display */}
-          {error && (
+          {(error || walletError) && (
             <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
-              <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
+              <Text color="red.200" fontSize="sm">⚠️ {error || walletError}</Text>
             </Box>
           )}
 
@@ -424,7 +342,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             size="lg"
             width="100%"
             onClick={handleSend}
-            disabled={!addressValidation.valid || !amount || loading}
+            disabled={!addressValidation.valid || !amount || loading || !btcAsset}
           >
             <HStack gap={2}>
               {loading ? <Spinner size="sm" /> : <FaPaperPlane />}

@@ -16,7 +16,7 @@ import Database from '@tauri-apps/plugin-sql';
 
 const TAG = " | WalletContext | "
 
-const DB_PATH = 'sqlite:.keepkey/db/db.sql';
+const DB_PATH = 'sqlite:vault.db';
 
 // Types
 export interface Asset {
@@ -79,7 +79,11 @@ const assetApiService = {
 
       let balances: any = [
         {
+          "symbol": "BTC",
+          "name": "Bitcoin",
           "balance": "0.00285985",
+          "value_usd": 297.51,
+          "network_id": "bitcoin",
           "caip": "bip122:000000000019d6689c085ae165831e93/slip44:0",
           "priceUsd": "104030.00",
           "pubkey": "zpub6rm1EEJg4JasiTqacdouiUVncAc5ymhKReiPZfLTGnH2GSZquRn9reJhj6sfs73PoSJNXzpERKPVLYbwwUGHNF6jkMX5R58vWaLB9FVyJuX",
@@ -87,13 +91,21 @@ const assetApiService = {
         }
       ]
 
-      let networks: any = []
+      let networks: any = [
+        {
+          id: 1,
+          network_name: "Bitcoin",
+          symbol: "BTC",
+          chain_id_caip2: "bip122:000000000019d6689c085ae165831e93",
+          is_evm: false
+        }
+      ]
 
       return {
         total_value_usd: calculatedTotalUsd.toFixed(2), // Use calculated value instead of dashboard
         assets: balances.map((balance: any) => ({
           symbol: balance.symbol,
-          name: balance.symbol, // We could enhance this with full names
+          name: balance.name || balance.symbol, // We could enhance this with full names
           balance: balance.balance,
           value_usd: balance.value_usd,
           network_id: balance.network_id,
@@ -125,11 +137,21 @@ const assetApiService = {
   },
 
   async getReceiveAddress(asset: Asset): Promise<string> {
-    let tag = " | sendAsset | "
+    let tag = " | getReceiveAddress | "
     try {
-      //
-      console.log(tag,asset);
-      return 'lol'
+      console.log(tag, 'Getting receive address for asset:', asset);
+      
+      // Return a mock Bitcoin address for testing
+      // In production, this would generate a real address from the device
+      const mockAddresses = [
+        'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        'bc1q34aq5drpuwy3wgl9lhup9892qp6svr8ldzyy7c',
+        'bc1qa5wkgaew2dkv56kfvj49j0av5nml45x9ek9hz6'
+      ];
+      
+      // Return a different address each time for testing
+      const randomIndex = Math.floor(Math.random() * mockAddresses.length);
+      return mockAddresses[randomIndex];
     } catch (error) {
       console.error('Get address error:', error);
       throw error;
@@ -196,34 +218,36 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       const rows = await getAllFooBar(db);
       console.log(tag,rows);
 
-      //get xpubs
-
-      //
-
+      // Get portfolio data and set it immediately
+      const portfolioData = await assetApiService.getPortfolio();
+      console.log(tag, 'portfolioData: ', portfolioData);
+      setPortfolio(portfolioData);
+      setError(null);
 
     } catch (error) {
-      console.error(tag,'❌ [WalletContext] Failed to refresh portfolio:', error);
-      setError('❌ [WalletContext] Failed to refresh portfolio:')
+      console.error(tag,'❌ [WalletContext] Failed to initialize:', error);
+      setError('❌ [WalletContext] Failed to initialize: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // const refreshPortfolio = useCallback(async () => {
-  //   let tag = " | refreshPortfolio | "
-  //   setLoading(true);
-  //   try {
-  //     let portfolioData = await assetApiService.getPortfolio();
-  //     console.log(tag,'portfolioData: ',portfolioData);
-  //
-  //     setPortfolio(portfolioData);
-  //   } catch (error) {
-  //     console.error('❌ [WalletContext] Failed to refresh portfolio:', error);
-  //     setError('❌ [WalletContext] Failed to refresh portfolio:')
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // }, []);
+  const refreshPortfolio = useCallback(async () => {
+    let tag = TAG + " | refreshPortfolio | "
+    setLoading(true);
+    try {
+      let portfolioData = await assetApiService.getPortfolio();
+      console.log(tag,'portfolioData: ',portfolioData);
+
+      setPortfolio(portfolioData);
+      setError(null);
+    } catch (error) {
+      console.error('❌ [WalletContext] Failed to refresh portfolio:', error);
+      setError('❌ [WalletContext] Failed to refresh portfolio: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const selectAsset = (asset: Asset | null) => {
     setSelectedAsset(asset);
@@ -271,8 +295,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   // Initial load
   useEffect(() => {
     onStart()
-    // refreshPortfolio();
-  }, [refreshPortfolio]);
+    refreshPortfolio();
+  }, [onStart, refreshPortfolio]);
 
   const contextValue: WalletContextType = {
     portfolio,
