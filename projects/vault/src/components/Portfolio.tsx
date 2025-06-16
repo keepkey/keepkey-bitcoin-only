@@ -10,84 +10,8 @@ import {
 } from '@chakra-ui/react';
 import { FaPaperPlane, FaDownload } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
-
-// Types (we'll need to create these or import from the backend)
-interface Dashboard {
-  total_value_usd: string;
-  network_count: number;
-  balance_count: number;
-}
-
-interface Network {
-  id: number;
-  network_name: string;
-  symbol: string;
-  chain_id_caip2: string;
-  is_evm: boolean;
-}
-
-interface Balance {
-  network_id: string;
-  symbol: string;
-  balance: string;
-  value_usd: number;
-  caip: string;
-}
-
-// Simple API service
-const apiService = {
-  async syncDevice(): Promise<{ success: boolean; device_id?: string; balances_cached?: number; message?: string }> {
-    try {
-      const response = await fetch('http://localhost:1646/api/v2/sync-device', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (!response.ok) throw new Error('Failed to sync device');
-      return await response.json();
-    } catch (error) {
-      console.error('Sync Error:', error);
-      throw error;
-    }
-  },
-
-  async getDashboard(): Promise<Dashboard> {
-    try {
-      const response = await fetch('http://localhost:1646/api/v2/portfolio/summary');
-      if (!response.ok) throw new Error('Failed to fetch dashboard');
-      return await response.json();
-    } catch (error) {
-      console.error('API Error:', error);
-      // Return mock data for now
-      return {
-        total_value_usd: '0.00',
-        network_count: 0,
-        balance_count: 0
-      };
-    }
-  },
-
-  async getNetworks(): Promise<Network[]> {
-    try {
-      const response = await fetch('http://localhost:1646/api/v2/networks');
-      if (!response.ok) throw new Error('Failed to fetch networks');
-      return await response.json();
-    } catch (error) {
-      console.error('API Error:', error);
-      return [];
-    }
-  },
-
-  async getBalances(): Promise<Balance[]> {
-    try {
-      const response = await fetch('http://localhost:1646/api/v2/balances');
-      if (!response.ok) throw new Error('Failed to fetch balances');
-      return await response.json();
-    } catch (error) {
-      console.error('API Error:', error);
-      return [];
-    }
-  }
-};
+import { useWallet } from '../contexts/WalletContext';
+import { invoke } from '@tauri-apps/api/core';
 
 // Theme colors - dark theme for crypto app
 const theme = {
@@ -103,11 +27,19 @@ interface PortfolioProps {
 }
 
 export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
-  const [balances, setBalances] = useState<Balance[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    portfolio,
+    summary,
+    isLoading,
+    isSyncing,
+    syncProgress,
+    lastSync,
+    refreshPortfolio,
+    getTotalBalance,
+    extractXpubsFromCache,
+  } = useWallet();
+
   const [error, setError] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   // Format USD value
   const formatUsd = (value: number | string) => {
@@ -119,121 +51,71 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
     });
   };
 
-  // Calculate total USD value from balances (bypass stale cache)
-  const calculateTotalUsd = () => {
-    if (!balances || balances.length === 0) return 0;
+  // Get totals from wallet context
+  const totals = getTotalBalance();
+
+  // Refresh portfolio data
+  const handleRefresh = async () => {
+    console.log('🔄 Portfolio: Refreshing data...');
+    setError(null);
     
-    const total = balances.reduce((sum, balance) => {
-      const usdValue = parseFloat(String(balance.value_usd || '0'));
-      return sum + usdValue;
-    }, 0);
-    
-    console.log(`💰 Calculated total USD from ${balances.length} balances: $${total.toFixed(2)}`);
-    return total;
+    try {
+      await refreshPortfolio(true); // Force refresh
+      console.log('✅ Portfolio: Data refreshed successfully');
+    } catch (err) {
+      console.error('❌ Portfolio: Failed to refresh:', err);
+      setError(`Failed to refresh portfolio: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
-  // Debug function to inspect USD values
-  const debugUsdValues = () => {
-    console.group('🔍 DEBUG: USD Values Analysis');
+  // Manual xpub extraction for debugging
+  const handleExtractXpubs = async () => {
+    console.log('🔄 Portfolio: Manually extracting xpubs...');
+    setError(null);
     
-    console.log('📊 Dashboard object:', dashboard);
-    console.log('📈 Balances array:', balances);
-    
-    if (dashboard) {
-      console.log('💰 Dashboard total_value_usd:', dashboard.total_value_usd, typeof dashboard.total_value_usd);
+    try {
+      // Get connected devices
+      const devices = await invoke<any[]>('get_connected_devices');
+      if (devices.length > 0) {
+        const firstDevice = devices[0];
+        if (firstDevice?.device?.unique_id) {
+          console.log('📡 Extracting xpubs for device:', firstDevice.device.unique_id);
+          await extractXpubsFromCache(firstDevice.device.unique_id);
+          console.log('✅ Manual xpub extraction completed');
+        } else {
+          setError('No device ID found');
+        }
+      } else {
+        setError('No connected devices found');
+      }
+    } catch (err) {
+      console.error('❌ Portfolio: Failed to extract xpubs:', err);
+      setError(`Failed to extract xpubs: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-    
-    if (balances && balances.length > 0) {
-      console.log('💵 Individual balance USD values:');
-      balances.forEach((balance, index) => {
-        console.log(`  [${index}] ${balance.symbol}: balance="${balance.balance}", value_usd=${balance.value_usd} (${typeof balance.value_usd})`);
-      });
-      
-      const totalFromBalances = calculateTotalUsd();
-      console.log('🧮 Calculated total from balances:', totalFromBalances);
-    }
-    
+  };
+
+  // Debug function to inspect values
+  const debugValues = () => {
+    console.group('🔍 DEBUG: Portfolio Values Analysis');
+    console.log('📊 Summary:', summary);
+    console.log('📈 Portfolio cache:', portfolio);
+    console.log('💰 Calculated totals:', totals);
+    console.log('⏰ Last sync:', lastSync ? new Date(lastSync * 1000).toLocaleString() : 'Never');
     console.groupEnd();
   };
 
-  // Load portfolio data from API
-  const loadPortfolioData = async () => {
-    console.log('📊 Portfolio: Loading data from API...');
-    
-    try {
-      const [dashboardData, balancesData] = await Promise.all([
-        apiService.getDashboard(),
-        apiService.getBalances()
-      ]);
-      
-      console.log('📊 Portfolio: Dashboard data:', JSON.stringify(dashboardData, null, 2));
-      console.log('📊 Portfolio: Balances data:', JSON.stringify(balancesData, null, 2));
-      
-      setDashboard(dashboardData);
-      setBalances(balancesData);
-      setError(null);
-      
-      console.log('✅ Portfolio: Data refreshed successfully');
-      
-      // Debug USD values after setting data
-      setTimeout(debugUsdValues, 100);
-    } catch (err) {
-      console.error('❌ Portfolio: Failed to load data:', err);
-      setError(`Failed to load portfolio data: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  };
-
-  // Sync device and refresh data
-  const syncDevice = async () => {
-    console.log('🔄 Portfolio: Starting device sync...');
-    try {
-      const syncResult = await apiService.syncDevice();
-      console.log('✅ Portfolio: Device sync result:', JSON.stringify(syncResult, null, 2));
-      
-      console.log('🔄 Portfolio: Refreshing portfolio data...');
-      await loadPortfolioData();
-      
-      return { success: true };
-    } catch (error) {
-      console.error('❌ Portfolio: Sync failed:', error);
-      setError(`Sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  };
-
-  // Initial load with automatic sync
+  // Auto-refresh on mount if data is stale
   useEffect(() => {
-    const initializePortfolio = async () => {
-      setLoading(true);
-      setError(null);
-      
-      try {
-        console.log('🏁 Portfolio: Initializing with auto-sync...');
-        
-        // First try to sync device to ensure fresh data
-        await syncDevice();
-        
-        // If sync fails, still try to load existing data
-        const [dashboardData, balancesData] = await Promise.all([
-          apiService.getDashboard(),
-          apiService.getBalances()
-        ]);
-        
-        setDashboard(dashboardData);
-        setBalances(balancesData);
-        
-      } catch (err) {
-        console.error('❌ Portfolio: Initialization failed:', err);
-        setError(err instanceof Error ? err.message : 'Failed to initialize portfolio');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    initializePortfolio();
+    const now = Math.floor(Date.now() / 1000);
+    const shouldRefresh = !lastSync || (now - lastSync > 600); // 10 minutes
+
+    if (shouldRefresh && !isLoading) {
+      console.log('📊 Portfolio: Auto-refreshing stale data...');
+      handleRefresh();
+    }
   }, []);
 
-  if (loading) {
+  if (isLoading || isSyncing) {
     return (
       <Box height="100%" display="flex" alignItems="center" justifyContent="center" bg="transparent">
         <VStack 
@@ -245,9 +127,13 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           border="1px solid rgba(255, 255, 255, 0.1)"
         >
           <Spinner size="xl" color="blue.400" />
-          <Text color="gray.300" fontSize="lg">Loading Portfolio...</Text>
-          {syncStatus && (
-            <Text color="gray.400" fontSize="sm">{syncStatus}</Text>
+          <Text color="gray.300" fontSize="lg">
+            {isSyncing ? 'Syncing Wallet...' : 'Loading Portfolio...'}
+          </Text>
+          {syncProgress && (
+            <Text color="gray.400" fontSize="sm">
+              {syncProgress.label}: {syncProgress.status}
+            </Text>
           )}
         </VStack>
       </Box>
@@ -269,7 +155,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           <Button 
             colorScheme="blue" 
             size="sm" 
-            onClick={() => window.location.reload()}
+            onClick={handleRefresh}
           >
             Retry
           </Button>
@@ -277,11 +163,6 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
       </Box>
     );
   }
-
-  // Find BTC balance (sum all BTC balances if multiple, or 0 if none)
-  const btcTotal = balances
-    .filter(b => b.symbol === 'BTC')
-    .reduce((sum, b) => sum + parseFloat(b.balance), 0);
 
   return (
     <Flex align="center" justify="center" h="100%" bg="transparent">
@@ -304,7 +185,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
         {/* USD Balance */}
         <Box textAlign="center">
           <Text fontSize="3xl" fontWeight="bold" color="white">
-            ${formatUsd(calculateTotalUsd())}
+            ${formatUsd(totals.usd)}
           </Text>
           <Text fontSize="md" color="gray.400" mt={1}>
             Total USD Value
@@ -314,18 +195,18 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
         {/* BTC Balance */}
         <Box textAlign="center">
           <Text fontSize="2xl" fontWeight="semibold" color="orange.300">
-            {btcTotal.toFixed(8)} BTC
+            {totals.btc.toFixed(8)} BTC
           </Text>
           <Text fontSize="md" color="gray.400" mt={1}>
             Bitcoin Balance
           </Text>
         </Box>
         
-        {/* Sync Status */}
-        {syncStatus && (
+        {/* Last Sync Info */}
+        {lastSync && (
           <Box textAlign="center">
-            <Text fontSize="sm" color="blue.300">
-              {syncStatus}
+            <Text fontSize="sm" color="gray.500">
+              Last updated: {new Date(lastSync * 1000).toLocaleTimeString()}
             </Text>
           </Box>
         )}
@@ -358,15 +239,27 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           </Button>
         </HStack>
         
+        {/* Refresh Button */}
+        <Button 
+          size="sm" 
+          colorScheme="blue" 
+          variant="outline"
+          onClick={handleRefresh}
+          loading={isLoading}
+          mt={2}
+        >
+          🔄 Refresh
+        </Button>
+
         {/* Debug Button - Remove this in production */}
         <Button 
           size="sm" 
           colorScheme="gray" 
           variant="outline"
-          onClick={debugUsdValues}
-          mt={2}
+          onClick={debugValues}
+          mt={1}
         >
-          🔍 Debug USD Values
+          🔍 Debug Values
         </Button>
       </VStack>
     </Flex>

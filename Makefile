@@ -12,4 +12,4 @@ kkcli:
 	cd projects/kkcli && cargo build && target/debug/kkcli server
 
 vault:
-	cd projects/vault && bun i && cargo tauri build
+	cd projects/vault-v2 && bun i && cargo tauri build

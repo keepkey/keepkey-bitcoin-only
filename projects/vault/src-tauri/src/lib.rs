@@ -249,6 +249,14 @@ fn start_usb_service(app_handle: &AppHandle, blocking_actions: blocking_actions:
                                 Ok(_) => {
                                     log::info!("✅ Frontload completed successfully for device {}", device_id_clone);
                                     
+                                    // Auto-extract xpubs from cache to populate wallet_xpubs table
+                                    log::info!("🔄 Auto-extracting xpubs from cache for device {}", device_id_clone);
+                                    if let Err(e) = crate::commands::auto_extract_xpubs_on_ready(device_id_clone.clone(), emitter_clone.clone()).await {
+                                        log::error!("❌ Failed to auto-extract xpubs for device {}: {}", device_id_clone, e);
+                                    } else {
+                                        log::info!("✅ Xpubs auto-extracted for device {}", device_id_clone);
+                                    }
+                                    
                                     // Wait a moment for all async operations to settle
                                     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
                                     
@@ -798,6 +806,17 @@ pub fn run() {
             commands::get_verification_status,
             commands::cancel_seed_verification,
             commands::force_cleanup_seed_verification,
+            // Wallet Context Commands (vault-v2 pattern)
+            commands::get_required_paths,
+            commands::get_wallet_xpubs,
+            commands::sync_device_xpubs,
+            commands::get_portfolio_cache,
+            commands::refresh_portfolio,
+            commands::clear_portfolio_cache,
+            commands::get_fee_rates,
+            commands::get_wallet_summary,
+            commands::extract_xpubs_from_cache,
+            commands::auto_extract_xpubs_on_ready,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

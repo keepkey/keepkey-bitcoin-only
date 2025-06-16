@@ -320,6 +320,294 @@ impl IndexDb {
         let all_devices = self.get_all_devices()?;
         Ok(all_devices.into_iter().filter(|d| !d.is_connected).collect())
     }
+
+    // ========== Wallet Context Methods (vault-v2 pattern) ==========
+
+    /// Required derivation paths for Bitcoin wallet
+    pub fn get_required_paths() -> Vec<RequiredPath> {
+        vec![
+            RequiredPath {
+                path: "m/44'/0'/0'".to_string(),
+                label: "Bitcoin Legacy".to_string(),
+                caip: "bip122:000000000019d6689c085ae165831e93/slip44:0".to_string(),
+            },
+            RequiredPath {
+                path: "m/49'/0'/0'".to_string(),
+                label: "Bitcoin Segwit".to_string(),
+                caip: "bip122:000000000019d6689c085ae165831e93/slip44:0".to_string(),
+            },
+            RequiredPath {
+                path: "m/84'/0'/0'".to_string(),
+                label: "Bitcoin Native Segwit".to_string(),
+                caip: "bip122:000000000019d6689c085ae165831e93/slip44:0".to_string(),
+            },
+        ]
+    }
+
+    /// Get all wallet xpubs for a device
+    pub fn get_wallet_xpubs(&self, device_id: &str) -> Result<Vec<WalletXpub>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, device_id, path, label, caip, pubkey, created_at 
+             FROM wallet_xpubs 
+             WHERE device_id = ?1 
+             ORDER BY created_at ASC"
+        )?;
+        
+        let xpubs = stmt.query_map(params![device_id], |row| {
+            Ok(WalletXpub {
+                id: row.get(0)?,
+                device_id: row.get(1)?,
+                path: row.get(2)?,
+                label: row.get(3)?,
+                caip: row.get(4)?,
+                pubkey: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        
+        Ok(xpubs)
+    }
+
+    /// Get all wallet xpubs across all devices
+    pub fn get_all_wallet_xpubs(&self) -> Result<Vec<WalletXpub>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, device_id, path, label, caip, pubkey, created_at 
+             FROM wallet_xpubs 
+             ORDER BY created_at ASC"
+        )?;
+        
+        let xpubs = stmt.query_map([], |row| {
+            Ok(WalletXpub {
+                id: row.get(0)?,
+                device_id: row.get(1)?,
+                path: row.get(2)?,
+                label: row.get(3)?,
+                caip: row.get(4)?,
+                pubkey: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        
+        Ok(xpubs)
+    }
+
+    /// Insert or update a wallet xpub
+    pub fn insert_or_update_wallet_xpub(&self, xpub: &WalletXpubInput) -> Result<()> {
+        let now = Utc::now().timestamp();
+        
+        self.conn.execute(
+            "INSERT OR REPLACE INTO wallet_xpubs (device_id, path, label, caip, pubkey, created_at) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![xpub.device_id, xpub.path, xpub.label, xpub.caip, xpub.pubkey, now],
+        )?;
+        
+        log::info!("Stored wallet xpub for {} path {}: {}...", 
+                   xpub.device_id, xpub.path, &xpub.pubkey[0..20]);
+        Ok(())
+    }
+
+    /// Insert xpub from device queue response
+    pub fn insert_xpub_from_queue(&self, device_id: &str, path: &str, xpub: &str) -> Result<()> {
+        // Find the matching required path to get the label and caip
+        let required_paths = Self::get_required_paths();
+        let path_info = required_paths.iter()
+            .find(|p| p.path == path)
+            .ok_or_else(|| anyhow::anyhow!("Unknown path: {}", path))?;
+
+        let xpub_input = WalletXpubInput {
+            device_id: device_id.to_string(),
+            path: path.to_string(),
+            label: path_info.label.clone(),
+            caip: path_info.caip.clone(),
+            pubkey: xpub.to_string(),
+        };
+
+        self.insert_or_update_wallet_xpub(&xpub_input)?;
+        log::info!("✅ Stored xpub from queue for {} path {}: {}...", 
+                   device_id, path, &xpub[0..20]);
+        Ok(())
+    }
+
+    /// Get portfolio cache entries
+    pub fn get_portfolio_cache(&self) -> Result<Vec<PortfolioCache>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, pubkey, caip, balance, balance_usd, price_usd, symbol, last_updated 
+             FROM portfolio_cache 
+             ORDER BY last_updated DESC"
+        )?;
+        
+        let cache_entries = stmt.query_map([], |row| {
+            Ok(PortfolioCache {
+                id: row.get(0)?,
+                pubkey: row.get(1)?,
+                caip: row.get(2)?,
+                balance: row.get(3)?,
+                balance_usd: row.get(4)?,
+                price_usd: row.get(5)?,
+                symbol: row.get(6)?,
+                last_updated: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+        
+        Ok(cache_entries)
+    }
+
+    /// Cache portfolio data
+    pub fn cache_portfolio_data(&self, data: &[PortfolioCacheInput]) -> Result<()> {
+        let now = Utc::now().timestamp();
+
+        // Clear old cache
+        self.conn.execute("DELETE FROM portfolio_cache", [])?;
+
+        // Insert new data
+        for item in data {
+            // Derive symbol from CAIP if not provided
+            let symbol = item.symbol.as_deref().unwrap_or_else(|| {
+                if item.caip.contains("bip122:000000000019d6689c085ae165831e93") {
+                    "BTC"
+                } else {
+                    "UNKNOWN"
+                }
+            });
+
+            log::debug!("💾 Caching portfolio: pubkey={}..., symbol={}, balance={}, valueUsd={}", 
+                       &item.pubkey[0..20], symbol, item.balance, item.balance_usd);
+
+            self.conn.execute(
+                "INSERT INTO portfolio_cache (pubkey, caip, balance, balance_usd, price_usd, symbol, last_updated) 
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![item.pubkey, item.caip, item.balance, item.balance_usd, item.price_usd, symbol, now],
+            )?;
+        }
+
+        log::info!("Cached {} portfolio entries", data.len());
+        Ok(())
+    }
+
+    /// Clear portfolio cache
+    pub fn clear_portfolio_cache(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM portfolio_cache", [])?;
+        log::info!("🧹 Portfolio cache cleared");
+        Ok(())
+    }
+
+    /// Check if cache is expired (older than 10 minutes)
+    pub fn is_cache_expired(&self, ttl_minutes: i64) -> Result<bool> {
+        let now = Utc::now().timestamp();
+        let max_age = ttl_minutes * 60;
+        
+        let mut stmt = self.conn.prepare(
+            "SELECT MAX(last_updated) FROM portfolio_cache"
+        )?;
+        
+        let last_updated: Option<i64> = stmt.query_row([], |row| row.get(0)).ok().flatten();
+        
+        match last_updated {
+            Some(updated) => Ok(now - updated > max_age),
+            None => Ok(true), // No cache entries = expired
+        }
+    }
+
+    /// Get fee rate cache
+    pub fn get_fee_rates(&self, caip: &str) -> Result<Option<FeeRateCache>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, caip, fastest, fast, average, last_updated 
+             FROM fee_rate_cache 
+             WHERE caip = ?1"
+        )?;
+        
+        let fee_rates = stmt.query_row(params![caip], |row| {
+            Ok(FeeRateCache {
+                id: row.get(0)?,
+                caip: row.get(1)?,
+                fastest: row.get(2)?,
+                fast: row.get(3)?,
+                average: row.get(4)?,
+                last_updated: row.get(5)?,
+            })
+        }).ok();
+        
+        Ok(fee_rates)
+    }
+
+    /// Cache fee rates
+    pub fn cache_fee_rates(&self, caip: &str, fastest: u32, fast: u32, average: u32) -> Result<()> {
+        let now = Utc::now().timestamp();
+        
+        self.conn.execute(
+            "INSERT OR REPLACE INTO fee_rate_cache (caip, fastest, fast, average, last_updated) 
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![caip, fastest, fast, average, now],
+        )?;
+        
+        log::info!("Cached fee rates for {}: fastest={}, fast={}, average={}", 
+                   caip, fastest, fast, average);
+        Ok(())
+    }
+}
+
+// ========== Data Structures for Wallet Context ==========
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequiredPath {
+    pub path: String,
+    pub label: String,
+    pub caip: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WalletXpub {
+    pub id: i64,
+    pub device_id: String,
+    pub path: String,
+    pub label: String,
+    pub caip: String,
+    pub pubkey: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WalletXpubInput {
+    pub device_id: String,
+    pub path: String,
+    pub label: String,
+    pub caip: String,
+    pub pubkey: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PortfolioCache {
+    pub id: i64,
+    pub pubkey: String,
+    pub caip: String,
+    pub balance: String,
+    pub balance_usd: String,
+    pub price_usd: String,
+    pub symbol: Option<String>,
+    pub last_updated: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PortfolioCacheInput {
+    pub pubkey: String,
+    pub caip: String,
+    pub balance: String,
+    pub balance_usd: String,
+    pub price_usd: String,
+    pub symbol: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FeeRateCache {
+    pub id: i64,
+    pub caip: String,
+    pub fastest: u32,
+    pub fast: u32,
+    pub average: u32,
+    pub last_updated: i64,
 }
 
 // Embedded schema
@@ -392,6 +680,51 @@ CREATE TABLE IF NOT EXISTS device_connections (
 
 CREATE INDEX IF NOT EXISTS idx_device_connections_device ON device_connections(device_id);
 CREATE INDEX IF NOT EXISTS idx_device_connections_time ON device_connections(connected_at, disconnected_at);
+
+-- Wallet Context Tables (vault-v2 pattern)
+
+-- Wallet XPUBs table for device-derived public keys
+CREATE TABLE IF NOT EXISTS wallet_xpubs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id    TEXT NOT NULL,
+    path         TEXT NOT NULL,      -- "m/44'/0'/0'"
+    label        TEXT NOT NULL,      -- "Bitcoin Legacy"
+    caip         TEXT NOT NULL,      -- "bip122:000000000019d6689c085ae165831e93/slip44:0"
+    pubkey       TEXT NOT NULL,      -- xpub string
+    created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    UNIQUE(device_id, path, caip),
+    FOREIGN KEY (device_id) REFERENCES devices(device_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_xpubs_device_id ON wallet_xpubs(device_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_xpubs_lookup ON wallet_xpubs(device_id, path, caip);
+
+-- Portfolio cache table for balance data from external APIs
+CREATE TABLE IF NOT EXISTS portfolio_cache (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    pubkey       TEXT NOT NULL,      -- xpub from wallet_xpubs
+    caip         TEXT NOT NULL,      -- matching caip from wallet_xpubs
+    balance      TEXT NOT NULL,      -- balance as string (to preserve precision)
+    balance_usd  TEXT NOT NULL,      -- USD value as string
+    price_usd    TEXT NOT NULL,      -- price per unit in USD
+    symbol       TEXT,               -- BTC, etc.
+    last_updated INTEGER NOT NULL,   -- epoch seconds
+    UNIQUE(pubkey, caip)
+);
+
+CREATE INDEX IF NOT EXISTS idx_portfolio_cache_updated ON portfolio_cache(last_updated);
+
+-- Fee rate cache table for network fee estimates
+CREATE TABLE IF NOT EXISTS fee_rate_cache (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    caip         TEXT NOT NULL UNIQUE, -- network identifier
+    fastest      INTEGER NOT NULL,    -- sat/vbyte
+    fast         INTEGER NOT NULL,    -- sat/vbyte
+    average      INTEGER NOT NULL,    -- sat/vbyte
+    last_updated INTEGER NOT NULL     -- epoch seconds
+);
+
+CREATE INDEX IF NOT EXISTS idx_fee_cache_updated ON fee_rate_cache(last_updated);
 
 -- Meta table for key-value storage (including onboarding state)
 CREATE TABLE IF NOT EXISTS meta (

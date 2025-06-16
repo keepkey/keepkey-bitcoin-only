@@ -3,17 +3,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::features::DeviceFeatures;
 use crate::device_registry;
-use crate::index_db::IndexDb;
 use crate::device_update::{evaluate_device_status, DeviceStatus};
 use crate::blocking_actions::{BlockingAction, BlockingActionType, BlockingActionsState};
 use crate::usb_manager::FriendlyUsbDevice;
 use tauri::{Manager, Emitter};
-// use std::sync::Arc;
-// use tauri::State;
+use crate::device_queue::DeviceQueueHandle;
+use crate::index_db::{IndexDb, RequiredPath, WalletXpub, PortfolioCache, PortfolioCacheInput, FeeRateCache};
+use log;
+use serde_json;
+use std::collections::HashSet;
+use tauri::command;
+use anyhow::Result;
 
 // ========== Recovery Session Management ==========
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2463,33 +2467,543 @@ pub async fn force_cleanup_seed_verification(device_id: String) -> Result<bool, 
     Ok(cleanup_done)
 }
 
-/// Get device queue handle for a device, with fallback to direct transport creation
-async fn get_device_queue_or_fallback(device_id: &str) -> Result<crate::device_queue::DeviceQueueHandle, String> {
-    // First try to get the queue handle from registry
-    if let Ok(Some(queue_handle)) = crate::device_registry::get_device_queue_handle(device_id) {
-        return Ok(queue_handle);
-    }
+/// Get device queue handle for a specific device, creating one if needed
+async fn get_device_queue_or_fallback(device_id: &str) -> Result<DeviceQueueHandle, String> {
+    log::info!("Getting device queue handle for: {}", device_id);
     
-    // If no queue handle, try to get first available device queue
-    if let Ok(Some(queue_handle)) = crate::device_registry::get_first_device_queue_handle() {
-        return Ok(queue_handle);
-    }
+    // Get all device entries from the registry to find the target device
+    let entries = device_registry::get_all_device_entries()
+        .map_err(|e| format!("Failed to get device entries: {}", e))?;
     
-    Err("No device queue available - device may not be ready".to_string())
+    // Find the device in the registry
+    let device_entry = entries.iter()
+        .find(|e| e.device.unique_id == device_id)
+        .ok_or_else(|| format!("Device {} not found in registry", device_id))?;
+    
+    // Create a new queue handle using the device queue factory
+    let queue_handle = crate::device_queue::DeviceQueueFactory::spawn_worker(
+        device_id.to_string(), 
+        device_entry.device.clone()
+    );
+    
+    log::info!("Created device queue handle for: {}", device_id);
+    Ok(queue_handle)
 }
 
-/// Send message using device queue (preferred method)
+/// Send a raw message to device via queue system
 async fn send_message_via_queue(device_id: Option<&str>, message: crate::messages::Message) -> Result<crate::messages::Message, String> {
-    let queue_handle = if let Some(device_id) = device_id {
-        get_device_queue_or_fallback(device_id).await?
+    if let Some(device_id) = device_id {
+        let queue_handle = get_device_queue_or_fallback(device_id).await?;
+        queue_handle.send_raw(message, false).await
+            .map_err(|e| format!("Queue communication failed: {}", e))
     } else {
-        // Use first available device
-        crate::device_registry::get_first_device_queue_handle()
-            .map_err(|e| format!("Failed to get device queue: {}", e))?
-            .ok_or("No device queues available")?
+        // If no device ID specified, try to use first available device
+        let entries = device_registry::get_all_device_entries()
+            .map_err(|e| format!("Failed to get device entries: {}", e))?;
+        
+        if let Some(entry) = entries.first() {
+            let queue_handle = get_device_queue_or_fallback(&entry.device.unique_id).await?;
+            queue_handle.send_raw(message, false).await
+                .map_err(|e| format!("Queue communication failed: {}", e))
+        } else {
+            Err("No devices available".to_string())
+        }
+    }
+}
+
+// ========== Wallet Context Commands (vault-v2 pattern adapted for vault v1) ==========
+
+#[command]
+pub async fn get_required_paths() -> Result<Vec<RequiredPath>, String> {
+    log::info!("📋 Getting required derivation paths for wallet");
+    Ok(IndexDb::get_required_paths())
+}
+
+#[command]
+pub async fn get_wallet_xpubs(
+    device_id: Option<String>,
+) -> Result<Vec<WalletXpub>, String> {
+    log::info!("📚 Getting wallet xpubs{}", 
+               device_id.as_ref().map_or_else(|| " (all devices)".to_string(), |id| format!(" for device: {}", id)));
+    
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+
+    let xpubs = if let Some(device_id) = device_id {
+        db.get_wallet_xpubs(&device_id)
+    } else {
+        db.get_all_wallet_xpubs()
+    }.map_err(|e| {
+        log::error!("Failed to get wallet xpubs: {}", e);
+        format!("Failed to get wallet xpubs: {}", e)
+    })?;
+
+    log::info!("Found {} wallet xpubs", xpubs.len());
+    Ok(xpubs)
+}
+
+#[command]
+pub async fn sync_device_xpubs(
+    device_id: String,
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<WalletXpub>, String> {
+    log::info!("🔄 Starting xpub sync for device: {}", device_id);
+    
+    // Get required derivation paths
+    let required_paths = IndexDb::get_required_paths();
+    
+    // Create database connection
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+    
+    // Get device queue handle from device registry
+    let queue_handle = match get_device_queue_or_fallback(&device_id).await {
+        Ok(handle) => handle,
+        Err(e) => {
+            log::error!("Failed to get device queue for {}: {}", device_id, e);
+            return Err(format!("Device queue unavailable: {}", e));
+        }
     };
     
-    queue_handle.send_raw(message, false).await
-        .map_err(|e| format!("Queue communication failed: {}", e))
+    for path_info in required_paths {
+        log::info!("📡 Requesting xpub for {} ({})", path_info.path, path_info.label);
+        
+        // Parse derivation path to vector
+        let derivation_path = crate::utils::parse_derivation_path(&path_info.path).map_err(|e| {
+            log::error!("Failed to parse derivation path {}: {}", path_info.path, e);
+            format!("Invalid derivation path: {}", e)
+        })?;
+        
+        // Use the device queue to get address (which contains xpub info for account level)
+        match queue_handle.get_address(derivation_path, "Bitcoin".to_string(), None).await {
+            Ok(response) => {
+                log::info!("✅ Got response for {}: {}", path_info.path, response);
+                
+                // For now, use the response as xpub (this will need improvement for real xpub extraction)
+                // Store in database
+                if let Err(e) = db.insert_xpub_from_queue(&device_id, &path_info.path, &response) {
+                    log::error!("Failed to store xpub in database: {}", e);
+                    return Err(format!("Failed to store xpub: {}", e));
+                }
+                
+                // Emit progress event
+                let _ = app_handle.emit("wallet-sync-progress", serde_json::json!({
+                    "device_id": device_id,
+                    "path": path_info.path,
+                    "label": path_info.label,
+                    "status": "completed",
+                    "xpub": response
+                }));
+                
+            },
+            Err(e) => {
+                log::error!("❌ Failed to get xpub for {}: {}", path_info.path, e);
+                
+                // Emit error event
+                let _ = app_handle.emit("wallet-sync-progress", serde_json::json!({
+                    "device_id": device_id,
+                    "path": path_info.path,
+                    "label": path_info.label,
+                    "status": "error",
+                    "error": e.to_string()
+                }));
+                
+                return Err(format!("Failed to get xpub for {}: {}", path_info.path, e));
+            }
+        }
+    }
+    
+    // Get all xpubs for this device from database
+    let xpubs = db.get_wallet_xpubs(&device_id).map_err(|e| {
+        log::error!("Failed to get stored xpubs: {}", e);
+        format!("Failed to get stored xpubs: {}", e)
+    })?;
+    
+    log::info!("🎉 Sync completed! Stored {} xpubs for device {}", xpubs.len(), device_id);
+    
+    // Emit completion event
+    let _ = app_handle.emit("wallet-sync-completed", serde_json::json!({
+        "device_id": device_id,
+        "xpubs": xpubs
+    }));
+    
+    Ok(xpubs)
+}
+
+#[command]
+pub async fn get_portfolio_cache() -> Result<Vec<PortfolioCache>, String> {
+    log::info!("💰 Getting portfolio cache");
+    
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+
+    let cache = db.get_portfolio_cache().map_err(|e| {
+        log::error!("Failed to get portfolio cache: {}", e);
+        format!("Failed to get portfolio cache: {}", e)
+    })?;
+
+    log::info!("Found {} cached portfolio entries", cache.len());
+    Ok(cache)
+}
+
+#[command]
+pub async fn refresh_portfolio(
+    force: Option<bool>,
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<PortfolioCache>, String> {
+    log::info!("🔄 Refreshing portfolio (force: {})", force.unwrap_or(false));
+    
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+
+    // Check if cache is expired (unless force refresh)
+    if !force.unwrap_or(false) {
+        match db.is_cache_expired(10) { // 10 minutes TTL
+            Ok(false) => {
+                log::info!("Cache is still fresh, returning cached data");
+                return get_portfolio_cache().await;
+            },
+            Ok(true) => {
+                log::info!("Cache is expired, fetching fresh data");
+            },
+            Err(e) => {
+                log::warn!("Failed to check cache expiry: {}, proceeding with refresh", e);
+            }
+        }
+    }
+
+    // Get all wallet xpubs
+    let xpubs = db.get_all_wallet_xpubs().map_err(|e| {
+        log::error!("Failed to get wallet xpubs: {}", e);
+        format!("Failed to get wallet xpubs: {}", e)
+    })?;
+
+    if xpubs.is_empty() {
+        log::warn!("No wallet xpubs found, cannot refresh portfolio");
+        return Ok(vec![]);
+    }
+
+    log::info!("Fetching portfolio data for {} xpubs", xpubs.len());
+
+    let mut portfolio_data = Vec::new();
+    
+    // Emit progress event
+    let _ = app_handle.emit("portfolio-refresh-progress", serde_json::json!({
+        "status": "fetching",
+        "total": xpubs.len(),
+        "completed": 0
+    }));
+
+    // For now, create mock data since we don't have Pioneer client
+    // TODO: Implement real balance fetching from external API
+    for (index, xpub) in xpubs.iter().enumerate() {
+        log::info!("📡 Mock fetching balance for {} ({})", xpub.label, &xpub.pubkey[0..20]);
+        
+        // Mock balance data (replace with real API call)
+        let mock_balance = "0.00000000";
+        let mock_usd_value = "0.00";
+        let mock_price = "50000.00";
+        
+        portfolio_data.push(PortfolioCacheInput {
+            pubkey: xpub.pubkey.clone(),
+            caip: xpub.caip.clone(),
+            balance: mock_balance.to_string(),
+            balance_usd: mock_usd_value.to_string(),
+            price_usd: mock_price.to_string(),
+            symbol: Some("BTC".to_string()),
+        });
+        
+        // Emit progress event
+        let _ = app_handle.emit("portfolio-refresh-progress", serde_json::json!({
+            "status": "fetching",
+            "total": xpubs.len(),
+            "completed": index + 1,
+            "current": xpub.label
+        }));
+    }
+
+    // Cache the results
+    if !portfolio_data.is_empty() {
+        if let Err(e) = db.cache_portfolio_data(&portfolio_data) {
+            log::error!("Failed to cache portfolio data: {}", e);
+            return Err(format!("Failed to cache portfolio data: {}", e));
+        }
+    }
+
+    // Get the cached data to return
+    let cached_data = db.get_portfolio_cache().map_err(|e| {
+        log::error!("Failed to get cached portfolio data: {}", e);
+        format!("Failed to get cached portfolio data: {}", e)
+    })?;
+
+    log::info!("🎉 Portfolio refresh completed! Cached {} entries", cached_data.len());
+    
+    // Emit completion event
+    let _ = app_handle.emit("portfolio-refresh-completed", serde_json::json!({
+        "status": "completed",
+        "entries": cached_data.len(),
+        "data": cached_data
+    }));
+
+    Ok(cached_data)
+}
+
+#[command]
+pub async fn clear_portfolio_cache() -> Result<(), String> {
+    log::info!("🧹 Clearing portfolio cache");
+    
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+
+    db.clear_portfolio_cache().map_err(|e| {
+        log::error!("Failed to clear portfolio cache: {}", e);
+        format!("Failed to clear portfolio cache: {}", e)
+    })
+}
+
+#[command]
+pub async fn get_fee_rates(
+    caip: String,
+) -> Result<Option<FeeRateCache>, String> {
+    log::info!("💸 Getting fee rates for: {}", caip);
+    
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+
+    let fee_rates = db.get_fee_rates(&caip).map_err(|e| {
+        log::error!("Failed to get fee rates: {}", e);
+        format!("Failed to get fee rates: {}", e)
+    })?;
+
+    if let Some(ref rates) = fee_rates {
+        log::info!("Found cached fee rates: fastest={}, fast={}, average={}", 
+                   rates.fastest, rates.fast, rates.average);
+    } else {
+        log::info!("No cached fee rates found for {}", caip);
+    }
+
+    Ok(fee_rates)
+}
+
+#[command]
+pub async fn get_wallet_summary() -> Result<serde_json::Value, String> {
+    log::info!("📊 Getting wallet summary");
+    
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+
+    // Get xpubs and portfolio data
+    let xpubs = db.get_all_wallet_xpubs().map_err(|e| {
+        log::error!("Failed to get wallet xpubs: {}", e);
+        format!("Failed to get wallet xpubs: {}", e)
+    })?;
+
+    let portfolio = db.get_portfolio_cache().map_err(|e| {
+        log::error!("Failed to get portfolio cache: {}", e);
+        format!("Failed to get portfolio cache: {}", e)
+    })?;
+
+    // Calculate totals
+    let total_balance_usd: f64 = portfolio.iter()
+        .filter_map(|p| p.balance_usd.parse::<f64>().ok())
+        .sum();
+
+    let total_balance_btc: f64 = portfolio.iter()
+        .filter_map(|p| p.balance.parse::<f64>().ok())
+        .sum();
+
+    // Group by device
+    let mut devices_summary = HashMap::new();
+    for xpub in &xpubs {
+        let device_entry = devices_summary.entry(xpub.device_id.clone()).or_insert_with(|| {
+            serde_json::json!({
+                "device_id": xpub.device_id,
+                "xpubs": [],
+                "balance_btc": 0.0,
+                "balance_usd": 0.0
+            })
+        });
+
+        // Find matching portfolio entry
+        if let Some(portfolio_entry) = portfolio.iter().find(|p| p.pubkey == xpub.pubkey) {
+            let balance_btc = portfolio_entry.balance.parse::<f64>().unwrap_or(0.0);
+            let balance_usd = portfolio_entry.balance_usd.parse::<f64>().unwrap_or(0.0);
+            
+            device_entry["balance_btc"] = serde_json::json!(
+                device_entry["balance_btc"].as_f64().unwrap_or(0.0) + balance_btc
+            );
+            device_entry["balance_usd"] = serde_json::json!(
+                device_entry["balance_usd"].as_f64().unwrap_or(0.0) + balance_usd
+            );
+        }
+
+        device_entry["xpubs"].as_array_mut().unwrap().push(serde_json::json!({
+            "path": xpub.path,
+            "label": xpub.label,
+            "pubkey": format!("{}...", &xpub.pubkey[0..20])
+        }));
+    }
+
+    let summary = serde_json::json!({
+        "total_balance_btc": total_balance_btc,
+        "total_balance_usd": total_balance_usd,
+        "total_xpubs": xpubs.len(),
+        "devices": devices_summary.values().collect::<Vec<_>>(),
+        "last_updated": portfolio.first().map(|p| p.last_updated).unwrap_or(0)
+    });
+
+    log::info!("Wallet summary: {} BTC (${:.2}), {} xpubs", 
+               total_balance_btc, total_balance_usd, xpubs.len());
+
+    Ok(summary)
+}
+
+/// Extract xpubs from device cache and populate wallet_xpubs table
+/// This bridges the gap between vault v1's frontload system and our new WalletContext
+#[command]
+pub async fn extract_xpubs_from_cache(
+    device_id: String,
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<WalletXpub>, String> {
+    log::info!("🔄 Extracting xpubs from device cache for: {}", device_id);
+    
+    // Open database
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+    
+    // Open device cache
+    let cache = crate::cache::DeviceCache::open().map_err(|e| {
+        log::error!("Failed to open device cache: {}", e);
+        format!("Cache error: {}", e)
+    })?;
+    
+    // Get all cached addresses for this device
+    let addresses = cache.debug_load_addresses(&device_id).await.map_err(|e| {
+        log::error!("Failed to get cached addresses: {}", e);
+        format!("Failed to get cached addresses: {}", e)
+    })?;
+    
+    log::info!("Found {} cached addresses to process", addresses.len());
+    
+    let mut xpubs_added = 0;
+    let required_paths = IndexDb::get_required_paths();
+    
+    // Process each address looking for xpub entries
+    for address in addresses {
+        // Check if this is an xpub entry by looking for "_xpub" in the address
+        if address.contains("_xpub/") {
+            // Parse the format: "Bitcoin/p2pkh_xpub/xpub6CLbypuZz..."
+            let parts: Vec<&str> = address.split('/').collect();
+            if parts.len() >= 3 {
+                let script_type_xpub = parts[1]; // e.g., "p2pkh_xpub"
+                let xpub_value = parts[2]; // The actual xpub
+                
+                // Map script types to our required paths
+                let (path, label) = match script_type_xpub {
+                    "p2pkh_xpub" => ("m/44'/0'/0'", "Bitcoin Legacy"),
+                    "p2sh-p2wpkh_xpub" => ("m/49'/0'/0'", "Bitcoin Segwit"),
+                    "p2wpkh_xpub" => ("m/84'/0'/0'", "Bitcoin Native Segwit"),
+                    _ => {
+                        log::warn!("Unknown script type: {}", script_type_xpub);
+                        continue;
+                    }
+                };
+                
+                // Find the matching required path to get the CAIP
+                if let Some(path_info) = required_paths.iter().find(|p| p.path == path) {
+                    log::info!("📝 Extracting xpub for {} ({}): {}...", path, label, &xpub_value[0..20]);
+                    
+                    // Store in database
+                    if let Err(e) = db.insert_xpub_from_queue(&device_id, path, xpub_value) {
+                        log::error!("Failed to store xpub: {}", e);
+                        continue;
+                    }
+                    
+                    xpubs_added += 1;
+                    
+                    // Emit progress event
+                    let _ = app_handle.emit("xpub-extraction-progress", serde_json::json!({
+                        "device_id": device_id,
+                        "path": path,
+                        "label": label,
+                        "status": "completed",
+                        "xpub": format!("{}...", &xpub_value[0..20])
+                    }));
+                }
+            }
+        }
+    }
+    
+    // Get all xpubs for this device from database
+    let xpubs = db.get_wallet_xpubs(&device_id).map_err(|e| {
+        log::error!("Failed to get stored xpubs: {}", e);
+        format!("Failed to get stored xpubs: {}", e)
+    })?;
+    
+    log::info!("🎉 Extracted {} xpubs from cache! Total stored: {}", xpubs_added, xpubs.len());
+    
+    // Emit completion event
+    let _ = app_handle.emit("xpub-extraction-completed", serde_json::json!({
+        "device_id": device_id,
+        "extracted": xpubs_added,
+        "total": xpubs.len(),
+        "xpubs": xpubs
+    }));
+    
+    Ok(xpubs)
+}
+
+/// Auto-extract xpubs from cache when device becomes ready
+/// This should be called automatically after frontload completes
+#[command]
+pub async fn auto_extract_xpubs_on_ready(
+    device_id: String,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, String> {
+    log::info!("🔄 Auto-extracting xpubs for ready device: {}", device_id);
+    
+    // Check if we already have xpubs for this device
+    let db = IndexDb::open().map_err(|e| {
+        log::error!("Failed to open database: {}", e);
+        format!("Database error: {}", e)
+    })?;
+    
+    let existing_xpubs = db.get_wallet_xpubs(&device_id).map_err(|e| {
+        log::error!("Failed to check existing xpubs: {}", e);
+        format!("Failed to check existing xpubs: {}", e)
+    })?;
+    
+    if !existing_xpubs.is_empty() {
+        log::info!("Device {} already has {} xpubs, skipping extraction", device_id, existing_xpubs.len());
+        return Ok(false);
+    }
+    
+    // Extract xpubs from cache
+    match extract_xpubs_from_cache(device_id.clone(), app_handle).await {
+        Ok(xpubs) => {
+            log::info!("✅ Auto-extracted {} xpubs for device {}", xpubs.len(), device_id);
+            Ok(true)
+        },
+        Err(e) => {
+            log::error!("❌ Auto-extraction failed for device {}: {}", device_id, e);
+            Err(e)
+        }
+    }
 }
 
