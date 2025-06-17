@@ -1,5 +1,6 @@
 import Database from '@tauri-apps/plugin-sql';
 import { DeviceInfo, XpubInfo, RequiredPath } from '../types/database';
+import { SQL_CACHE_ENABLED } from './api';
 
 const DB_PATH = 'sqlite:vault.db';
 
@@ -64,12 +65,21 @@ export class WalletDatabase {
   }
 
   static async getDevices(): Promise<DeviceInfo[]> {
+    // If SQL caching is disabled, never return persisted devices
+    // (Live device enumeration should be implemented here in the future)
+    if (typeof SQL_CACHE_ENABLED !== 'undefined' && SQL_CACHE_ENABLED === false) {
+      return [];
+    }
     const db = await Database.load(DB_PATH);
     const devices = await db.select('SELECT * FROM devices ORDER BY last_seen DESC');
     return devices as DeviceInfo[];
   }
 
   static async getXpubs(deviceId: string): Promise<XpubInfo[]> {
+    // If SQL caching is disabled, never return persisted xpubs
+    if (typeof SQL_CACHE_ENABLED !== 'undefined' && SQL_CACHE_ENABLED === false) {
+      return [];
+    }
     const db = await Database.load(DB_PATH);
     const xpubs = await db.select('SELECT * FROM xpubs WHERE device_id = ? ORDER BY created_at ASC', [deviceId]);
     return xpubs as XpubInfo[];
@@ -82,23 +92,6 @@ export class WalletDatabase {
     await db.execute(
       'INSERT OR REPLACE INTO xpubs (device_id, path, label, caip, pubkey, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       [xpub.device_id, xpub.path, xpub.label, xpub.caip, xpub.pubkey, now]
-    );
-  }
-
-  static async seedMockDevice(): Promise<void> {
-    const db = await Database.load(DB_PATH);
-    const now = Math.floor(Date.now() / 1000);
-    
-    // Insert mock device if not exists
-    await db.execute(
-      'INSERT OR IGNORE INTO devices (device_id, label, features_json, last_seen, created_at) VALUES (?, ?, ?, ?, ?)',
-      [
-        'testingDevice123',
-        'Test KeepKey',
-        JSON.stringify({"label":"Test KeepKey","vendor":"KeepKey","model":"KeepKey","device_id":"testingDevice123"}),
-        now,
-        now
-      ]
     );
   }
 

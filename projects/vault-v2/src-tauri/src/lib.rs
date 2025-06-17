@@ -112,14 +112,14 @@ pub fn run() {
             vault_change_view,
             vault_open_support,
             restart_backend_startup,
-            //Device
-            commands::get_device_features_by_id,
-            commands::list_connected_devices,
-            commands::get_connected_devices,
+            // Device operations - unified queue interface
+            commands::add_to_device_queue,
             commands::get_queue_status,
+            // Basic device enumeration (non-queue operations)
+            commands::get_connected_devices,
             commands::get_blocking_actions,
-            commands::debug_device_communication,
-            commands::shutdown_background_tasks
+            // Test command
+            commands::test_device_queue
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

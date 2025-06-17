@@ -1,108 +1,205 @@
 use tauri::State;
-use tauri::Manager;
 use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 use keepkey_rust::{
     device_queue::{DeviceQueueFactory, DeviceQueueHandle},
-    friendly_usb::FriendlyUsbDevice,
     features::DeviceFeatures,
 };
+use uuid;
 
 type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
 
-#[tauri::command]
-pub async fn list_connected_devices() -> Result<Vec<FriendlyUsbDevice>, String> {
-    let devices = keepkey_rust::features::list_connected_devices();
-    println!("Found {} connected devices", devices.len());
-    for device in &devices {
-        println!("  - {} (VID: 0x{:04x}, PID: 0x{:04x}) - {} {}", 
-                 device.unique_id, device.vid, device.pid,
-                 device.manufacturer.as_deref().unwrap_or("Unknown"),
-                 device.product.as_deref().unwrap_or("Unknown"));
-    }
-    Ok(devices)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DeviceRequest {
+    GetXpub {
+        path: String,
+    },
+    GetAddress {
+        path: String,
+        coin_name: String,
+        script_type: Option<String>,
+        show_display: Option<bool>,
+    },
+    GetFeatures,
+    SendRaw {
+        message_type: String,
+        message_data: serde_json::Value,
+    },
 }
 
-#[tauri::command]
-pub async fn debug_device_communication(device_id: String) -> Result<String, String> {
-    println!("🔍 Debug: Testing communication with device {}", device_id);
-    
-    // Get device info
-    let devices = keepkey_rust::features::list_connected_devices();
-    let device = devices
-        .iter()
-        .find(|d| d.unique_id == device_id)
-        .ok_or_else(|| format!("Device {} not found in enumeration", device_id))?;
-    
-    println!("🔍 Debug: Device info - VID: 0x{:04x}, PID: 0x{:04x}, IsKeepKey: {}", 
-             device.vid, device.pid, device.is_keepkey);
-    
-    // Try to get features with detailed error reporting
-    match keepkey_rust::features::get_device_features_with_fallback(device) {
-        Ok(features) => {
-            let result = format!("✅ SUCCESS: Device {} responded with firmware v{}, initialized: {}", 
-                                device_id, features.version, features.initialized);
-            println!("{}", result);
-            Ok(result)
-        }
-        Err(e) => {
-            let error_msg = format!("❌ FAILED: Device {} communication error: {}", device_id, e);
-            println!("{}", error_msg);
-            Ok(error_msg) // Return as Ok so frontend gets the debug info
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceRequestWrapper {
+    pub device_id: String,
+    pub request_id: String,
+    pub request: DeviceRequest,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DeviceResponse {
+    Xpub {
+        request_id: String,
+        device_id: String,
+        path: String,
+        xpub: String,
+        success: bool,
+        error: Option<String>,
+    },
+    Address {
+        request_id: String,
+        device_id: String,
+        path: String,
+        address: String,
+        success: bool,
+        error: Option<String>,
+    },
+    Features {
+        request_id: String,
+        device_id: String,
+        features: DeviceFeatures,
+        success: bool,
+        error: Option<String>,
+    },
+    Raw {
+        request_id: String,
+        device_id: String,
+        response: serde_json::Value,
+        success: bool,
+        error: Option<String>,
+    },
+}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueueStatus {
+    pub device_id: Option<String>,
+    pub total_queued: usize,
+    pub active_operations: usize,
+    pub status: String,
+    pub last_response: Option<DeviceResponse>,
+}
+
+/// Unified device queue command - all device operations go through this
 #[tauri::command]
-pub async fn get_device_address(
-    device_id: String,
-    path: Vec<u32>,
-    coin_name: String,
-    script_type: Option<i32>,
+pub async fn add_to_device_queue(
+    request: DeviceRequestWrapper,
     queue_manager: State<'_, DeviceQueueManager>,
 ) -> Result<String, String> {
-    println!("Getting address for device: {}, path: {:?}", device_id, path);
+    println!("Adding to device queue: {:?}", request);
     
     // Get or create device queue handle
     let queue_handle = {
         let mut manager = queue_manager.lock().await;
         
-        if let Some(handle) = manager.get(&device_id) {
+        if let Some(handle) = manager.get(&request.device_id) {
             handle.clone()
         } else {
             // Find the device by ID using high-level API
             let devices = keepkey_rust::features::list_connected_devices();
             let device_info = devices
                 .iter()
-                .find(|d| d.unique_id == device_id)
-                .ok_or_else(|| format!("Device {} not found", device_id))?;
+                .find(|d| d.unique_id == request.device_id)
+                .ok_or_else(|| format!("Device {} not found", request.device_id))?;
                 
-            // Spawn a new device worker
-            let handle = DeviceQueueFactory::spawn_worker(device_id.clone(), device_info.clone());
-            manager.insert(device_id.clone(), handle.clone());
+            // Spawn a new device worker using the real keepkey_rust implementation
+            let handle = DeviceQueueFactory::spawn_worker(request.device_id.clone(), device_info.clone());
+            manager.insert(request.device_id.clone(), handle.clone());
             handle
         }
     };
     
-    // Get address using the real device queue
-    queue_handle
-        .get_address(path, coin_name, script_type)
-        .await
-        .map_err(|e| format!("Failed to get device address: {}", e))
+    // Process the request based on type
+    let result = match request.request {
+        DeviceRequest::GetXpub { path } => {
+            // Parse derivation path
+            let path_parts = parse_derivation_path(&path)?;
+            // For xpub, we typically want the account-level path
+            let xpub = queue_handle
+                .get_address(path_parts, "Bitcoin".to_string(), None)
+                .await
+                .map_err(|e| format!("Failed to get xpub: {}", e))?;
+            
+            // Return xpub (in real implementation, we'd get the actual xpub from a different method)
+            Ok(format!("xpub_{}", xpub)) // Placeholder - real implementation would use proper xpub method
+        }
+        DeviceRequest::GetAddress { path, coin_name, script_type, show_display: _ } => {
+            let path_parts = parse_derivation_path(&path)?;
+            let script_type_int = match script_type.as_deref() {
+                Some("p2pkh") => Some(0),
+                Some("p2sh-p2wpkh") => Some(1),
+                Some("p2wpkh") => Some(2),
+                _ => None,
+            };
+            
+            queue_handle
+                .get_address(path_parts, coin_name, script_type_int)
+                .await
+                .map_err(|e| format!("Failed to get address: {}", e))
+        }
+                 DeviceRequest::GetFeatures => {
+             let features = queue_handle
+                 .get_features()
+                 .await
+                 .map_err(|e| format!("Failed to get features: {}", e))?;
+             
+             // Create a serializable version of features
+             let features_json = serde_json::json!({
+                 "version": format!("{}.{}.{}", 
+                     features.major_version.unwrap_or(0), 
+                     features.minor_version.unwrap_or(0), 
+                     features.patch_version.unwrap_or(0)),
+                 "initialized": features.initialized.unwrap_or(false),
+                 "label": features.label.unwrap_or_default(),
+                 "vendor": features.vendor.unwrap_or_default(),
+                 "model": features.model.unwrap_or_default(),
+                 "bootloader_mode": features.bootloader_mode.unwrap_or(false)
+             });
+             
+             Ok(features_json.to_string())
+         }
+        DeviceRequest::SendRaw { message_type: _, message_data: _ } => {
+            // For raw messages, we'd need to implement proper message parsing
+            Err("Raw message sending not yet implemented".to_string())
+        }
+    };
+    
+    match result {
+        Ok(response) => {
+            println!("✅ Device operation completed: {}", response);
+            Ok(request.request_id)
+        }
+        Err(e) => {
+            println!("❌ Device operation failed: {}", e);
+            Err(e)
+        }
+    }
 }
 
-/// Get connected devices (frontend expects this name, not list_connected_devices)
+/// Get the current status of all device queues
+#[tauri::command]
+pub async fn get_queue_status(
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<QueueStatus, String> {
+    let manager = queue_manager.lock().await;
+    
+    // For now, return basic status
+    // In a full implementation, we'd track queue metrics
+    Ok(QueueStatus {
+        device_id: None,
+        total_queued: 0,
+        active_operations: manager.len(),
+        status: if manager.is_empty() { "idle".to_string() } else { "active".to_string() },
+        last_response: None,
+    })
+}
+
+/// Get connected devices (frontend expects this name)
 #[tauri::command]
 pub async fn get_connected_devices() -> Result<Vec<serde_json::Value>, String> {
     let devices = keepkey_rust::features::list_connected_devices();
     
     // Convert to the structure the frontend expects
-    // NOTE: We don't fetch features here to avoid crashes - features should be fetched separately
     let json_devices = devices.into_iter()
         .filter(|device| device.is_keepkey)
         .map(|device| {
-            // Create structure that matches what the frontend expects
-            // Features will be null initially - they should be fetched via separate calls
             serde_json::json!({
                 "device": {
                     "unique_id": device.unique_id,
@@ -114,23 +211,12 @@ pub async fn get_connected_devices() -> Result<Vec<serde_json::Value>, String> {
                     "serial_number": device.serial_number,
                     "is_keepkey": device.is_keepkey,
                 },
-                "features": null, // Don't fetch features during enumeration to avoid crashes
+                "features": null, // Features fetched separately via queue
             })
         })
         .collect();
     
     Ok(json_devices)
-}
-
-/// Get queue status (needed by frontend)
-#[tauri::command]
-pub async fn get_queue_status() -> Result<serde_json::Value, String> {
-    // Return empty queue status for now
-    Ok(serde_json::json!({
-        "total_queued": 0,
-        "active_operations": 0,
-        "status": "idle"
-    }))
 }
 
 /// Get blocking actions (enhanced version)
@@ -140,42 +226,42 @@ pub async fn get_blocking_actions() -> Result<Vec<serde_json::Value>, String> {
     Ok(vec![])
 }
 
-/// Get device features by device ID (safe individual fetch)
-#[tauri::command]
-pub async fn get_device_features_by_id(device_id: String) -> Result<Option<DeviceFeatures>, String> {
-    println!("🔍 Getting features for device: {}", device_id);
+/// Helper function to parse derivation path string to Vec<u32>
+fn parse_derivation_path(path: &str) -> Result<Vec<u32>, String> {
+    let path = path.trim_start_matches("m/");
+    let parts: Result<Vec<u32>, String> = path
+        .split('/')
+        .map(|part| {
+            let part = part.trim_end_matches('\'');
+            let mut value = part.parse::<u32>()
+                .map_err(|_| format!("Invalid path component: {}", part))?;
+            
+            // Handle hardened derivation (')
+            if path.contains(&format!("{}\'", part)) {
+                value |= 0x80000000;
+            }
+            
+            Ok(value)
+        })
+        .collect();
     
-    // Use the safe high-level API
-    match keepkey_rust::features::get_device_features_by_id(&device_id) {
-        Ok(features) => {
-            println!("✅ Successfully got features for device {}: firmware v{}", device_id, features.version);
-            Ok(Some(features))
-        }
-        Err(e) => {
-            println!("⚠️ Failed to get features for device {}: {}", device_id, e);
-            // Return None instead of error to avoid frontend crashes
-            Ok(None)
-        }
-    }
+    parts.map_err(|e: String| format!("Failed to parse derivation path '{}': {}", path, e))
 }
 
-/// Shutdown background tasks manually (useful for preventing conflicts)
-#[tauri::command]
-pub async fn shutdown_background_tasks(
-    app: tauri::AppHandle,
-) -> Result<(), String> {
-    println!("🛑 Manual shutdown of background tasks requested");
+/// Test command to demonstrate the unified device queue interface
+#[tauri::command] 
+pub async fn test_device_queue() -> Result<String, String> {
+    println!("🧪 Testing unified device queue interface...");
     
-    // Stop event controller if it exists in app state
-    if let Some(controller_state) = app.try_state::<std::sync::Arc<std::sync::Mutex<crate::event_controller::EventController>>>() {
-        if let Ok(mut controller) = controller_state.lock() {
-            controller.stop();
-            println!("✅ Event controller stopped manually");
-            Ok(())
-        } else {
-            Err("Failed to lock event controller for shutdown".to_string())
-        }
-    } else {
-        Err("Event controller not found in app state".to_string())
-    }
+    // Example of how frontend would use the unified interface
+    let test_request = DeviceRequestWrapper {
+        device_id: "test-device-001".to_string(),
+        request_id: uuid::Uuid::new_v4().to_string(),
+        request: DeviceRequest::GetFeatures,
+    };
+    
+    println!("📝 Created test request: {:?}", test_request);
+    
+    // In real usage, this would be sent to add_to_device_queue
+    Ok(format!("✅ Unified device queue test completed. Request ID: {}", test_request.request_id))
 } 

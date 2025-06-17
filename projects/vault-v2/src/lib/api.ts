@@ -124,12 +124,30 @@ export class PioneerAPI {
   }
 }
 
+// Global flag to enable/disable SQL caching (default: OFF)
+export const SQL_CACHE_ENABLED = false;
+
 export class PortfolioAPI {
   static async getPortfolio(): Promise<Portfolio> {
     const tag = TAG + " | getPortfolio | ";
     
     try {
       console.log(tag, 'Getting portfolio from live Pioneer API data');
+
+      if (!SQL_CACHE_ENABLED) {
+        // SQL caching is globally disabled; skip all DB reads/writes
+        try {
+          // Instead, get xpubs and portfolio data directly from API
+          // (simulate empty xpubs if DB is not used)
+          const xpubs: XpubInfo[] = [];
+          const requests = xpubs.map(x => ({ caip: x.caip, pubkey: x.pubkey }));
+          const portfolioData: PioneerPortfolioResponse[] = await PioneerAPI.getPortfolio(requests);
+          return this.transformToPortfolio(portfolioData);
+        } catch (error) {
+          console.error(tag, 'Portfolio API Error (cache disabled):', error);
+          return this.getEmptyPortfolio();
+        }
+      }
 
       // 1. Get all xpubs from database
       const db = await Database.load(DB_PATH);
@@ -143,35 +161,46 @@ export class PortfolioAPI {
       console.log(tag, `Found ${xpubs.length} xpubs in database`);
 
       // 2. Check cache for fresh data
-      const cachedBalances = await db.select('SELECT * FROM balance_cache ORDER BY last_updated DESC') as BalanceCache[];
-      const needsRefresh = cachedBalances.length === 0 || 
-        PioneerAPI.isCacheExpired(cachedBalances[0]?.last_updated || 0);
-
       let portfolioData: PioneerPortfolioResponse[] = [];
-
-      if (needsRefresh) {
-        console.log(tag, 'Cache expired or empty, calling Pioneer API');
-        
-        // 3. Call Pioneer API with real xpubs
-        const portfolioRequests: PioneerPortfolioRequest[] = xpubs.map(xpub => ({
-          caip: xpub.caip,
-          pubkey: xpub.pubkey
-        }));
-
+      let cacheFresh = false;
+      if (SQL_CACHE_ENABLED) {
         try {
-          portfolioData = await PioneerAPI.getPortfolio(portfolioRequests);
-          
-          // 4. Cache the results
-          await this.cachePortfolioData(portfolioData);
-          console.log(tag, 'Portfolio data cached successfully');
-          
+          const db = await Database.load(DB_PATH);
+          const cached = await db.select('SELECT * FROM balance_cache') as BalanceCache[];
+          if (cached.length > 0) {
+            const latest = Math.max(...cached.map(c => c.last_updated));
+            const now = Math.floor(Date.now() / 1000);
+            cacheFresh = now - latest < 300; // 5 min
+            if (cacheFresh) {
+              portfolioData = cached.map(item => ({
+                caip: item.caip,
+                pubkey: item.pubkey,
+                balance: item.balance,
+                valueUsd: item.balance_usd,
+                priceUsd: item.price_usd,
+                symbol: item.symbol || 'BTC'
+              }));
+              console.log(tag, 'Using fresh cached data');
+            }
+          }
+        } catch (cacheErr) {
+          console.warn(tag, 'Cache read failed:', cacheErr);
+        }
+      }
+      if (!cacheFresh) {
+        try {
+          const requests = xpubs.map(x => ({ caip: x.caip, pubkey: x.pubkey }));
+            portfolioData = await PioneerAPI.getPortfolio(requests);
+          if (SQL_CACHE_ENABLED) {
+            await this.cachePortfolioData(portfolioData);
+            console.log(tag, 'Portfolio data cached successfully');
+          }
         } catch (apiError) {
           console.warn(tag, 'Pioneer API failed, using cached data if available:', apiError);
-          portfolioData = await this.getPortfolioDataFromCache();
+          if (SQL_CACHE_ENABLED) {
+            portfolioData = await this.getPortfolioDataFromCache();
+          }
         }
-      } else {
-        console.log(tag, 'Using fresh cached data');
-        portfolioData = await this.getPortfolioDataFromCache();
       }
 
       // 5. Transform to Portfolio format
