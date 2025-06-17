@@ -3,6 +3,7 @@ use tauri::{Emitter, Manager};
 // Modules for better organization
 mod db;
 mod commands;
+mod device;
 mod event_controller;
 mod logging;
 mod slip132;
@@ -140,7 +141,7 @@ pub fn run() {
             vault_open_support,
             restart_backend_startup,
             // Device operations - unified queue interface
-            commands::add_to_device_queue,
+            device::queue::add_to_device_queue,
             commands::get_queue_status,
             // Basic device enumeration (non-queue operations)
             commands::get_connected_devices,
