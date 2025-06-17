@@ -118,6 +118,12 @@ pub fn run() {
             // Basic device enumeration (non-queue operations)
             commands::get_connected_devices,
             commands::get_blocking_actions,
+            // New device commands (all go through queue)
+            commands::get_device_status,
+            commands::get_device_info_by_id,
+            commands::wipe_device,
+            commands::set_device_label,
+            commands::get_connected_devices_with_features,
             // Test command
             commands::test_device_queue
         ])

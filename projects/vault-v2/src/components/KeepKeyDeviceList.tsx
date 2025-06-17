@@ -160,7 +160,8 @@ export const KeepKeyDeviceList = ({
   const loadDevices = async () => {
     try {
       setLoading(true)
-      const connectedDevices = await invoke<any[]>('get_connected_devices')
+      // Use the enhanced command that fetches features through the device queue
+      const connectedDevices = await invoke<any[]>('get_connected_devices_with_features')
       
       // Map the devices to our format and fetch status for each
       const mappedDevices: Device[] = await Promise.all(
@@ -174,7 +175,7 @@ export const KeepKeyDeviceList = ({
               status: undefined
             }
             
-            // Try to get device status if features are available
+            // Get device status if features are available (indicating communication works)
             if (entry.features) {
               try {
                 const status = await invoke<DeviceStatus | null>('get_device_status', { 
@@ -186,6 +187,9 @@ export const KeepKeyDeviceList = ({
               } catch (error) {
                 console.error('Failed to get device status:', error)
               }
+            } else {
+              // If no features, device is not communicating - log this
+              console.warn(`Device ${entry.device.unique_id} detected but no features available - communication failed`)
             }
             
             return device
