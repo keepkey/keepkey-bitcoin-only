@@ -170,4 +170,14 @@ export class WalletDatabase {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_balance_cache_updated ON balance_cache(last_updated)`);
     console.log('🧹 Balance cache cleared and recreated');
   }
+
+  static async clearAllData(): Promise<void> {
+    const db = await Database.load(DB_PATH);
+    // Clear all data tables for fresh testing
+    await db.execute('DELETE FROM devices');
+    await db.execute('DELETE FROM xpubs');
+    await db.execute('DELETE FROM balance_cache');
+    await db.execute('DELETE FROM fee_rate_cache');
+    console.log('🧹 All database data cleared for fresh testing');
+  }
 } 

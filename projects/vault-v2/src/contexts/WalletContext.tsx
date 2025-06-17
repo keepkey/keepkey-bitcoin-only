@@ -45,65 +45,134 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSync, setIsSync] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   const refreshPortfolio = useCallback(async () => {
     // ...existing refreshPortfolio logic...
     // (This is just a move; actual logic remains unchanged)
   }, []);
 
+  // Track pending xpub requests to prevent duplicates
+  const pendingXpubRequests = new Set<string>();
+
   // Requests all required xpubs from device queue and stores them in DB
   async function getXpubsFromDeviceQueue() {
     const tag = TAG + " | getXpubsFromDeviceQueue | ";
-    const devices = await WalletDatabase.getDevices();
-    const requiredPaths = WalletDatabase.getRequiredPaths();
+    
+    try {
+      // Get fresh list of connected devices to ensure we have current device IDs
+      const connectedDevicesResponse = await DeviceQueueAPI.getConnectedDevices();
+      console.log(tag, 'Fresh connected devices:', connectedDevicesResponse);
+      
+      if (!connectedDevicesResponse || connectedDevicesResponse.length === 0) {
+        console.log(tag, 'No devices connected for xpub fetching');
+        return;
+      }
 
-    for (const device of devices) {
+      // Use the first connected device (in a multi-device setup, we'd handle all)
+      const deviceData = connectedDevicesResponse[0];
+      const device = deviceData.device || deviceData;
+      const deviceId = device.unique_id;
+      
+      console.log(tag, `Using device: ${deviceId}`);
+      
+      const requiredPaths = WalletDatabase.getRequiredPaths();
+
       for (const pathInfo of requiredPaths) {
-        // Check if xpub already exists
-        const existingXpubs = await WalletDatabase.getXpubs(device.device_id);
-        const alreadyHas = existingXpubs.some(x => x.path === pathInfo.path && x.caip === pathInfo.caip);
-        if (alreadyHas) continue;
+        const requestKey = `${deviceId}:${pathInfo.path}`;
+        
+        // Skip if request is already pending
+        if (pendingXpubRequests.has(requestKey)) {
+          console.log(tag, `Skipping duplicate request for ${requestKey}`);
+          continue;
+        }
+
+        // Check if xpub already exists in database
+        // const existingXpubs = await WalletDatabase.getXpubs(deviceId);
+        const existingXpubs:any = []
+        const alreadyHas = existingXpubs.some((x: { path: string; caip: string; }) => x.path === pathInfo.path && x.caip === pathInfo.caip);
+        if (alreadyHas) {
+          console.log(tag, `Xpub already exists for ${deviceId} ${pathInfo.path}`);
+          continue;
+        }
+
+        // Mark request as pending
+        pendingXpubRequests.add(requestKey);
 
         try {
+          console.log(tag, `🔄 Requesting xpub for ${deviceId} ${pathInfo.path}`);
+          
           // 1. Queue xpub request
-          const requestId = await DeviceQueueAPI.requestXpubFromDevice(device.device_id, pathInfo.path);
-          console.log(tag, `Queued xpub request for ${device.device_id} ${pathInfo.path} (requestId: ${requestId})`);
+          const requestId = await DeviceQueueAPI.requestXpubFromDevice(deviceId, pathInfo.path);
+          console.log(tag, `✅ Queued xpub request (requestId: ${requestId})`);
 
-          // 2. Poll for result (timeout after 60s)
+          // 2. Poll for result with longer timeout and exponential backoff
           const start = Date.now();
-          while (Date.now() - start < 60000) {
-            const status = await DeviceQueueAPI.getQueueStatus(device.device_id);
-            if (
-              status.last_response &&
-              'Xpub' in status.last_response &&
-              status.last_response.Xpub.request_id === requestId
-            ) {
-              if (status.last_response.Xpub.success) {
-                // 3. Store xpub
-                await WalletDatabase.insertXpubFromQueue(
-                  device.device_id,
-                  pathInfo.path,
-                  status.last_response.Xpub.xpub
-                );
-                console.log(tag, `Stored xpub for ${device.device_id} ${pathInfo.path}`);
-                break;
-              } else {
-                throw new Error(status.last_response.Xpub.error || 'Device returned error');
+          let pollInterval = 2000; // Start with 2 seconds
+          const maxPollInterval = 10000; // Max 10 seconds
+          
+          while (Date.now() - start < 120000) { // 2 minute timeout
+            await new Promise(res => setTimeout(res, pollInterval));
+            
+            try {
+              const status = await DeviceQueueAPI.getQueueStatus(deviceId);
+              if (
+                status.last_response &&
+                'Xpub' in status.last_response &&
+                status.last_response.Xpub.request_id === requestId
+              ) {
+                if (status.last_response.Xpub.success) {
+                  // 3. Store xpub
+                  await WalletDatabase.insertXpubFromQueue(
+                    deviceId,
+                    pathInfo.path,
+                    status.last_response.Xpub.xpub
+                  );
+                  console.log(tag, `✅ Stored xpub for ${deviceId} ${pathInfo.path}`);
+                  break;
+                } else {
+                  throw new Error(status.last_response.Xpub.error || 'Device returned error');
+                }
               }
+              
+              // Exponential backoff - increase poll interval
+              pollInterval = Math.min(pollInterval * 1.5, maxPollInterval);
+              
+            } catch (pollError) {
+              console.warn(tag, `Poll error for ${requestKey}:`, pollError);
+              // Continue polling despite poll errors
             }
-            await new Promise(res => setTimeout(res, 1000));
           }
+          
+          console.log(tag, `⏰ Finished polling for ${requestKey}`);
+          
         } catch (err) {
-          console.error(tag, `Failed to get xpub for ${device.device_id} ${pathInfo.path}:`, err);
+          console.error(tag, `❌ Failed to get xpub for ${deviceId} ${pathInfo.path}:`, err);
+        } finally {
+          // Always remove from pending set
+          pendingXpubRequests.delete(requestKey);
         }
       }
+      
+      // Refresh portfolio after all xpub attempts
+      console.log(tag, `🔄 Refreshing portfolio after xpub fetching`);
+      await refreshPortfolio();
+      
+    } catch (error) {
+      console.error(tag, 'Error in getXpubsFromDeviceQueue:', error);
     }
-    // Refresh portfolio after all xpubs are fetched
-    await refreshPortfolio();
   }
 
   async function onStart() {
     const tag = TAG + " | onStart | ";
+    
+    // Prevent multiple simultaneous initializations
+    if (isInitializing) {
+      console.log(tag, 'Already initializing, skipping duplicate onStart call');
+      return;
+    }
+    
+    setIsInitializing(true);
     setLoading(true);
     
     try {
@@ -139,15 +208,22 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         return;
       }
 
-      // For each device, check if we have all required xpubs
-      let allXpubsPresent = true;
+      // Always try to fetch fresh xpubs on startup to ensure we have the latest
+      // This ensures we detect newly connected devices and get their xpubs
+      console.log(tag, '🔄 Always fetching fresh xpubs on startup...');
+      await getXpubsFromDeviceQueue();
+
+      // After fetching, check final sync status
+      const finalDevices = await WalletDatabase.getDevices();
       const requiredPaths = WalletDatabase.getRequiredPaths();
+      let allXpubsPresent = true;
       
-      for (const device of devices) {
-        console.log(tag, 'Checking xpubs for device:', device.device_id);
-        
-        const existingXpubs = await WalletDatabase.getXpubs(device.device_id);
-        console.log(tag, 'Existing xpubs:', existingXpubs);
+      for (const device of finalDevices) {
+        console.log(tag, 'Final check - xpubs for device:', device.device_id);
+
+        const existingXpubs:any[] = []
+        // const existingXpubs = await WalletDatabase.getXpubs(device.device_id);
+        // console.log(tag, 'Final existing xpubs:', existingXpubs.length);
 
         for (const requiredPath of requiredPaths) {
           const existingXpub = existingXpubs.find(
@@ -155,18 +231,14 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           );
           if (!existingXpub) {
             allXpubsPresent = false;
+            console.log(tag, `Missing xpub for ${device.device_id} ${requiredPath.path}`);
           }
         }
       }
 
-      // Set sync status
+      // Set final sync status
       setIsSync(allXpubsPresent);
-      console.log(tag, 'Sync status:', allXpubsPresent);
-
-      // If any xpubs are missing, trigger device queue fetch
-      if (!allXpubsPresent) {
-        await getXpubsFromDeviceQueue();
-      }
+      console.log(tag, 'Final sync status:', allXpubsPresent);
       // Get portfolio data regardless of sync status
       const portfolioData = await PortfolioAPI.getPortfolio();
       console.log(tag, 'portfolioData:', portfolioData);
@@ -178,6 +250,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setError('❌ Failed to initialize: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setLoading(false);
+      setIsInitializing(false);
     }
   }
 
@@ -294,7 +367,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
               const { device_id, path, xpub } = status.last_response.Xpub;
               
               // Check if we already have this xpub in the database
-              const existingXpubs = await WalletDatabase.getXpubs(device_id);
+              const existingXpubs: any[] = []
+              // const existingXpubs = await WalletDatabase.getXpubs(device_id);
               const exists = existingXpubs.some(x => x.path === path && x.pubkey === xpub);
               
               if (!exists) {
