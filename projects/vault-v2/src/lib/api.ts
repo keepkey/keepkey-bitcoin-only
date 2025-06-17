@@ -36,6 +36,23 @@ export interface PioneerAddressResponse {
   addressIndex: number;
 }
 
+export interface PioneerUtxoResponse {
+  txid: string;
+  vout: number;
+  value: string;
+  address: string;
+  confirmations: number;
+  path: string;
+  scriptType: string;
+  hex?: string;
+  tx?: any;
+}
+
+export interface PioneerChangeAddressResponse {
+  changeIndex: number;
+  address: string;
+}
+
 // Database Cache Types
 export interface BalanceCache {
   id: number;
@@ -116,11 +133,79 @@ export class PioneerAPI {
     }
   }
 
-  static isCacheExpired(lastUpdated: number): boolean {
+  static async listUnspent(network: string, xpub: string): Promise<PioneerUtxoResponse[]> {
+    try {
+      console.log('🪙 Getting UTXOs for', network, 'xpub:', xpub.substring(0, 20) + '...');
+      
+      const response = await axios.post(
+        `${PIONEER_BASE_URL}/api/v1/listUnspent`,
+        { network, xpub },
+        { 
+          headers: { 
+            'Content-Type': 'application/json',
+            'accept': 'application/json' 
+          },
+          timeout: 30000
+        }
+      );
+
+      console.log('✅ UTXOs retrieved:', response.data.length, 'utxos');
+      return response.data;
+    } catch (error) {
+      console.error('❌ List unspent API failed:', error);
+      throw error;
+    }
+  }
+
+  static async getChangeAddress(network: string, xpub: string): Promise<PioneerChangeAddressResponse> {
+    try {
+      console.log('🔄 Getting change address for', network, 'xpub:', xpub.substring(0, 20) + '...');
+      
+      const response = await axios.post(
+        `${PIONEER_BASE_URL}/api/v1/getChangeAddress`,
+        { network, xpub },
+        { 
+          headers: { 
+            'Content-Type': 'application/json',
+            'accept': 'application/json' 
+          },
+          timeout: 10000
+        }
+      );
+
+      console.log('✅ Change address retrieved:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Get change address API failed:', error);
+      throw error;
+    }
+  }
+
+      static isCacheExpired(lastUpdated: number): boolean {
     const now = Math.floor(Date.now() / 1000);
     const cacheAge = now - lastUpdated;
     const maxAge = CACHE_TTL_MINUTES * 60;
     return cacheAge > maxAge;
+  }
+
+  // Create a client compatible with createUnsignedUxtoTx expectations
+  static createClient() {
+    return {
+      async ListUnspent({ network, xpub }: { network: string; xpub: string }) {
+        const data = await PioneerAPI.listUnspent(network, xpub);
+        return { data };
+      },
+      async GetChangeAddress({ network, xpub }: { network: string; xpub: string }) {
+        const data = await PioneerAPI.getChangeAddress(network, xpub);
+        return { data };
+      },
+      async GetFeeRate({ networkId }: { networkId: string }) {
+        // Convert networkId to caip format for our API
+        const caip = `${networkId}/slip44:0`;
+        const data = await PioneerAPI.getFeeRates(caip);
+        return { data };
+      }
+    };
   }
 }
 
@@ -515,6 +600,39 @@ export class DeviceQueueAPI {
       return status as QueueStatus;
     } catch (error) {
       console.error('Failed to get queue status:', error);
+      throw error;
+    }
+  }
+
+  static async signTransaction(
+    deviceId: string,
+    coin: string,
+    inputs: any[],
+    outputs: any[],
+    version: number = 1,
+    lockTime: number = 0
+  ): Promise<string> {
+    try {
+      const requestId = `sign_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const request = {
+        device_id: deviceId,
+        request_id: requestId,
+        request: {
+          SignTransaction: {
+            coin,
+            inputs,
+            outputs,
+            version,
+            lock_time: lockTime
+          }
+        }
+      };
+      
+      console.log('🔐 Requesting transaction signing from device:', { deviceId, coin, inputCount: inputs.length, outputCount: outputs.length });
+      await invoke('add_to_device_queue', { request });
+      return requestId;
+    } catch (error) {
+      console.error('Failed to add transaction signing request to device queue:', error);
       throw error;
     }
   }

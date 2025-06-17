@@ -13,6 +13,24 @@ use crate::logging::{log_device_request, log_device_response, log_raw_device_mes
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BitcoinUtxoInput {
+    pub address_n_list: Vec<u32>,     // Derivation path [2147483692, 2147483648, ...]
+    pub script_type: String,          // "p2pkh", "p2sh", "p2wpkh"
+    pub amount: String,               // Amount in satoshis as string
+    pub vout: u32,                    // Output index
+    pub txid: String,                 // Transaction ID
+    pub hex: String,                  // Raw transaction hex
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]  
+pub struct BitcoinUtxoOutput {
+    pub address: String,              // Destination address
+    pub amount: u64,                  // Amount in satoshis
+    pub address_type: String,         // "spend" or "change"
+    pub is_change: Option<bool>,      // Optional change flag
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DeviceRequest {
     GetXpub {
         path: String,
@@ -24,6 +42,13 @@ pub enum DeviceRequest {
         show_display: Option<bool>,
     },
     GetFeatures,
+    SignTransaction {
+        coin: String,
+        inputs: Vec<BitcoinUtxoInput>,
+        outputs: Vec<BitcoinUtxoOutput>,
+        version: u32,
+        lock_time: u32,
+    },
     SendRaw {
         message_type: String,
         message_data: serde_json::Value,
@@ -60,6 +85,14 @@ pub enum DeviceResponse {
         request_id: String,
         device_id: String,
         features: DeviceFeatures,
+        success: bool,
+        error: Option<String>,
+    },
+    SignedTransaction {
+        request_id: String,
+        device_id: String,
+        signed_tx: String,         // Signed transaction hex
+        txid: Option<String>,      // Transaction ID if available
         success: bool,
         error: Option<String>,
     },

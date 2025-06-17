@@ -18,6 +18,16 @@ export type DeviceResponse =
         success: boolean;
         error?: string;
       };
+    }
+  | {
+      SignedTransaction: {
+        request_id: string;
+        device_id: string;
+        signed_tx: string;
+        txid?: string;
+        success: boolean;
+        error?: string;
+      };
     };
 
 export interface QueueStatus {

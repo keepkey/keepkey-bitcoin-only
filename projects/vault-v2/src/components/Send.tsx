@@ -9,9 +9,11 @@ import {
   Input, 
   Flex,
   IconButton,
-  Spinner
+  Spinner,
+  Badge,
+  Code
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaQrcode, FaPaperPlane } from 'react-icons/fa';
+import { FaArrowLeft, FaQrcode, FaPaperPlane, FaEye, FaSignature, FaCheck } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
 import { PioneerAPI } from '../lib/api';
@@ -26,10 +28,29 @@ interface FeeRates {
   fast: number;
 }
 
+type SendStep = 'compose' | 'review' | 'sign' | 'complete';
+
+interface TransactionReview {
+  to: string;
+  amount: string;
+  amountInSats: number;
+  fee: number;
+  feeRate: number;
+  total: number;
+  inputs: any[];
+  outputs: any[];
+  unsignedTx: any;
+}
+
 const Send: React.FC<SendPageProps> = ({ onBack }) => {
-  const { portfolio, sendAsset, loading: walletLoading, error: walletError, selectAsset } = useWallet();
+  const { portfolio, loading: walletLoading, error: walletError, selectAsset } = useWallet();
   
-  // State according to planning document 
+  // Step management
+  const [currentStep, setCurrentStep] = useState<SendStep>('compose');
+  const [transactionReview, setTransactionReview] = useState<TransactionReview | null>(null);
+  const [signedTransaction, setSignedTransaction] = useState<string | null>(null);
+  
+  // Compose step state
   const [recipientAddress, setRecipientAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [feeRate, setFeeRate] = useState<'slow' | 'medium' | 'fast'>('medium');
@@ -146,7 +167,42 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
     }
   };
 
-  const handleSend = async () => {
+  // Step navigation helpers
+  const getStepNumber = (step: SendStep): number => {
+    switch (step) {
+      case 'compose': return 1;
+      case 'review': return 2;
+      case 'sign': return 3;
+      case 'complete': return 4;
+      default: return 1;
+    }
+  };
+
+  const getStepTitle = (step: SendStep): string => {
+    switch (step) {
+      case 'compose': return 'Compose Transaction';
+      case 'review': return 'Review Details';
+      case 'sign': return 'Sign Transaction';
+      case 'complete': return 'Transaction Complete';
+      default: return 'Compose Transaction';
+    }
+  };
+
+  const canGoBack = (): boolean => {
+    return currentStep !== 'compose' && currentStep !== 'complete';
+  };
+
+  const handleStepBack = () => {
+    if (currentStep === 'review') {
+      setCurrentStep('compose');
+      setError(null);
+    } else if (currentStep === 'sign') {
+      setCurrentStep('review');
+      setError(null);
+    }
+  };
+
+  const handleBuildTransaction = async () => {
     if (!recipientAddress || !amount || !addressValidation.valid) {
       setError('Please enter a valid recipient address and amount');
       return;
@@ -183,22 +239,84 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       setError(null);
       setSuccess(null);
 
-      // Use WalletContext to send (always pass BTC amount)
-      const btcAmountToSend = amountCurrency === 'USD' ? convertUsdToBtc(inputAmount) : inputAmount;
-      await sendAsset(recipientAddress, btcAmountToSend.toFixed(8));
+      console.log('🔄 Building transaction...');
       
-      setSuccess(`Transaction sent successfully! Amount: ${amount} ${amountCurrency} to ${recipientAddress.substring(0, 20)}...`);
+      // TODO: Implement transaction building using createUnsignedUxtoTx
+      // For now, create a mock transaction review
+      const selectedFeeRateValue = feeRates[feeRate];
+      const estimatedFee = (250 * selectedFeeRateValue) / 100000000; // ~250 vBytes typical tx
+      const amountInSats = Math.round(sendAmountInBtc * 100000000);
+      const feeInSats = Math.round(estimatedFee * 100000000);
       
-      // Reset form
-      setRecipientAddress('');
-      setAmount('');
+      const review: TransactionReview = {
+        to: recipientAddress,
+        amount: `${sendAmountInBtc.toFixed(8)} BTC`,
+        amountInSats,
+        fee: estimatedFee,
+        feeRate: selectedFeeRateValue,
+        total: sendAmountInBtc + estimatedFee,
+        inputs: [], // Will be populated by createUnsignedUxtoTx
+        outputs: [
+          { address: recipientAddress, amount: amountInSats }
+        ],
+        unsignedTx: null // Will be populated by createUnsignedUxtoTx
+      };
+
+      setTransactionReview(review);
+      setCurrentStep('review');
+      setError(null);
 
     } catch (error) {
-      console.error('Error sending transaction:', error);
-      setError(error instanceof Error ? error.message : 'Unknown error occurred');
+      console.error('Error building transaction:', error);
+      setError(error instanceof Error ? error.message : 'Failed to build transaction');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSignTransaction = async () => {
+    if (!transactionReview) {
+      setError('No transaction to sign');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      setCurrentStep('sign');
+      
+      // TODO: Implement actual device signing
+      // For now, simulate signing process
+      console.log('🔐 Signing transaction...');
+      
+      // Simulate signing delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Mock signed transaction
+      const mockSignedTx = "0100000001abc123...def456"; // This would be the actual signed transaction hex
+      
+      setSignedTransaction(mockSignedTx);
+      setCurrentStep('complete');
+      setSuccess('Transaction signed successfully!');
+
+    } catch (error) {
+      console.error('Error signing transaction:', error);
+      setError(error instanceof Error ? error.message : 'Failed to sign transaction');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNewTransaction = () => {
+    // Reset all state for new transaction
+    setCurrentStep('compose');
+    setTransactionReview(null);
+    setSignedTransaction(null);
+    setRecipientAddress('');
+    setAmount('');
+    setError(null);
+    setSuccess(null);
   };
 
   // Currency conversion helpers
@@ -241,40 +359,24 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
     );
   }
 
-  return (
-    <Box height="100%" bg="transparent" display="flex" alignItems="center" justifyContent="center" p={6}>
-      <VStack 
-        align="stretch" 
-        gap={6} 
-        maxW="500px" 
-        w="100%"
-        bg="rgba(26, 32, 44, 0.95)" 
-        p={6} 
-        borderRadius="xl" 
-        backdropFilter="blur(20px)"
-        border="1px solid rgba(255, 255, 255, 0.1)"
-        boxShadow="2xl"
-      >
-        {/* Header with back button */}
-        <HStack>
-          <IconButton
-            aria-label="Go back"
-            onClick={onBack}
-            size="sm"
-          >
-            <FaArrowLeft />
-          </IconButton>
-          <Flex align="center" justify="center" flex="1" gap={2}>
-            <Box color="orange.400" fontSize="xl">
-              <SiBitcoin />
-            </Box>
-            <Heading size="lg" color="white">
-              Send Bitcoin
-            </Heading>
-          </Flex>
-          <Box w="40px" /> {/* Spacer for centering */}
-        </HStack>
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 'compose':
+        return renderComposeStep();
+      case 'review':
+        return renderReviewStep();
+      case 'sign':
+        return renderSignStep();
+      case 'complete':
+        return renderCompleteStep();
+      default:
+        return renderComposeStep();
+    }
+  };
 
+  const renderComposeStep = () => {
+    return (
+      <VStack gap={6}>
         {/* Balance Display */}
         <Box bg="gray.800" p={4} borderRadius="lg" textAlign="center">
           <Text color="gray.400" fontSize="sm">Available Balance</Text>
@@ -466,12 +568,12 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             colorScheme="blue"
             size="lg"
             width="100%"
-            onClick={handleSend}
+            onClick={handleBuildTransaction}
             disabled={!addressValidation.valid || !amount || loading || btcAssets.length === 0 || availableBalance === 0}
           >
             <HStack gap={2}>
-              {loading ? <Spinner size="sm" /> : <FaPaperPlane />}
-              <Text>{loading ? 'Sending...' : 'Send Bitcoin'}</Text>
+              {loading ? <Spinner size="sm" /> : <FaEye />}
+              <Text>{loading ? 'Building...' : 'Review Transaction'}</Text>
             </HStack>
           </Button>
           <Button
@@ -482,6 +584,236 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             Cancel
           </Button>
         </VStack>
+      </VStack>
+    );
+  };
+
+  const renderReviewStep = () => {
+    if (!transactionReview) return null;
+    
+    return (
+      <VStack gap={6}>
+        <Box bg="gray.800" p={6} borderRadius="lg" w="100%">
+          <Heading size="md" color="white" mb={4}>Transaction Details</Heading>
+          <VStack gap={4} align="stretch">
+            <HStack justify="space-between">
+              <Text color="gray.400">To:</Text>
+              <Code fontSize="sm" colorScheme="blue">{transactionReview.to}</Code>
+            </HStack>
+            <HStack justify="space-between">
+              <Text color="gray.400">Amount:</Text>
+              <Text color="white" fontWeight="bold">{transactionReview.amount}</Text>
+            </HStack>
+            <HStack justify="space-between">
+              <Text color="gray.400">Fee Rate:</Text>
+              <Text color="white">{transactionReview.feeRate} sat/vB</Text>
+            </HStack>
+            <HStack justify="space-between">
+              <Text color="gray.400">Est. Fee:</Text>
+              <Text color="white">{transactionReview.fee.toFixed(8)} BTC</Text>
+            </HStack>
+            <HStack justify="space-between" borderTop="1px solid" borderColor="gray.600" pt={2}>
+              <Text color="gray.400" fontWeight="bold">Total:</Text>
+              <Text color="orange.300" fontWeight="bold">{transactionReview.total.toFixed(8)} BTC</Text>
+            </HStack>
+          </VStack>
+        </Box>
+
+        <VStack gap={3} w="100%">
+          <Button
+            colorScheme="blue"
+            size="lg"
+            width="100%"
+            onClick={handleSignTransaction}
+            disabled={loading}
+          >
+            <HStack gap={2}>
+              {loading ? <Spinner size="sm" /> : <FaSignature />}
+              <Text>{loading ? 'Preparing...' : 'Sign Transaction'}</Text>
+            </HStack>
+          </Button>
+          <Button
+            variant="ghost"
+            color="gray.400"
+            onClick={handleStepBack}
+          >
+            Back to Edit
+          </Button>
+        </VStack>
+
+        {error && (
+          <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600" w="100%">
+            <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
+          </Box>
+        )}
+      </VStack>
+    );
+  };
+
+  const renderSignStep = () => {
+    return (
+      <VStack gap={6} align="center">
+        <Box bg="gray.800" p={8} borderRadius="lg" textAlign="center">
+          <VStack gap={4}>
+            <Box color="blue.400" fontSize="4xl">
+              <FaSignature />
+            </Box>
+            <Heading size="md" color="white">Signing Transaction</Heading>
+            <Text color="gray.400" textAlign="center">
+              Please confirm the transaction on your KeepKey device
+            </Text>
+            <Spinner size="lg" color="blue.400" />
+          </VStack>
+        </Box>
+
+        {error && (
+          <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600" w="100%">
+            <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
+          </Box>
+        )}
+      </VStack>
+    );
+  };
+
+  const renderCompleteStep = () => {
+    return (
+      <VStack gap={6} align="center">
+        <Box bg="gray.800" p={8} borderRadius="lg" textAlign="center" w="100%">
+          <VStack gap={4}>
+            <Box color="green.400" fontSize="4xl">
+              <FaCheck />
+            </Box>
+            <Heading size="md" color="white">Transaction Signed!</Heading>
+            <Text color="gray.400" textAlign="center">
+              Your transaction has been successfully signed
+            </Text>
+
+            {signedTransaction && (
+              <Box w="100%" mt={4}>
+                <Text color="gray.400" fontSize="sm" mb={2}>Signed Transaction:</Text>
+                <Box bg="gray.900" p={4} borderRadius="md" border="1px solid" borderColor="gray.600">
+                  <Code fontSize="xs" wordBreak="break-all" color="green.300">
+                    {signedTransaction}
+                  </Code>
+                </Box>
+              </Box>
+            )}
+          </VStack>
+        </Box>
+
+        <VStack gap={3} w="100%">
+          <Button
+            colorScheme="green"
+            size="lg"
+            width="100%"
+            onClick={handleNewTransaction}
+          >
+            <HStack gap={2}>
+              <FaPaperPlane />
+              <Text>Send Another Transaction</Text>
+            </HStack>
+          </Button>
+          <Button
+            variant="ghost"
+            color="gray.400"
+            onClick={onBack}
+          >
+            Back to Wallet
+          </Button>
+        </VStack>
+
+        {success && (
+          <Box bg="green.900" p={3} borderRadius="md" border="1px solid" borderColor="green.600" w="100%">
+            <Text color="green.200" fontSize="sm">✅ {success}</Text>
+          </Box>
+        )}
+      </VStack>
+    );
+  };
+
+  return (
+    <Box height="100%" bg="transparent" display="flex" alignItems="center" justifyContent="center" p={6}>
+      <VStack 
+        align="stretch" 
+        gap={6} 
+        maxW="600px" 
+        w="100%"
+        bg="rgba(26, 32, 44, 0.95)" 
+        p={6} 
+        borderRadius="xl" 
+        backdropFilter="blur(20px)"
+        border="1px solid rgba(255, 255, 255, 0.1)"
+        boxShadow="2xl"
+      >
+        {/* Header with back button and step progress */}
+        <VStack gap={4}>
+          <HStack w="100%">
+            <IconButton
+              aria-label="Go back"
+              onClick={canGoBack() ? handleStepBack : onBack}
+              size="sm"
+            >
+              <FaArrowLeft />
+            </IconButton>
+            <Flex align="center" justify="center" flex="1" gap={2}>
+              <Box color="orange.400" fontSize="xl">
+                <SiBitcoin />
+              </Box>
+              <Heading size="lg" color="white">
+                Send Bitcoin
+              </Heading>
+            </Flex>
+            <Box w="40px" /> {/* Spacer for centering */}
+          </HStack>
+
+          {/* Step Progress */}
+          <VStack w="100%" gap={2}>
+            <HStack justify="space-between" w="100%" px={4}>
+              {(['compose', 'review', 'sign', 'complete'] as SendStep[]).map((step, index) => (
+                <VStack key={step} align="center" gap={1}>
+                  <Box
+                    w={8}
+                    h={8}
+                    borderRadius="full"
+                    bg={getStepNumber(currentStep) > index + 1 ? 'green.500' : 
+                        getStepNumber(currentStep) === index + 1 ? 'blue.500' : 'gray.600'}
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    color="white"
+                    fontWeight="bold"
+                    fontSize="sm"
+                  >
+                    {getStepNumber(currentStep) > index + 1 ? <FaCheck /> : index + 1}
+                  </Box>
+                  <Text fontSize="xs" color="gray.400" textAlign="center">
+                    {step === 'compose' && 'Compose'}
+                    {step === 'review' && 'Review'}
+                    {step === 'sign' && 'Sign'}
+                    {step === 'complete' && 'Complete'}
+                  </Text>
+                </VStack>
+              ))}
+            </HStack>
+            <Box w="100%" h="2" bg="gray.600" borderRadius="full" overflow="hidden">
+              <Box 
+                h="100%" 
+                bg="blue.500" 
+                w={`${(getStepNumber(currentStep) - 1) * 33.33}%`}
+                transition="width 0.3s ease"
+                borderRadius="full"
+              />
+            </Box>
+          </VStack>
+          
+          {/* Current Step Title */}
+          <Heading size="md" color="white" textAlign="center">
+            {getStepTitle(currentStep)}
+          </Heading>
+        </VStack>
+
+        {/* Step Content */}
+        {renderStepContent()}
       </VStack>
     </Box>
   );

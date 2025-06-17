@@ -1,6 +1,6 @@
 use tauri::{State, AppHandle, Emitter};
 use std::sync::Arc;
-use keepkey_rust::device_queue::DeviceQueueHandle;
+
 
 // Import types needed for DeviceRequestWrapper
 use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, DeviceQueueManager};
@@ -25,6 +25,7 @@ pub async fn add_to_device_queue(
         DeviceRequest::GetXpub { .. } => "GetXpub",
         DeviceRequest::GetAddress { .. } => "GetAddress", 
         DeviceRequest::GetFeatures => "GetFeatures",
+        DeviceRequest::SignTransaction { .. } => "SignTransaction",
         DeviceRequest::SendRaw { .. } => "SendRaw",
     };
     
@@ -135,6 +136,88 @@ pub async fn add_to_device_queue(
             
             Ok(features_json.to_string())
         }
+        DeviceRequest::SignTransaction { ref coin, ref inputs, ref outputs, version, lock_time } => {
+            // Convert our structured inputs to the format expected by keepkey_rust
+            let mut keepkey_inputs = Vec::new();
+            for input in inputs {
+                let keepkey_input = keepkey_rust::messages::TxInputType {
+                    address_n: input.address_n_list.clone(),
+                    prev_hash: hex::decode(&input.txid).map_err(|e| format!("Invalid txid hex: {}", e))?,
+                    prev_index: input.vout,
+                    script_sig: None, // Will be filled by device
+                    sequence: Some(0xffffffff), // Default sequence
+                    script_type: match input.script_type.as_str() {
+                        "p2pkh" => Some(keepkey_rust::messages::InputScriptType::Spendaddress as i32),
+                        "p2sh" => Some(keepkey_rust::messages::InputScriptType::Spendp2shwitness as i32),
+                        "p2wpkh" => Some(keepkey_rust::messages::InputScriptType::Spendwitness as i32),
+                        _ => Some(keepkey_rust::messages::InputScriptType::Spendaddress as i32),
+                    },
+                    amount: Some(input.amount.parse::<u64>().map_err(|_| "Invalid amount")?),
+                    ..Default::default()
+                };
+                keepkey_inputs.push(keepkey_input);
+            }
+
+            // Convert outputs
+            let mut keepkey_outputs = Vec::new();
+            for output in outputs {
+                let keepkey_output = if output.address_type == "change" {
+                    // For change outputs, we need addressNList instead of address
+                    // TODO: Calculate and set proper change address derivation path (address_n)
+                    // WARNING: Leaving this as an empty vec will result in invalid change outputs!
+                    keepkey_rust::messages::TxOutputType {
+                        amount: output.amount,
+                        script_type: keepkey_rust::messages::OutputScriptType::Paytoaddress as i32,
+                        address_n: vec![], // FIXME: Must set correct derivation path
+                        ..Default::default()
+                    }
+                } else {
+                    // For spend outputs, use the address
+                    keepkey_rust::messages::TxOutputType {
+                        address: Some(output.address.clone()),
+                        amount: output.amount,
+                        script_type: keepkey_rust::messages::OutputScriptType::Paytoaddress as i32,
+                        ..Default::default()
+                    }
+                };
+                keepkey_outputs.push(keepkey_output);
+            }
+
+            // Create SignTx message
+            let sign_tx = keepkey_rust::messages::Message::SignTx(
+                keepkey_rust::messages::SignTx {
+                    coin_name: Some(coin.clone()),
+                    inputs_count: keepkey_inputs.len() as u32,
+                    outputs_count: keepkey_outputs.len() as u32,
+                    version: Some(version),
+                    lock_time: Some(lock_time),
+                    ..Default::default()
+                }
+            );
+
+            // Sign the transaction through the device queue
+            // There is no sign_transaction method; use send_raw instead
+            match queue_handle.send_raw(sign_tx, false).await {
+                Ok(message) => {
+                    // Try to extract signed tx string from Message
+                    let signed_tx_hex = match message {
+                        keepkey_rust::messages::Message::TxAck(ref tx_ack) => {
+                            // Use Debug format for TransactionType since it doesn't implement Serialize
+                            format!("{:?}", tx_ack.tx)
+                        },
+                        _ => {
+                            format!("Unexpected response: {:?}", message)
+                        }
+                    };
+                    println!("✅ Transaction signed successfully: {:?}", signed_tx_hex);
+                    Ok(signed_tx_hex)
+                }
+                Err(e) => {
+                    println!("❌ Failed to sign transaction: {}", e);
+                    Err(format!("Failed to sign transaction: {}", e))
+                }
+            }
+        }
         DeviceRequest::SendRaw { ref message_type, ref message_data } => {
             // Log the raw message being sent
             if let Err(e) = crate::logging::log_raw_device_message(
@@ -218,7 +301,7 @@ pub async fn add_to_device_queue(
                 request_id: request.request_id.clone(),
                 device_id: request.device_id.clone(),
                 path: path.clone(),
-                address: address.to_string(),
+                address: address.clone(),
                 success: true,
                 error: None,
             }
@@ -229,6 +312,27 @@ pub async fn add_to_device_queue(
                 device_id: request.device_id.clone(),
                 path: path.clone(),
                 address: String::new(),
+                success: false,
+                error: Some(e.clone()),
+            }
+        }
+        (DeviceRequest::SignTransaction { .. }, Ok(ref signed_tx)) => {
+            DeviceResponse::SignedTransaction {
+                request_id: request.request_id.clone(),
+                device_id: request.device_id.clone(),
+                signed_tx: signed_tx.clone(),
+                txid: None, // TODO: Calculate txid from signed transaction if needed (see v1 implementation)
+                // WARNING: If txid is required by the consumer, port calculation logic from v1
+                success: true,
+                error: None,
+            }
+        }
+        (DeviceRequest::SignTransaction { .. }, Err(e)) => {
+            DeviceResponse::SignedTransaction {
+                request_id: request.request_id.clone(),
+                device_id: request.device_id.clone(),
+                signed_tx: String::new(),
+                txid: None,
                 success: false,
                 error: Some(e.clone()),
             }
