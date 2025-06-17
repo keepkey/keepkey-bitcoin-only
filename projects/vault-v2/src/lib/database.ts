@@ -67,7 +67,7 @@ export class WalletDatabase {
   static async getDevices(): Promise<DeviceInfo[]> {
     // If SQL caching is disabled, never return persisted devices
     // (Live device enumeration should be implemented here in the future)
-    if (typeof SQL_CACHE_ENABLED !== 'undefined' && SQL_CACHE_ENABLED === false) {
+    if (!SQL_CACHE_ENABLED) {
       return [];
     }
     const db = await Database.load(DB_PATH);
@@ -75,9 +75,32 @@ export class WalletDatabase {
     return devices as DeviceInfo[];
   }
 
+  static async storeConnectedDevices(connectedDevices: any[]): Promise<void> {
+    const db = await Database.load(DB_PATH);
+    const now = Math.floor(Date.now() / 1000);
+    
+    for (const deviceData of connectedDevices) {
+      const device = deviceData.device || deviceData; // Handle nested structure
+      if (device && device.unique_id) {
+        // Store device info
+        await db.execute(
+          'INSERT OR REPLACE INTO devices (device_id, label, features_json, last_seen, created_at) VALUES (?, ?, ?, ?, ?)',
+          [
+            device.unique_id,
+            device.name || 'KeepKey',
+            JSON.stringify(device),
+            now,
+            now
+          ]
+        );
+        console.log(`✅ Stored device: ${device.unique_id}`);
+      }
+    }
+  }
+
   static async getXpubs(deviceId: string): Promise<XpubInfo[]> {
     // If SQL caching is disabled, never return persisted xpubs
-    if (typeof SQL_CACHE_ENABLED !== 'undefined' && SQL_CACHE_ENABLED === false) {
+    if (!SQL_CACHE_ENABLED) {
       return [];
     }
     const db = await Database.load(DB_PATH);

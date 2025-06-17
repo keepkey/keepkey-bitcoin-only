@@ -110,17 +110,31 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Initialize database
       await WalletDatabase.init();
 
-
       // Check if onboarded
       const isOnboarded = true;
       console.log(tag, 'isOnboarded:', isOnboarded);
 
-      // Get all devices from db
+      // Get connected devices from backend (live detection)
+      console.log(tag, '🔍 Detecting connected devices...');
+      const connectedDevicesResponse = await DeviceQueueAPI.getConnectedDevices();
+      console.log(tag, 'Connected devices:', connectedDevicesResponse);
+
+      if (!connectedDevicesResponse || connectedDevicesResponse.length === 0) {
+        console.log(tag, 'No devices connected');
+        setIsSync(false);
+        setError('No KeepKey device connected. Please connect your device and try again.');
+        return;
+      }
+
+      // Store detected devices in database for future reference
+      await WalletDatabase.storeConnectedDevices(connectedDevicesResponse);
+
+      // Get all devices from db (now includes freshly detected ones)
       const devices = await WalletDatabase.getDevices();
       console.log(tag, 'devices from db:', devices);
 
       if (devices.length === 0) {
-        console.log(tag, 'No devices found, not synced');
+        console.log(tag, 'No devices found after detection, not synced');
         setIsSync(false);
         return;
       }

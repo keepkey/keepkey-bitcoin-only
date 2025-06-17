@@ -107,7 +107,13 @@ pub fn run() {
                 std::collections::HashMap::<String, keepkey_rust::device_queue::DeviceQueueHandle>::new()
             ));
             
+            // Initialize response tracking
+            let last_responses = Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::<String, commands::DeviceResponse>::new()
+            ));
+            
             app.manage(device_queue_manager);
+            app.manage(last_responses);
             
             // Start event controller with proper management
             let _event_controller = event_controller::spawn_event_controller(&app.handle());

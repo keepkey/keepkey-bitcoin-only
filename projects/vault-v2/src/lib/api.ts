@@ -124,8 +124,8 @@ export class PioneerAPI {
   }
 }
 
-// Global flag to enable/disable SQL caching (default: OFF)
-export const SQL_CACHE_ENABLED = false;
+// Global flag to enable/disable SQL caching (default: ON for xpub storage)
+export const SQL_CACHE_ENABLED = true;
 
 export class PortfolioAPI {
   static async getPortfolio(): Promise<Portfolio> {
@@ -390,13 +390,30 @@ export class PortfolioAPI {
 }
 
 export class DeviceQueueAPI {
+  static async getConnectedDevices(): Promise<any[]> {
+    try {
+      const devices = await invoke('get_connected_devices');
+      return devices as any[];
+    } catch (error) {
+      console.error('Failed to get connected devices:', error);
+      throw error;
+    }
+  }
+
   static async requestXpubFromDevice(deviceId: string, path: string): Promise<string> {
     try {
+      const requestId = `xpub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const request = {
-        GetXpub: { path }
+        device_id: deviceId,
+        request_id: requestId,
+        request: {
+          GetXpub: { path }
+        }
       };
-      const requestId = await invoke('add_to_device_queue', { deviceId, request });
-      return requestId as string;
+      
+      console.log('🔄 Requesting xpub from device:', { deviceId, path, requestId });
+      await invoke('add_to_device_queue', { request });
+      return requestId;
     } catch (error) {
       console.error('Failed to add xpub request to device queue:', error);
       throw error;
@@ -411,16 +428,23 @@ export class DeviceQueueAPI {
     showDisplay?: boolean
   ): Promise<string> {
     try {
+      const requestId = `addr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const request = {
-        GetAddress: { 
-          path, 
-          coin_name: coinName, 
-          script_type: scriptType, 
-          show_display: showDisplay // Will be undefined if not provided, which becomes None in Rust
+        device_id: deviceId,
+        request_id: requestId,
+        request: {
+          GetAddress: { 
+            path, 
+            coin_name: coinName, 
+            script_type: scriptType, 
+            show_display: showDisplay // Will be undefined if not provided, which becomes None in Rust
+          }
         }
       };
-      const requestId = await invoke('add_to_device_queue', { deviceId, request });
-      return requestId as string;
+      
+      console.log('🔄 Requesting address from device:', { deviceId, path, requestId });
+      await invoke('add_to_device_queue', { request });
+      return requestId;
     } catch (error) {
       console.error('Failed to add address request to device queue:', error);
       throw error;
@@ -431,9 +455,9 @@ export class DeviceQueueAPI {
     await invoke('reset_device_queue', { deviceId });
   }
 
-  static async getQueueStatus(deviceId: string): Promise<QueueStatus> {
+  static async getQueueStatus(deviceId?: string): Promise<QueueStatus> {
     try {
-      const status = await invoke('get_queue_status', { deviceId });
+      const status = await invoke('get_queue_status', { device_id: deviceId });
       return status as QueueStatus;
     } catch (error) {
       console.error('Failed to get queue status:', error);

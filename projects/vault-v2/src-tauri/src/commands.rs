@@ -132,6 +132,7 @@ pub async fn reset_device_queue(
 pub async fn add_to_device_queue(
     request: DeviceRequestWrapper,
     queue_manager: State<'_, DeviceQueueManager>,
+    last_responses: State<'_, Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>>,
 ) -> Result<String, String> {
     println!("Adding to device queue: {:?}", request);
     
@@ -181,19 +182,47 @@ pub async fn add_to_device_queue(
     
     // Process the request based on type
     let result = match request.request {
-        DeviceRequest::GetXpub { path } => {
+        DeviceRequest::GetXpub { ref path } => {
             // Parse derivation path
             let path_parts = parse_derivation_path(&path)?;
-            // For xpub, we typically want the account-level path
-            let xpub = queue_handle
-                .get_address(path_parts, "Bitcoin".to_string(), None)
+            
+            // Create GetPublicKey message for xpub
+            let get_public_key = keepkey_rust::messages::Message::GetPublicKey(
+                keepkey_rust::messages::GetPublicKey {
+                    address_n: path_parts,
+                    coin_name: Some("Bitcoin".to_string()),
+                    script_type: None, // Default script type
+                    ecdsa_curve_name: Some("secp256k1".to_string()),
+                    show_display: Some(false), // Don't show on device for xpub requests
+                    ..Default::default()
+                }
+            );
+            
+            // Send raw message to get xpub
+            let response = queue_handle
+                .send_raw(get_public_key, false)
                 .await
                 .map_err(|e| format!("Failed to get xpub: {}", e))?;
             
-            // Return xpub (in real implementation, we'd get the actual xpub from a different method)
-            Ok(format!("xpub_{}", xpub)) // Placeholder - real implementation would use proper xpub method
+            match response {
+                keepkey_rust::messages::Message::PublicKey(public_key) => {
+                    // Extract xpub from the response
+                    let xpub = public_key.xpub.unwrap_or_default();
+                    if xpub.is_empty() {
+                        Err("Device returned empty xpub".to_string())
+                    } else {
+                        Ok(xpub)
+                    }
+                }
+                keepkey_rust::messages::Message::Failure(failure) => {
+                    Err(format!("Device returned error: {}", failure.message.unwrap_or_default()))
+                }
+                _ => {
+                    Err("Unexpected response from device for xpub request".to_string())
+                }
+            }
         }
-        DeviceRequest::GetAddress { path, coin_name, script_type, show_display: _ } => {
+        DeviceRequest::GetAddress { ref path, ref coin_name, ref script_type, show_display: _ } => {
             let path_parts = parse_derivation_path(&path)?;
             let script_type_int = match script_type.as_deref() {
                 Some("p2pkh") => Some(0),
@@ -203,7 +232,7 @@ pub async fn add_to_device_queue(
             };
             
             queue_handle
-                .get_address(path_parts, coin_name, script_type_int)
+                .get_address(path_parts, coin_name.clone(), script_type_int)
                 .await
                 .map_err(|e| format!("Failed to get address: {}", e))
         }
@@ -228,7 +257,7 @@ pub async fn add_to_device_queue(
             
             Ok(features_json.to_string())
         }
-        DeviceRequest::SendRaw { message_type, message_data } => {
+        DeviceRequest::SendRaw { ref message_type, ref message_data } => {
             // Log the raw message being sent
             if let Err(e) = log_raw_device_message(
                 &request.device_id,
@@ -243,6 +272,69 @@ pub async fn add_to_device_queue(
             Err("Raw message sending not yet implemented".to_string())
         }
     };
+    
+    // Create and store the response
+    let device_response = match (&request.request, &result) {
+        (DeviceRequest::GetXpub { path }, Ok(xpub)) => {
+            DeviceResponse::Xpub {
+                request_id: request.request_id.clone(),
+                device_id: request.device_id.clone(),
+                path: path.clone(),
+                xpub: xpub.clone(),
+                success: true,
+                error: None,
+            }
+        }
+        (DeviceRequest::GetXpub { path }, Err(e)) => {
+            DeviceResponse::Xpub {
+                request_id: request.request_id.clone(),
+                device_id: request.device_id.clone(),
+                path: path.clone(),
+                xpub: String::new(),
+                success: false,
+                error: Some(e.clone()),
+            }
+        }
+        (DeviceRequest::GetAddress { path, .. }, Ok(address)) => {
+            DeviceResponse::Address {
+                request_id: request.request_id.clone(),
+                device_id: request.device_id.clone(),
+                path: path.clone(),
+                address: address.clone(),
+                success: true,
+                error: None,
+            }
+        }
+        (DeviceRequest::GetAddress { path, .. }, Err(e)) => {
+            DeviceResponse::Address {
+                request_id: request.request_id.clone(),
+                device_id: request.device_id.clone(),
+                path: path.clone(),
+                address: String::new(),
+                success: false,
+                error: Some(e.clone()),
+            }
+        }
+        _ => {
+            // For other request types, create a generic raw response
+            DeviceResponse::Raw {
+                request_id: request.request_id.clone(),
+                device_id: request.device_id.clone(),
+                response: match &result {
+                    Ok(resp) => serde_json::json!({"response": resp}),
+                    Err(e) => serde_json::json!({"error": e}),
+                },
+                success: result.is_ok(),
+                error: result.as_ref().err().cloned(),
+            }
+        }
+    };
+    
+    // Store the response for queue status queries
+    {
+        let mut responses = last_responses.lock().await;
+        responses.insert(request.device_id.clone(), device_response);
+    }
     
     // Log the response
     match &result {
@@ -289,22 +381,36 @@ pub async fn add_to_device_queue(
     }
 }
 
-/// Get the current status of all device queues
+/// Get the current status of a specific device queue
 #[tauri::command]
 pub async fn get_queue_status(
+    device_id: Option<String>,
     queue_manager: State<'_, DeviceQueueManager>,
+    last_responses: State<'_, Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>>,
 ) -> Result<QueueStatus, String> {
     let manager = queue_manager.lock().await;
+    let responses = last_responses.lock().await;
     
-    // For now, return basic status
-    // In a full implementation, we'd track queue metrics
-    Ok(QueueStatus {
-        device_id: None,
-        total_queued: 0,
-        active_operations: manager.len(),
-        status: if manager.is_empty() { "idle".to_string() } else { "active".to_string() },
-        last_response: None,
-    })
+    if let Some(device_id) = device_id {
+        // Return status for specific device
+        let last_response = responses.get(&device_id).cloned();
+        Ok(QueueStatus {
+            device_id: Some(device_id.clone()),
+            total_queued: 0, // Would need to track this per device
+            active_operations: if manager.contains_key(&device_id) { 1 } else { 0 },
+            status: if manager.contains_key(&device_id) { "active".to_string() } else { "idle".to_string() },
+            last_response,
+        })
+    } else {
+        // Return general status
+        Ok(QueueStatus {
+            device_id: None,
+            total_queued: 0,
+            active_operations: manager.len(),
+            status: if manager.is_empty() { "idle".to_string() } else { "active".to_string() },
+            last_response: None,
+        })
+    }
 }
 
 /// Get connected devices (frontend expects this name)
