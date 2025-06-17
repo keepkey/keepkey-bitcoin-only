@@ -379,7 +379,7 @@ export class DeviceQueueAPI {
     path: string, 
     coinName: string, 
     scriptType?: string,
-    showDisplay: boolean = true
+    showDisplay?: boolean
   ): Promise<string> {
     try {
       const request = {
@@ -387,7 +387,7 @@ export class DeviceQueueAPI {
           path, 
           coin_name: coinName, 
           script_type: scriptType, 
-          show_display: showDisplay 
+          show_display: showDisplay // Will be undefined if not provided, which becomes None in Rust
         }
       };
       const requestId = await invoke('add_to_device_queue', { deviceId, request });

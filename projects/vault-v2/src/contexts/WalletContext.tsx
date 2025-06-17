@@ -178,12 +178,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       const receivePath = "m/84'/0'/0'/0/0"; // Native SegWit receive path
       
       // Request address from device queue with display confirmation
+      // Following vault v1 pattern: show_display=true bypasses cache and shows on device for security
       const requestId = await DeviceQueueAPI.requestReceiveAddressFromDevice(
         device.device_id,
         receivePath,
         'Bitcoin',
         'p2wpkh',
-        true // Show on device for security
+        true // IMPORTANT: Show on device for security verification
       );
       
       console.log(`📝 Address request queued with ID: ${requestId}`);

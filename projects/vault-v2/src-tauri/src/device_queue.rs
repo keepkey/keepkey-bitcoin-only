@@ -14,7 +14,7 @@ pub enum DeviceRequest {
         path: String,
         coin_name: String,
         script_type: Option<String>,
-        show_display: bool,
+        show_display: Option<bool>,
     },
 }
 
@@ -130,11 +130,12 @@ impl MockDeviceQueue {
                     self.last_response = Some(response);
                 }
                 DeviceRequest::GetAddress { path, coin_name: _, script_type, show_display } => {
+                    let show_on_device = show_display.unwrap_or(false);
                     println!("🏠 Processing address request for device {} path {} (show_display: {})", 
-                        request_wrapper.device_id, path, show_display);
+                        request_wrapper.device_id, path, show_on_device);
                     
                     // Mock device display confirmation delay (longer for show_display)
-                    let delay = if *show_display { 
+                    let delay = if show_on_device { 
                         Duration::from_secs(3) // Simulate user confirmation on device
                     } else { 
                         Duration::from_secs(1) 
