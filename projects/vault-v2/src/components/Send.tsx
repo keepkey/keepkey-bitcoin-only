@@ -14,13 +14,20 @@ import {
 import { FaArrowLeft, FaQrcode, FaPaperPlane } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
+import { PioneerAPI } from '../lib/api';
 
 interface SendPageProps {
   onBack: () => void;
 }
 
+interface FeeRates {
+  slow: number;
+  medium: number;
+  fast: number;
+}
+
 const Send: React.FC<SendPageProps> = ({ onBack }) => {
-  const { portfolio, sendAsset, loading: walletLoading, error: walletError } = useWallet();
+  const { portfolio, sendAsset, loading: walletLoading, error: walletError, selectAsset } = useWallet();
   
   // State according to planning document 
   const [recipientAddress, setRecipientAddress] = useState('');
@@ -32,18 +39,81 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const [addressValidation, setAddressValidation] = useState<{ valid: boolean; error?: string }>({ valid: false });
   const [amountCurrency, setAmountCurrency] = useState<'BTC' | 'USD'>('BTC');
   const [btcPrice, setBtcPrice] = useState<number>(43000);
+  
+  // Fee-related state
+  const [feeRates, setFeeRates] = useState<FeeRates>({ slow: 1, medium: 5, fast: 10 }); // Fallback rates
+  const [loadingFees, setLoadingFees] = useState(true);
+  const [feeError, setFeeError] = useState<string | null>(null);
 
-  // Get BTC asset from portfolio
-  const btcAsset = portfolio?.assets.find(asset => asset.symbol === 'BTC');
-  const availableBalance = btcAsset ? parseFloat(btcAsset.balance) : 0;
+  // Get BTC balance from portfolio (sum all BTC assets like Portfolio component does)
+  const btcAssets = portfolio?.assets.filter(asset => 
+    asset.caip === 'bip122:000000000019d6689c085ae165831e93/slip44:0'
+  ) || [];
+  const availableBalance = btcAssets.reduce((sum, asset) => sum + parseFloat(asset.balance), 0);
+  
+  // Debug logging to help troubleshoot balance issues
+  console.log('🔍 Send component balance debug:', {
+    walletLoading,
+    portfolio: portfolio ? 'loaded' : 'null',
+    totalAssets: portfolio?.assets.length || 0,
+    allAssetCAIPs: portfolio?.assets.map(a => a.caip) || [],
+    btcAssets: btcAssets.length,
+    availableBalance,
+    btcAssetsDetails: btcAssets.map(a => ({ caip: a.caip, balance: a.balance, symbol: a.symbol })),
+    expectedCAIP: 'bip122:000000000019d6689c085ae165831e93/slip44:0'
+  });
+  
+  // Get first BTC asset for price info (they should all have same price)
+  const btcAsset = btcAssets[0] || null;
+
+  // Load fee rates from Pioneer API
+  useEffect(() => {
+    const loadFeeRates = async () => {
+      if (btcAssets.length === 0) return;
+      
+      try {
+        setLoadingFees(true);
+        setFeeError(null);
+        
+        console.log('💰 Loading real fee rates from Pioneer for:', btcAssets[0].caip);
+        const feeData = await PioneerAPI.getFeeRates(btcAssets[0].caip);
+        
+        const realFeeRates: FeeRates = {
+          slow: feeData.average || 1,
+          medium: feeData.fast || 5,
+          fast: feeData.fastest || 10
+        };
+        
+        setFeeRates(realFeeRates);
+        console.log('✅ Real fee rates loaded:', realFeeRates);
+        
+      } catch (error) {
+        console.warn('⚠️ Failed to load real fee rates, using fallback:', error);
+        setFeeError('Unable to load current fee rates, using estimates');
+        // Keep fallback rates
+      } finally {
+        setLoadingFees(false);
+      }
+    };
+
+    loadFeeRates();
+  }, [btcAssets.length]);
 
   // Load initial data
   useEffect(() => {
     // Set BTC price from portfolio if available
     if (btcAsset && btcAsset.price_usd) {
+      console.log('🔍 Setting BTC price from portfolio:', btcAsset.price_usd);
       setBtcPrice(btcAsset.price_usd);
+    } else {
+      console.log('🔍 BTC price not available, using default:', btcPrice);
     }
-  }, [btcAsset]);
+    
+    // Ensure BTC asset is selected for sending
+    if (btcAssets.length > 0 && btcAsset) {
+      selectAsset(btcAsset);
+    }
+  }, [btcAsset, btcAssets.length, selectAsset]);
 
   // Validate address when it changes
   useEffect(() => {
@@ -61,9 +131,18 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
   const handleMaxAmount = () => {
     if (availableBalance > 0) {
-      // Reserve some amount for fees (simplified)
-      const maxAmount = Math.max(0, availableBalance - 0.0001); // Reserve 0.0001 BTC for fees
-      setAmount(maxAmount.toFixed(8));
+      // Calculate more accurate fee estimate based on selected fee rate
+      const selectedFeeRate = feeRates[feeRate];
+      const estimatedFeeInBtc = (250 * selectedFeeRate) / 100000000; // Assume ~250 vBytes for typical tx
+      const maxAmountInBtc = Math.max(0, availableBalance - estimatedFeeInBtc);
+      
+      // Convert to display currency
+      if (amountCurrency === 'USD') {
+        const maxAmountInUsd = convertBtcToUsd(maxAmountInBtc);
+        setAmount(maxAmountInUsd.toFixed(2));
+      } else {
+        setAmount(maxAmountInBtc.toFixed(8));
+      }
     }
   };
 
@@ -73,14 +152,29 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       return;
     }
 
-    const sendAmount = parseFloat(amount);
-    if (sendAmount <= 0) {
+    const inputAmount = parseFloat(amount);
+    if (inputAmount <= 0) {
       setError('Amount must be greater than 0');
       return;
     }
 
-    if (sendAmount > availableBalance) {
-      setError('Insufficient balance');
+    // Convert to BTC for validation if in USD mode
+    const sendAmountInBtc = amountCurrency === 'USD' ? convertUsdToBtc(inputAmount) : inputAmount;
+    
+    console.log('🔍 Send validation debug:', {
+      inputAmount,
+      amountCurrency,
+      sendAmountInBtc,
+      availableBalance,
+      btcPrice,
+      wouldPass: sendAmountInBtc <= availableBalance
+    });
+    
+    if (sendAmountInBtc > availableBalance) {
+      const availableInDisplayCurrency = amountCurrency === 'USD' 
+        ? convertBtcToUsd(availableBalance) 
+        : availableBalance;
+      setError(`Insufficient balance. Available: ${availableInDisplayCurrency.toFixed(amountCurrency === 'USD' ? 2 : 8)} ${amountCurrency}`);
       return;
     }
 
@@ -89,18 +183,15 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       setError(null);
       setSuccess(null);
 
-      // Use WalletContext to send
-      const success = await sendAsset(recipientAddress, amount);
+      // Use WalletContext to send (always pass BTC amount)
+      const btcAmountToSend = amountCurrency === 'USD' ? convertUsdToBtc(inputAmount) : inputAmount;
+      await sendAsset(recipientAddress, btcAmountToSend.toFixed(8));
       
-      if (success) {
-        setSuccess(`Transaction sent successfully! Amount: ${amount} BTC to ${recipientAddress.substring(0, 20)}...`);
-        
-        // Reset form
-        setRecipientAddress('');
-        setAmount('');
-      } else {
-        throw new Error('Transaction failed');
-      }
+      setSuccess(`Transaction sent successfully! Amount: ${amount} ${amountCurrency} to ${recipientAddress.substring(0, 20)}...`);
+      
+      // Reset form
+      setRecipientAddress('');
+      setAmount('');
 
     } catch (error) {
       console.error('Error sending transaction:', error);
@@ -193,6 +284,16 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
           <Text color="gray.400" fontSize="sm">
             ≈ ${convertBtcToUsd(availableBalance).toFixed(2)} USD
           </Text>
+          {/* Show balance warning if zero */}
+          {availableBalance === 0 && (
+            <Text color="yellow.400" fontSize="xs" mt={2}>
+              ⚠️ No balance available. Please ensure your wallet is synced.
+            </Text>
+          )}
+          {/* Show currency info */}
+          <Text color="gray.500" fontSize="xs" mt={1}>
+            Enter amount in {amountCurrency}. Click {amountCurrency} button to switch currency.
+          </Text>
         </Box>
 
         {/* Send Form */}
@@ -245,13 +346,13 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
                 </Text>
                 <Button
                   size="xs"
-                  variant="ghost"
-                  color="blue.400"
+                  variant="solid"
+                  colorScheme={amountCurrency === 'BTC' ? 'orange' : 'green'}
                   onClick={toggleCurrency}
                   fontWeight="bold"
-                  _hover={{ color: "blue.300" }}
+                  _hover={{ opacity: 0.8 }}
                 >
-                  ({amountCurrency})
+                  {amountCurrency}
                 </Button>
               </HStack>
               <Button
@@ -275,6 +376,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
               _focus={{ borderColor: "blue.400" }}
               type="number"
               step={amountCurrency === 'BTC' ? "0.00000001" : "0.01"}
+              min="0"
             />
             <Text fontSize="xs" color="gray.500" mt={1}>
               {amount && parseFloat(amount) > 0 && (
@@ -288,14 +390,27 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             </Text>
           </Box>
 
-          {/* Fee Selection */}
+          {/* Fee Selection - Now with real rates! */}
           <Box w="100%">
-            <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
-              Transaction Fee
-            </Text>
+            <HStack justify="space-between" align="center" mb={2}>
+              <Text color="gray.300" fontSize="sm" fontWeight="medium">
+                Transaction Fee
+              </Text>
+              {loadingFees && (
+                <HStack gap={1}>
+                  <Spinner size="xs" color="blue.400" />
+                  <Text fontSize="xs" color="gray.500">Loading rates...</Text>
+                </HStack>
+              )}
+              {feeError && (
+                <Text fontSize="xs" color="yellow.400">Using estimates</Text>
+              )}
+              {!loadingFees && !feeError && (
+                <Text fontSize="xs" color="green.400">✓ Live rates</Text>
+              )}
+            </HStack>
             <HStack gap={1}>
               {(['slow', 'medium', 'fast'] as const).map((preset) => {
-                const feeRates = { slow: 1, medium: 5, fast: 10 };
                 const presetFeeRate = feeRates[preset];
                 
                 return (
@@ -309,15 +424,25 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
                     textTransform="capitalize"
                     py={3}
                     px={2}
+                    disabled={loadingFees}
                   >
                     <VStack gap={0} align="center">
                       <Text fontSize="xs" fontWeight="bold">{preset}</Text>
-                      <Text fontSize="2xs" opacity={0.8}>{presetFeeRate} sat/vB</Text>
+                      <Text fontSize="2xs" opacity={0.8}>
+                        {loadingFees ? '...' : `${Math.round(presetFeeRate)} sat/vB`}
+                      </Text>
                     </VStack>
                   </Button>
                 );
               })}
             </HStack>
+            {/* Fee estimate in BTC/USD */}
+            {amount && parseFloat(amount) > 0 && !loadingFees && (
+              <Text fontSize="xs" color="gray.500" mt={2} textAlign="center">
+                Estimated fee: ~{((250 * feeRates[feeRate]) / 100000000).toFixed(8)} BTC 
+                (≈${((250 * feeRates[feeRate]) / 100000000 * btcPrice).toFixed(2)})
+              </Text>
+            )}
           </Box>
 
           {/* Error Display */}
@@ -342,7 +467,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             size="lg"
             width="100%"
             onClick={handleSend}
-            disabled={!addressValidation.valid || !amount || loading || !btcAsset}
+            disabled={!addressValidation.valid || !amount || loading || btcAssets.length === 0 || availableBalance === 0}
           >
             <HStack gap={2}>
               {loading ? <Spinner size="sm" /> : <FaPaperPlane />}

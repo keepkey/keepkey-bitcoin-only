@@ -111,9 +111,20 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   }
 
   // Find BTC balance (sum all BTC balances if multiple, or 0 if none)
-  const btcTotal = portfolio.assets
-    .filter(asset => asset.caip === 'bip122:000000000019d6689c085ae165831e93/slip44:0')
-    .reduce((sum, asset) => sum + parseFloat(asset.balance), 0);
+  const btcAssets = portfolio.assets
+    .filter(asset => asset.caip === 'bip122:000000000019d6689c085ae165831e93/slip44:0');
+  const btcTotal = btcAssets.reduce((sum, asset) => sum + parseFloat(asset.balance), 0);
+
+  // Debug logging to help troubleshoot - compare with Send component
+  console.log('🔍 Portfolio component balance debug:', {
+    portfolio: portfolio ? 'loaded' : 'null',
+    totalAssets: portfolio?.assets.length || 0,
+    allAssetCAIPs: portfolio?.assets.map(a => a.caip) || [],
+    btcAssets: btcAssets.length,
+    btcTotal,
+    btcAssetsDetails: btcAssets.map(a => ({ caip: a.caip, balance: a.balance, symbol: a.symbol })),
+    expectedCAIP: 'bip122:000000000019d6689c085ae165831e93/slip44:0'
+  });
 
   return (
     <Flex align="center" justify="center" h="100%" bg="transparent">

@@ -346,13 +346,49 @@ export class PortfolioAPI {
   }
 
   static async sendAsset(asset: Asset, toAddress: string, amount: string): Promise<boolean> {
+    const tag = TAG + " | sendAsset | ";
+    
     try {
-      console.log(TAG, 'sendAsset params:', { asset, toAddress, amount });
-      // TODO: Implement real transaction sending through Pioneer/device
-      return true;
+      console.log(tag, 'Send transaction request:', { 
+        asset: asset.symbol, 
+        caip: asset.caip,
+        toAddress, 
+        amount,
+        availableBalance: asset.balance
+      });
+
+      // Validate inputs
+      if (!toAddress || !amount) {
+        throw new Error('Missing required parameters: address and amount');
+      }
+
+      const sendAmount = parseFloat(amount);
+      const availBalance = parseFloat(asset.balance);
+
+      if (sendAmount <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
+
+      if (sendAmount > availBalance) {
+        throw new Error(`Insufficient balance. Available: ${asset.balance} ${asset.symbol}, Requested: ${amount} ${asset.symbol}`);
+      }
+
+      // TODO: Implement actual transaction building and signing
+      console.warn(tag, '⚠️ TRANSACTION NOT IMPLEMENTED - This would:');
+      console.warn(tag, '  1. Call Pioneer API to build transaction');
+      console.warn(tag, '  2. Get UTXOs for the xpub');
+      console.warn(tag, '  3. Build PSBT with proper fees');
+      console.warn(tag, '  4. Send to device queue for signing');
+      console.warn(tag, '  5. Broadcast signed transaction');
+      console.warn(tag, '  6. Return transaction ID');
+
+      // For now, return false to indicate the feature is not implemented
+      // This prevents the UI from showing "success" when nothing actually happened
+      throw new Error('❌ Transaction sending not yet implemented. This is a placeholder.');
+
     } catch (error) {
-      console.error('Send transaction error:', error);
-      return false;
+      console.error(tag, 'Send transaction error:', error);
+      throw error;
     }
   }
 

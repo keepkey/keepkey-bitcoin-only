@@ -332,17 +332,19 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       return false;
     }
 
-    console.log(`📤 Sending ${amount} ${selectedAsset.symbol} to ${toAddress}`);
-    const success = await PortfolioAPI.sendAsset(selectedAsset, toAddress, amount);
-    
-    if (success) {
+    try {
+      console.log(`📤 Sending ${amount} ${selectedAsset.symbol} to ${toAddress}`);
+      await PortfolioAPI.sendAsset(selectedAsset, toAddress, amount);
+      
       console.log('✅ Send transaction successful');
       await refreshPortfolio();
-    } else {
-      console.error('❌ Send transaction failed');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Send transaction failed:', error);
+      // Re-throw the error so the UI can display the specific error message
+      throw error;
     }
-    
-    return success;
   };
 
   const getReceiveAddress = async (): Promise<string | null> => {
