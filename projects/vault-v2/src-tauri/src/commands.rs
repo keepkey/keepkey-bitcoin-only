@@ -1,4 +1,5 @@
 use tauri::State;
+use tauri::Manager;
 use std::sync::Arc;
 use keepkey_rust::{
     device_queue::{DeviceQueueFactory, DeviceQueueHandle},
@@ -163,9 +164,33 @@ pub async fn get_device_address(
 
 /// Get connected devices (frontend expects this name, not list_connected_devices)
 #[tauri::command]
-pub async fn get_connected_devices() -> Result<Vec<FriendlyUsbDevice>, String> {
+pub async fn get_connected_devices() -> Result<Vec<serde_json::Value>, String> {
     let devices = keepkey_rust::features::list_connected_devices();
-    Ok(devices)
+    
+    // Convert to the structure the frontend expects
+    // NOTE: We don't fetch features here to avoid crashes - features should be fetched separately
+    let json_devices = devices.into_iter()
+        .filter(|device| device.is_keepkey)
+        .map(|device| {
+            // Create structure that matches what the frontend expects
+            // Features will be null initially - they should be fetched via separate calls
+            serde_json::json!({
+                "device": {
+                    "unique_id": device.unique_id,
+                    "name": device.name,
+                    "vid": device.vid,
+                    "pid": device.pid,
+                    "manufacturer": device.manufacturer,
+                    "product": device.product,
+                    "serial_number": device.serial_number,
+                    "is_keepkey": device.is_keepkey,
+                },
+                "features": null, // Don't fetch features during enumeration to avoid crashes
+            })
+        })
+        .collect();
+    
+    Ok(json_devices)
 }
 
 /// Check if vault exists (needed by frontend)
@@ -191,4 +216,44 @@ pub async fn get_queue_status() -> Result<serde_json::Value, String> {
 pub async fn get_blocking_actions() -> Result<Vec<serde_json::Value>, String> {
     // Return empty array for now - can be enhanced later
     Ok(vec![])
+}
+
+/// Get device features by device ID (safe individual fetch)
+#[tauri::command]
+pub async fn get_device_features_by_id(device_id: String) -> Result<Option<DeviceFeatures>, String> {
+    println!("🔍 Getting features for device: {}", device_id);
+    
+    // Use the safe high-level API
+    match keepkey_rust::features::get_device_features_by_id(&device_id) {
+        Ok(features) => {
+            println!("✅ Successfully got features for device {}: firmware v{}", device_id, features.version);
+            Ok(Some(features))
+        }
+        Err(e) => {
+            println!("⚠️ Failed to get features for device {}: {}", device_id, e);
+            // Return None instead of error to avoid frontend crashes
+            Ok(None)
+        }
+    }
+}
+
+/// Shutdown background tasks manually (useful for preventing conflicts)
+#[tauri::command]
+pub async fn shutdown_background_tasks(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    println!("🛑 Manual shutdown of background tasks requested");
+    
+    // Stop event controller if it exists in app state
+    if let Some(controller_state) = app.try_state::<std::sync::Arc<std::sync::Mutex<crate::event_controller::EventController>>>() {
+        if let Ok(mut controller) = controller_state.lock() {
+            controller.stop();
+            println!("✅ Event controller stopped manually");
+            Ok(())
+        } else {
+            Err("Failed to lock event controller for shutdown".to_string())
+        }
+    } else {
+        Err("Event controller not found in app state".to_string())
+    }
 } 

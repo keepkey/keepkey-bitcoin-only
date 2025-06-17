@@ -100,7 +100,10 @@ pub fn run() {
             ));
             
             app.manage(device_queue_manager);
-            event_controller::spawn_event_controller(&app.handle());
+            
+            // Start event controller with proper management
+            let _event_controller = event_controller::spawn_event_controller(&app.handle());
+            
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -111,13 +114,15 @@ pub fn run() {
             restart_backend_startup,
             // Real device operations
             commands::get_device_features,
+            commands::get_device_features_by_id,
             commands::get_device_address,
             commands::list_connected_devices,
             commands::get_connected_devices,
             commands::check_vault_exists,
             commands::get_queue_status,
             commands::get_blocking_actions,
-            commands::debug_device_communication
+            commands::debug_device_communication,
+            commands::shutdown_background_tasks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

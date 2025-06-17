@@ -26,6 +26,7 @@ serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"  # For cancellation tokens and proper shutdown handling
 uuid = { version = "1.0", features = ["v4"] }
 hex = "0.4"  # Needed for hash encoding in application layer
 # Note: rusb removed - handled internally by keepkey-rust

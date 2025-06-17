@@ -2,6 +2,10 @@ use anyhow::{anyhow, Result};
 use hex;
 use rusb::{Device, GlobalContext};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+use once_cell::sync::Lazy;
 
 use crate::messages::{Initialize, Message};
 use crate::transport::{ProtocolAdapter, UsbTransport, HidTransport};
@@ -10,6 +14,32 @@ use crate::friendly_usb::FriendlyUsbDevice;
 
 const TAG: &str = " | features | ";
 const DEVICE_IDS: &[(u16, u16)] = &[(0x2b24, 0x0001), (0x2b24, 0x0002)];
+
+/// Device cache to maintain stable device identities across inconsistent USB enumeration
+#[derive(Debug, Clone)]
+struct CachedDeviceInfo {
+    stable_id: String,
+    vid: u16,
+    pid: u16,
+    manufacturer: Option<String>,
+    product: Option<String>,
+    serial_number: Option<String>,
+    bus: u8,
+    address: u8,
+    last_seen: std::time::Instant,
+}
+
+/// Global device cache to remember stable device information
+static DEVICE_CACHE: Lazy<Arc<Mutex<HashMap<String, CachedDeviceInfo>>>> = 
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+/// Clean expired entries from the device cache (older than 30 seconds)
+fn clean_device_cache() {
+    if let Ok(mut cache) = DEVICE_CACHE.lock() {
+        let now = std::time::Instant::now();
+        cache.retain(|_, info| now.duration_since(info.last_seen).as_secs() < 30);
+    }
+}
 
 // List usb devices
 // This is kept internal to this module for now.
@@ -318,44 +348,72 @@ pub fn get_device_features_impl() -> Result<DeviceFeatures> {
 pub fn get_device_features_with_fallback(target_device: &FriendlyUsbDevice) -> Result<DeviceFeatures> {
     log::info!("{TAG} Getting features for device with fallback: {} ({})", target_device.name, target_device.unique_id);
     
-    // For older KeepKey devices (PID 0x0001), try HID directly
-    if target_device.pid == 0x0001 {
-        log::info!("{TAG} Detected older KeepKey device (PID 0x0001), trying HID directly");
-        match get_device_features_via_hid(target_device) {
-            Ok(features) => {
-                log::info!("{TAG} Successfully got features via HID for older device {}", target_device.unique_id);
-                return Ok(features);
-            }
-            Err(hid_err) => {
-                log::warn!("{TAG} HID direct attempt failed for older device {}: {}, falling back to USB", 
-                          target_device.unique_id, hid_err);
-                // Fall through to try USB as well
-            }
-        }
-    }
+    // Add a small delay to let the device stabilize after enumeration
+    std::thread::sleep(std::time::Duration::from_millis(100));
     
-    // Try USB transport
-    match get_device_features_for_device(target_device) {
-        Ok(features) => Ok(features),
-        Err(e) => {
-            let error_str = e.to_string();
-            
-            // Check if it's a permission error or any other error
-            log::warn!("{TAG} USB failed for device {}: {}, trying HID fallback", 
-                      target_device.unique_id, error_str);
-            
-            // Try HID transport as fallback
+    let mut last_error = None;
+    
+    // Try up to 3 times with delays to handle temporary device unavailability
+    for attempt in 1..=3 {
+        log::info!("{TAG} Attempt {} of 3 for device {}", attempt, target_device.unique_id);
+        
+        // For older KeepKey devices (PID 0x0001), try HID directly
+        if target_device.pid == 0x0001 {
+            log::info!("{TAG} Detected older KeepKey device (PID 0x0001), trying HID directly");
             match get_device_features_via_hid(target_device) {
                 Ok(features) => {
-                    log::info!("{TAG} Successfully got features via HID for device {}", target_device.unique_id);
+                    log::info!("{TAG} Successfully got features via HID for older device {} on attempt {}", target_device.unique_id, attempt);
                     return Ok(features);
                 }
                 Err(hid_err) => {
-                    log::error!("{TAG} HID fallback also failed for device {}: {}", target_device.unique_id, hid_err);
-                    return Err(anyhow!("Failed with both USB ({}) and HID ({})", e, hid_err));
+                    log::warn!("{TAG} HID direct attempt failed for older device {} on attempt {}: {}", 
+                              target_device.unique_id, attempt, hid_err);
+                    last_error = Some(hid_err);
+                    // Don't try USB for older devices, just retry HID
+                    if attempt < 3 {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        continue;
+                    }
+                }
+            }
+        } else {
+            // For newer devices, try USB first, then HID
+            match get_device_features_for_device(target_device) {
+                Ok(features) => {
+                    log::info!("{TAG} Successfully got features via USB for device {} on attempt {}", target_device.unique_id, attempt);
+                    return Ok(features);
+                }
+                Err(usb_err) => {
+                    log::warn!("{TAG} USB failed for device {} on attempt {}: {}, trying HID fallback", 
+                              target_device.unique_id, attempt, usb_err);
+                    
+                    // Try HID transport as fallback
+                    match get_device_features_via_hid(target_device) {
+                        Ok(features) => {
+                            log::info!("{TAG} Successfully got features via HID for device {} on attempt {}", target_device.unique_id, attempt);
+                            return Ok(features);
+                        }
+                        Err(hid_err) => {
+                            log::warn!("{TAG} HID fallback also failed for device {} on attempt {}: {}", target_device.unique_id, attempt, hid_err);
+                            last_error = Some(anyhow!("Failed with both USB ({}) and HID ({})", usb_err, hid_err));
+                        }
+                    }
                 }
             }
         }
+        
+        // Wait before retrying (exponential backoff)
+        if attempt < 3 {
+            let delay_ms = 250 * attempt as u64; // 250ms, 500ms
+            log::info!("{TAG} Waiting {}ms before retry for device {}", delay_ms, target_device.unique_id);
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+        }
+    }
+    
+    // All attempts failed
+    match last_error {
+        Some(err) => Err(err),
+        None => Err(anyhow!("All communication attempts failed for device {}", target_device.unique_id))
     }
 }
 
@@ -591,11 +649,140 @@ fn device_to_friendly(device: &rusb::Device<rusb::GlobalContext>) -> FriendlyUsb
 /// # Returns
 /// - `Vec<FriendlyUsbDevice>` containing all connected KeepKey devices with friendly names
 pub fn list_connected_devices() -> Vec<FriendlyUsbDevice> {
+    // Clean expired cache entries first
+    clean_device_cache();
+    
+    // Add a small delay to allow USB enumeration to stabilize
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    
     let devices = list_devices();
-    devices
-        .iter()
-        .map(device_to_friendly)
-        .collect()
+    let mut current_devices = Vec::new();
+    let mut seen_bus_addr = std::collections::HashSet::new();
+    
+    for device in devices.iter() {
+        // Only process KeepKey devices
+        if let Ok(desc) = device.device_descriptor() {
+            if desc.vendor_id() == 0x2B24 { // KEEPKEY_VID
+                let bus = device.bus_number();
+                let addr = device.address();
+                let bus_addr_key = format!("{}:{}", bus, addr);
+                
+                // Skip if we've already processed this bus:address combination
+                if seen_bus_addr.contains(&bus_addr_key) {
+                    continue;
+                }
+                seen_bus_addr.insert(bus_addr_key.clone());
+                
+                let friendly_device = device_to_friendly_with_cache(device);
+                current_devices.push(friendly_device);
+            }
+        }
+    }
+    
+    current_devices
+}
+
+/// Convert a USB device to FriendlyUsbDevice with caching for stability
+fn device_to_friendly_with_cache(device: &rusb::Device<rusb::GlobalContext>) -> FriendlyUsbDevice {
+    let desc = device.device_descriptor().unwrap();
+    let vid = desc.vendor_id();
+    let pid = desc.product_id();
+    let bus = device.bus_number();
+    let addr = device.address();
+    let bus_addr_key = format!("{}:{}", bus, addr);
+    
+    // Check cache first for this bus:address combination
+    if let Ok(cache) = DEVICE_CACHE.lock() {
+        for (_, cached_info) in cache.iter() {
+            let cached_bus_addr = format!("{}:{}", cached_info.bus, cached_info.address);
+            if cached_bus_addr == bus_addr_key {
+                // Found cached info for this bus:address, return stable device
+                return FriendlyUsbDevice::new(
+                    cached_info.stable_id.clone(),
+                    cached_info.vid,
+                    cached_info.pid,
+                    cached_info.manufacturer.clone(),
+                    cached_info.product.clone(),
+                    cached_info.serial_number.clone(),
+                );
+            }
+        }
+    }
+    
+    // Not in cache, try to read device information
+    let (manufacturer, product, serial_number) = if let Ok(handle) = device.open() {
+        let timeout = std::time::Duration::from_millis(100);
+        let langs = handle.read_languages(timeout).unwrap_or_default();
+        
+        if let Some(&lang) = langs.first() {
+            let manuf = if desc.manufacturer_string_index().is_some() {
+                handle.read_manufacturer_string(lang, &desc, timeout).ok()
+            } else {
+                None
+            };
+            
+            let prod = if desc.product_string_index().is_some() {
+                handle.read_product_string(lang, &desc, timeout).ok()
+            } else {
+                None
+            };
+            
+            let serial = if desc.serial_number_string_index().is_some() {
+                handle.read_serial_number_string(lang, &desc, timeout).ok()
+            } else {
+                None
+            };
+            
+            (manuf, prod, serial)
+        } else {
+            (None, None, None)
+        }
+    } else {
+        // If it's a KeepKey device and we can't open it, still add it with default values
+        if vid == 0x2B24 { // KEEPKEY_VID
+            log::warn!("Could not open KeepKey device {:04x}:{:04x}. Using default values.", vid, pid);
+            (Some("KeyHodlers, LLC".to_string()), Some("KeepKey".to_string()), None)
+        } else {
+            (None, None, None)
+        }
+    };
+    
+    // Determine stable unique ID - prefer serial if available
+    let stable_id = if let Some(ref serial) = serial_number {
+        if !serial.is_empty() {
+            serial.clone()
+        } else {
+            format!("keepkey_{:04x}_{:04x}_bus{}_addr{}", vid, pid, bus, addr)
+        }
+    } else {
+        format!("keepkey_{:04x}_{:04x}_bus{}_addr{}", vid, pid, bus, addr)
+    };
+    
+    // Cache this device information
+    if let Ok(mut cache) = DEVICE_CACHE.lock() {
+        let cache_key = bus_addr_key.clone();
+        let cached_info = CachedDeviceInfo {
+            stable_id: stable_id.clone(),
+            vid,
+            pid,
+            manufacturer: manufacturer.clone(),
+            product: product.clone(),
+            serial_number: serial_number.clone(),
+            bus,
+            address: addr,
+            last_seen: std::time::Instant::now(),
+        };
+        cache.insert(cache_key, cached_info);
+    }
+    
+    FriendlyUsbDevice::new(
+        stable_id,
+        vid,
+        pid,
+        manufacturer,
+        product,
+        serial_number,
+    )
 }
 
 /// Get device features by device ID using high-level API
