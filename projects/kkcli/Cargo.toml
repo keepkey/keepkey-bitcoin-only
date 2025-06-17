@@ -11,7 +11,7 @@ edition = "2021"
 strip = "symbols"
 
 [dependencies]
-keepkey-rest = { path = "../keepkey-rest" }
+
 anyhow = "1.0.58"
 base64 = "0.21"
 bitcoin = { version = "0.30", features = ["serde", "std"] }

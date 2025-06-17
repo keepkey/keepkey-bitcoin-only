@@ -507,46 +507,22 @@ pub(crate) async fn generate_utxo_address_impl(
     }
 }
 
-pub(crate) async fn osmosis_sign_lp_remove_impl(_request: routes::CosmosSignRequest) -> Result<routes::CosmosSignResponse> {
-    error!("Osmosis sign LP remove not implemented");
-    Err(anyhow::anyhow!("Not implemented"))
-}
+// Removed: Osmosis sign LP remove (Cosmos) implementation - not supported in Bitcoin-only build.
 
-pub(crate) async fn osmosis_sign_delegate_impl(_request: routes::CosmosSignRequest) -> Result<routes::CosmosSignResponse> {
-    error!("Osmosis sign delegate not implemented");
-    Err(anyhow::anyhow!("Not implemented"))
-}
+// Removed: Osmosis sign delegate (Cosmos) implementation - not supported in Bitcoin-only build.
 
-pub(crate) async fn osmosis_sign_undelegate_impl(_request: routes::CosmosSignRequest) -> Result<routes::CosmosSignResponse> {
-    error!("Osmosis sign undelegate not implemented");
-    Err(anyhow::anyhow!("Not implemented"))
-}
+// Removed: Osmosis sign undelegate (Cosmos) implementation - not supported in Bitcoin-only build.
 
-pub(crate) async fn osmosis_sign_redelegate_impl(_request: routes::CosmosSignRequest) -> Result<routes::CosmosSignResponse> {
-    error!("Osmosis sign redelegate not implemented");
-    Err(anyhow::anyhow!("Not implemented"))
-}
+// Removed: Osmosis sign redelegate (Cosmos) implementation - not supported in Bitcoin-only build.
 
-pub(crate) async fn osmosis_sign_rewards_impl(_request: routes::CosmosSignRequest) -> Result<routes::CosmosSignResponse> {
-    error!("Osmosis sign rewards not implemented");
-    Err(anyhow::anyhow!("Not implemented"))
-}
+// Removed: Osmosis sign rewards (Cosmos) implementation - not supported in Bitcoin-only build.
 
-pub(crate) async fn osmosis_sign_ibc_transfer_impl(_request: routes::CosmosSignRequest) -> Result<routes::CosmosSignResponse> {
-    error!("Osmosis sign IBC transfer not implemented");
-    Err(anyhow::anyhow!("Not implemented"))
-}
+// Removed: Osmosis sign IBC transfer (Cosmos) implementation - not supported in Bitcoin-only build.
 
 // Binance implementations
-pub(crate) async fn generate_bnb_address_impl(_request: routes::CosmosAddressRequest) -> Result<String> {
-    error!("Binance Chain address generation not implemented");
-    Err(anyhow::anyhow!("Not implemented"))
-}
+// Removed: Binance Chain address generation implementation - not supported in Bitcoin-only build.
 
-pub(crate) async fn binance_sign_tx_impl(_request: routes::BinanceSignRequest) -> anyhow::Result<routes::BinanceSignResponse> {
-    error!("Binance sign transaction not implemented");
-    Err(anyhow::anyhow!("Not implemented"))
-}
+// Removed: Binance sign transaction implementation - not supported in Bitcoin-only build.
 
 // Bitcoin implementations
 // NOTE: This old implementation is deprecated - use impl_bitcoin::bitcoin_sign_tx_impl instead
@@ -918,7 +894,8 @@ fn parse_bitcoin_output_script_type(script_type: &str) -> anyhow::Result<message
 // NOTE: bitcoin_sign_message_impl and bitcoin_verify_message_impl are now in impl_bitcoin.rs
 
 // Ethereum implementations
-pub(crate) async fn ethereum_sign_tx_impl(request: routes::EthereumSignRequest) -> anyhow::Result<routes::EthereumSignResponse> {
+// Removed: Ethereum sign transaction implementation - not supported in Bitcoin-only build.
+// pub(crate) async fn ethereum_sign_tx_impl(request: routes::EthereumSignRequest) -> anyhow::Result<routes::EthereumSignResponse> {
     info!("🚀 Starting Ethereum transaction signing");
     
     // Get the USB device - fail if not available

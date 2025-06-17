@@ -112,13 +112,10 @@ pub fn run() {
             vault_change_view,
             vault_open_support,
             restart_backend_startup,
-            // Real device operations
-            commands::get_device_features,
+            //Device
             commands::get_device_features_by_id,
-            commands::get_device_address,
             commands::list_connected_devices,
             commands::get_connected_devices,
-            commands::check_vault_exists,
             commands::get_queue_status,
             commands::get_blocking_actions,
             commands::debug_device_communication,

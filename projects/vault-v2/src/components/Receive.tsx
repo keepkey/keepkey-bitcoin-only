@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Heading, 
@@ -8,10 +8,10 @@ import {
   Button, 
   IconButton,
   Flex,
-  Spinner
+  Spinner // Only if used in JSX
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaCopy, FaCheck, FaEye } from 'react-icons/fa';
-import { SiBitcoin } from 'react-icons/si';
+import { FaArrowLeft, FaCopy, FaCheck, FaEye } from 'react-icons/fa'; // FaEye only if used
+import { SiBitcoin } from 'react-icons/si'; // Only if used in JSX
 import QRCode from 'react-qr-code';
 import { useWallet } from '../contexts/WalletContext';
 
@@ -20,64 +20,47 @@ interface ReceiveProps {
 }
 
 const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
-  const { portfolio, getReceiveAddress, selectAsset, loading: walletLoading } = useWallet();
+  const { portfolio, getReceiveAddress, selectAsset, loading: walletLoading, selectedAsset } = useWallet();
   
   const [address, setAddress] = useState<string>('');
   const [hasCopied, setHasCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shouldGenerate, setShouldGenerate] = useState(false);
 
   // Get BTC asset from portfolio
   const btcAsset = portfolio?.assets.find(asset => asset.caip === 'bip122:000000000019d6689c085ae165831e93/slip44:0');
 
   // Generate receive address
-  const generateAddress = async () => {
+  const generateAddress = () => {
     if (!btcAsset) {
-      setError('No Bitcoin asset found in portfolio');
+      setError('Bitcoin asset not found in portfolio. Please sync your device or check your wallet setup.');
       return;
     }
-
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Select the BTC asset first and wait for it to be set
-      selectAsset(btcAsset);
-      
-      // Add a small delay to ensure the asset is selected in context
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Get receive address from wallet context (now uses device queue)
-      const receiveAddress = await getReceiveAddress();
-      
-      if (receiveAddress) {
-        setAddress(receiveAddress);
-      } else {
-        throw new Error('Failed to generate receive address - device queue error');
-      }
-      
-    } catch (error) {
-      console.error('Error generating address:', error);
-      
-      // Provide more specific error messages
-      let errorMessage = 'Failed to generate address';
-      if (error instanceof Error) {
-        if (error.message.includes('No devices available')) {
-          errorMessage = 'No KeepKey device found. Please connect your device.';
-        } else if (error.message.includes('Timeout')) {
-          errorMessage = 'Device confirmation timeout. Please try again and confirm on your device.';
-        } else if (error.message.includes('No asset selected')) {
-          errorMessage = 'Please wait for wallet to load and try again.';
-        } else {
-          errorMessage = error.message;
-        }
-      }
-      
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    setError(null);
+    selectAsset(btcAsset);
+    setShouldGenerate(true); // Triggers useEffect below
   };
+
+  useEffect(() => {
+    if (shouldGenerate && selectedAsset && selectedAsset.caip === btcAsset?.caip) {
+      (async () => {
+        try {
+          const addr = await getReceiveAddress();
+          setAddress(addr || '');
+          setError(null);
+        } catch (e) {
+          setError(
+            e instanceof Error ? e.message : 'Failed to generate receive address. Ensure your device is connected and unlocked.'
+          );
+        } finally {
+          setLoading(false);
+          setShouldGenerate(false);
+        }
+      })();
+    }
+  }, [shouldGenerate, selectedAsset, btcAsset, getReceiveAddress]);
 
   // Copy address to clipboard
   const onCopy = () => {
