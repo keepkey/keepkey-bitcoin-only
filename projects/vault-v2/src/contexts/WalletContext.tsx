@@ -15,6 +15,11 @@ import { WalletDatabase, PortfolioAPI, DeviceQueueAPI, PioneerAPI } from '../lib
 
 const TAG = " | WalletContext | ";
 
+// ---- Global Event Bridge for Receive Address Requests ---------------------------------------------------------
+type AddrResolver = { resolve: (addr: string) => void; reject: (e: any) => void };
+const pendingReceiveRequests: Map<string, AddrResolver> = new Map();
+// ----------------------------------------------------------------------------------------------------------------
+
 // Context Type
 interface WalletContextType {
   portfolio: Portfolio | null;
@@ -22,6 +27,7 @@ interface WalletContextType {
   loading: boolean;
   error: string | null;
   isSync: boolean;
+  lastReceiveAddress: string | null;
   refreshPortfolio: () => Promise<void>;
   selectAsset: (asset: Asset | null) => void;
   sendAsset: (toAddress: string, amount: string) => Promise<boolean>;
@@ -46,6 +52,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [error, setError] = useState<string | null>(null);
   const [isSync, setIsSync] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [lastReceiveAddress, setLastReceiveAddress] = useState<string | null>(null);
   const initializingRef = useRef(false);
 
   // Track pending xpub requests to prevent duplicates
@@ -339,13 +346,15 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   };
 
   const getReceiveAddress = async (): Promise<string | null> => {
+    const tag = TAG + " | getReceiveAddress | ";
+    
     // Ensure BTC asset is selected
     const btcCaip = "bip122:000000000019d6689c085ae165831e93/slip44:0";
     let asset = selectedAsset;
     if (!asset || asset.caip !== btcCaip) {
       asset = portfolio?.assets.find((a: any) => a.caip === btcCaip) || null;
       if (!asset) {
-        console.error('❌ No BTC asset found in portfolio');
+        console.error(tag, '❌ No BTC asset found in portfolio');
         return null;
       }
       selectAsset(asset);
@@ -353,7 +362,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       await new Promise(res => setTimeout(res, 50));
     }
 
-    console.log(`📥 Getting receive address for ${asset.symbol} using device queue`);
+    console.log(tag, `📥 Getting receive address for ${asset.symbol} using device queue`);
+    
     try {
       // Get the first device from database
       const devices = await WalletDatabase.getDevices();
@@ -361,45 +371,52 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         throw new Error('No devices available');
       }
       const device = devices[0];
-      console.log('🔑 Device object:', device);
-      console.log('🔑 device.device_id:', device.device_id);
+      console.log(tag, '🔑 Device object:', device);
+      console.log(tag, '🔑 device.device_id:', device.device_id);
       if (!device.device_id || typeof device.device_id !== 'string' || device.device_id.length === 0) {
         throw new Error('Device object missing or invalid device_id: ' + JSON.stringify(device));
       }
-      console.log('🔑 Using device:', device);
+      console.log(tag, '🔑 Using device:', device);
 
       // For Bitcoin, use the first available path (can be enhanced later)
       const receivePath = "m/84'/0'/0'/0/0"; // Native SegWit receive path
 
-      // Always pass show_display: true
-      const requestId = await DeviceQueueAPI.requestReceiveAddressFromDevice(
+      // (1) Create the promise up front and stash its resolver
+      let requestId: string;
+      const addrPromise = new Promise<string>((resolve, reject) => {
+        // We'll set requestId after the device call, then add to map
+        const setupResolver = (id: string) => {
+          pendingReceiveRequests.set(id, { resolve, reject });
+
+          // Hard timeout so the UI is never stuck forever
+          setTimeout(() => {
+            if (pendingReceiveRequests.delete(id)) {
+              reject(new Error('Timeout waiting for device response'));
+            }
+          }, 60_000);
+        };
+
+        // Store the setup function for use after device call
+        (addrPromise as any)._setupResolver = setupResolver;
+      });
+
+      // (2) NOW queue the request
+      requestId = await DeviceQueueAPI.requestReceiveAddressFromDevice(
         device.device_id,
         receivePath,
         'Bitcoin',
         'p2wpkh',
         true // Always show on device
       );
-      console.log('🟢 Device queue requestId:', requestId);
+      
+      console.log(tag, '🟢 Device queue requestId:', requestId);
+      
+      // Set up the resolver now that we have the requestId
+      (addrPromise as any)._setupResolver(requestId);
 
-      // Poll for address result
-      const start = Date.now();
-      while (Date.now() - start < 60000) {
-        const status = await getQueueStatus(device.device_id);
-        if (status.last_response) {
-          if ('Address' in status.last_response && status.last_response.Address.request_id === requestId) {
-            if (status.last_response.Address.success) {
-              const address = status.last_response.Address.address;
-              console.log('📥 Address generated:', address);
-              return address;
-            }
-            throw new Error(status.last_response.Address.error || 'Device returned error');
-          }
-        }
-        await new Promise(res => setTimeout(res, 1000));
-      }
-      throw new Error('Timeout waiting for device response');
+      return addrPromise; // Receive.tsx can still await this
     } catch (error) {
-      console.error('❌ Failed to get receive address from device:', error);
+      console.error(tag, '❌ Failed to get receive address from device:', error);
       throw error;
     }
   };
@@ -527,12 +544,21 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           const addressResponse = response.Address;
           console.log(tag, `📥 Address response:`, addressResponse);
           
+          const entry = pendingReceiveRequests.get(request_id);
+          if (!entry) {
+            console.log(tag, 'Address response for unknown request_id:', request_id);
+            return; // Response for something else
+          }
+
+          pendingReceiveRequests.delete(request_id);
+
           if (addressResponse.success) {
             console.log(tag, `✅ Address generated: ${addressResponse.address}`);
-            // The address response will be caught by the polling in getReceiveAddress()
-            // No additional handling needed here as the polling loop will pick it up
+            entry.resolve(addressResponse.address); // unblocks await
+            setLastReceiveAddress(addressResponse.address); // <-- context state
           } else {
             console.error(tag, `❌ Address request failed:`, addressResponse.error);
+            entry.reject(new Error(addressResponse.error || 'Device error'));
           }
         }
       });
@@ -595,6 +621,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     loading,
     error,
     isSync,
+    lastReceiveAddress,
     refreshPortfolio,
     selectAsset,
     sendAsset,

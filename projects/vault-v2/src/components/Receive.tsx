@@ -28,8 +28,26 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [shouldGenerate, setShouldGenerate] = useState(false);
 
+  // Component lifecycle debugging
+  useEffect(() => {
+    console.log('🚀 Receive component mounted');
+    return () => {
+      console.log('🛬 Receive component unmounting');
+    };
+  }, []);
+
   // Get BTC asset from portfolio
   const btcAsset = portfolio?.assets.find(asset => asset.caip === 'bip122:000000000019d6689c085ae165831e93/slip44:0');
+
+  // Debug portfolio and BTC asset
+  useEffect(() => {
+    console.log('🔍 Receive component - Portfolio:', portfolio);
+    console.log('🔍 Receive component - All assets:', portfolio?.assets);
+    console.log('🔍 Receive component - BTC Asset:', btcAsset);
+    if (portfolio?.assets) {
+      console.log('🔍 Receive component - Asset CAIPs:', portfolio.assets.map(a => ({ symbol: a.symbol, caip: a.caip })));
+    }
+  }, [portfolio, btcAsset]);
 
   // Generate receive address
   const generateAddress = () => {
@@ -39,18 +57,28 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     }
     setLoading(true);
     setError(null);
+    setAddress(''); // Clear any previous address before new generation
     selectAsset(btcAsset);
     setShouldGenerate(true); // Triggers useEffect below
   };
 
   useEffect(() => {
-    if (shouldGenerate && selectedAsset && selectedAsset.caip === btcAsset?.caip) {
+    if (shouldGenerate && btcAsset) {
       (async () => {
         try {
+          console.log('🎯 Starting address generation...');
           const addr = await getReceiveAddress();
-          setAddress(addr || '');
-          setError(null);
+          console.log('📬 Received address from getReceiveAddress:', addr);
+          if (addr) {
+            setAddress(addr);
+            setError(null);
+            console.log('✅ Address set in state:', addr);
+          } else {
+            console.error('❌ No address returned from getReceiveAddress');
+            setError('Failed to generate address - no response from device');
+          }
         } catch (e) {
+          console.error('❌ Error in address generation:', e);
           setError(
             e instanceof Error ? e.message : 'Failed to generate receive address. Ensure your device is connected and unlocked.'
           );
@@ -60,7 +88,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
         }
       })();
     }
-  }, [shouldGenerate, selectedAsset, btcAsset, getReceiveAddress]);
+  }, [shouldGenerate, btcAsset, getReceiveAddress]);
 
   // Copy address to clipboard
   const onCopy = () => {
@@ -70,6 +98,22 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
       setTimeout(() => setHasCopied(false), 2000);
     }
   };
+
+  // Monitor address state changes
+  useEffect(() => {
+    console.log('📍 Address state changed:', address);
+  }, [address]);
+
+  // Log render branch
+  useEffect(() => {
+    if (loading) {
+      console.log('[RENDER] Receive: loading spinner branch');
+    } else if (!address) {
+      console.log('[RENDER] Receive: no address branch');
+    } else {
+      console.log('[RENDER] Receive: address display branch, address:', address);
+    }
+  }, [loading, address]);
 
   if (walletLoading) {
     return (
@@ -117,27 +161,34 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
 
           {/* Main Content */}
           <VStack gap={6} bg="gray.800" p={6} borderRadius="lg" minH="400px" justify="center">
-            {!address ? (
-              /* Generate Address View */
+            {loading ? (
+              /* Show spinner and message while loading, regardless of address state */
               <VStack gap={4} textAlign="center">
-                <Box color="orange.400" fontSize="4xl">
-                  <SiBitcoin />
-                </Box>
-                
-                <Text color="gray.300" fontSize="lg" fontWeight="medium">
-                  Generate Receive Address
-                </Text>
-                
-                <Text color="gray.400" fontSize="sm" textAlign="center" maxW="300px">
-                  Generate a Bitcoin address to receive payments. This address will be linked to your KeepKey device.
-                </Text>
-
+                <Spinner size="xl" color="blue.400" />
+                <Text color="gray.300" fontSize="lg">Generating Address...</Text>
                 {error && (
                   <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
                     <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
                   </Box>
                 )}
-
+              </VStack>
+            ) : !address ? (
+              /* Generate Address View */
+              <VStack gap={4} textAlign="center">
+                <Box color="orange.400" fontSize="4xl">
+                  <SiBitcoin />
+                </Box>
+                <Text color="gray.300" fontSize="lg" fontWeight="medium">
+                  Generate Receive Address
+                </Text>
+                <Text color="gray.400" fontSize="sm" textAlign="center" maxW="300px">
+                  Generate a Bitcoin address to receive payments. This address will be linked to your KeepKey device.
+                </Text>
+                {error && (
+                  <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
+                    <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
+                  </Box>
+                )}
                 <Button
                   colorScheme="blue"
                   size="lg"
@@ -146,11 +197,10 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                   minW="200px"
                 >
                   <HStack gap={2}>
-                    {loading ? <Spinner size="sm" /> : <FaEye />}
-                    <Text>{loading ? 'Generating...' : 'Generate Address'}</Text>
+                    <FaEye />
+                    <Text>Generate Address</Text>
                   </HStack>
                 </Button>
-
                 {!btcAsset && (
                   <Text color="yellow.400" fontSize="xs" textAlign="center">
                     No Bitcoin asset found in portfolio
