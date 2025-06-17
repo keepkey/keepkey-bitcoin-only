@@ -462,7 +462,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     return () => clearInterval(interval);
   }, [getQueueStatus, refreshPortfolio]);
 
-  // Listen for device responses (event-driven xpub handling)
+  // Listen for device responses (event-driven xpub and address handling)
   useEffect(() => {
     let unlistenResponse: Promise<() => void>;
     
@@ -519,6 +519,20 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
             }
           } else {
             console.error(tag, `❌ Xpub request failed for ${xpubResponse.path}:`, xpubResponse.error);
+          }
+        }
+        
+        // Handle address responses
+        if (response && 'Address' in response) {
+          const addressResponse = response.Address;
+          console.log(tag, `📥 Address response:`, addressResponse);
+          
+          if (addressResponse.success) {
+            console.log(tag, `✅ Address generated: ${addressResponse.address}`);
+            // The address response will be caught by the polling in getReceiveAddress()
+            // No additional handling needed here as the polling loop will pick it up
+          } else {
+            console.error(tag, `❌ Address request failed:`, addressResponse.error);
           }
         }
       });

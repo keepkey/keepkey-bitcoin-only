@@ -103,9 +103,9 @@ pub async fn add_to_device_queue(
         DeviceRequest::GetAddress { ref path, ref coin_name, ref script_type, show_display } => {
             let path_parts = crate::commands::parse_derivation_path(&path)?;
             let script_type_int = match script_type.as_deref() {
-                Some("p2pkh") => Some(0),
-                Some("p2sh-p2wpkh") => Some(1),
-                Some("p2wpkh") => Some(2),
+                Some("p2pkh") => Some(0),       // SPENDADDRESS = 0
+                Some("p2sh-p2wpkh") => Some(4), // SPENDP2SHWITNESS = 4  
+                Some("p2wpkh") => Some(3),      // SPENDWITNESS = 3
                 _ => None,
             };
             

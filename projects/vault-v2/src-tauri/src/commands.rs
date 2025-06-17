@@ -206,12 +206,14 @@ pub fn parse_derivation_path(path: &str) -> Result<Vec<u32>, String> {
     let parts: Result<Vec<u32>, String> = path
         .split('/')
         .map(|part| {
+            // Check if this specific part is hardened (ends with ')
+            let is_hardened = part.ends_with('\'');
             let part = part.trim_end_matches('\'');
             let mut value = part.parse::<u32>()
                 .map_err(|_| format!("Invalid path component: {}", part))?;
             
-            // Handle hardened derivation (')
-            if path.contains(&format!("{}\'", part)) {
+            // Apply hardened derivation if this part ends with '
+            if is_hardened {
                 value |= 0x80000000;
             }
             
