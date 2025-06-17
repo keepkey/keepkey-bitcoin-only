@@ -29,5 +29,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"  # For cancellation tokens and proper shutdown handling
 uuid = { version = "1.0", features = ["v4"] }
 hex = "0.4"  # Needed for hash encoding in application layer
+chrono = { version = "0.4", features = ["serde"] }  # For timestamp logging
+dirs = "5.0"  # For finding home directory
 # Note: rusb removed - handled internally by keepkey-rust
 

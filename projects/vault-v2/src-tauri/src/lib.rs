@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager};
 mod db;
 mod commands;
 mod event_controller;
+mod logging;
 
 // Re-export commonly used types
 pub use db::{Database, DeviceInfo, XpubInfo};
@@ -94,6 +95,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
+            // Initialize device logging system
+            if let Err(e) = logging::init_device_logger() {
+                eprintln!("Failed to initialize device logger: {}", e);
+            } else {
+                println!("✅ Device logging initialized - logs will be written to ~/.keepkey/logs/");
+            }
+            
             // Initialize real device system using keepkey_rust
             let device_queue_manager = Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::<String, keepkey_rust::device_queue::DeviceQueueHandle>::new()
@@ -103,6 +111,18 @@ pub fn run() {
             
             // Start event controller with proper management
             let _event_controller = event_controller::spawn_event_controller(&app.handle());
+            
+            // Start background log cleanup task
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(86400)); // 24 hours
+                loop {
+                    interval.tick().await;
+                    if let Err(e) = logging::get_device_logger().cleanup_old_logs().await {
+                        eprintln!("Failed to cleanup old logs: {}", e);
+                    }
+                }
+            });
             
             Ok(())
         })
@@ -124,6 +144,10 @@ pub fn run() {
             commands::wipe_device,
             commands::set_device_label,
             commands::get_connected_devices_with_features,
+            // Logging commands
+            commands::get_device_log_path,
+            commands::get_recent_device_logs,
+            commands::cleanup_device_logs,
             // Test command
             commands::test_device_queue
         ])

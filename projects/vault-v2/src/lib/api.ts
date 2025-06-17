@@ -427,6 +427,10 @@ export class DeviceQueueAPI {
     }
   }
 
+  static async resetDeviceQueue(deviceId: string): Promise<void> {
+    await invoke('reset_device_queue', { deviceId });
+  }
+
   static async getQueueStatus(deviceId: string): Promise<QueueStatus> {
     try {
       const status = await invoke('get_queue_status', { deviceId });

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::timeout;
+use tokio::time::{timeout, sleep};
 use anyhow::{anyhow, Result};
 use tracing::{info, warn, error, debug, instrument};
 
@@ -308,13 +308,29 @@ impl DeviceWorker {
     
     /// Ensure transport is available, creating if necessary
     async fn ensure_transport(&mut self) -> Result<&mut (dyn ProtocolAdapter + Send)> {
-        if self.transport.is_none() {
-            info!("🔗 Creating transport for device {}", self.device_id);
-            // Use static method to avoid &self borrow
-            self.transport = Some(Self::create_transport_for_device(&self.device_info)?);
+        loop {
+            if self.transport.is_none() {
+                info!("🔗 Attempting to create transport for device {}", self.device_id);
+                match Self::create_transport_for_device(&self.device_info) {
+                    Ok(transport) => {
+                        self.transport = Some(transport);
+                        info!("✅ Transport ready for {}", self.device_id);
+                    }
+                    Err(e) => {
+                        warn!("⚠️  Transport unavailable for {}: {} – waiting for reconnect", self.device_id, e);
+                        // Drop any stale transport reference just in case
+                        self.transport = None;
+                        // Wait a bit before retrying.  This keeps the queue worker alive
+                        // and effectively makes the queue "just wait" for the device to return.
+                        sleep(Duration::from_secs(2)).await;
+                        continue;
+                    }
+                }
+            }
+
+            // By this point transport is Some
+            return Ok(self.transport.as_mut().unwrap().as_mut());
         }
-        
-        Ok(self.transport.as_mut().unwrap().as_mut())
     }
     
     /// Handle GetFeatures command with caching

@@ -7,6 +7,7 @@
 */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { listen } from '@tauri-apps/api/event';
 
 // Import organized types and services
 import { Asset, Portfolio, QueueStatus } from '../types';
@@ -312,6 +313,27 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     
     return () => clearInterval(interval);
   }, [getQueueStatus, refreshPortfolio]);
+
+  // Listen for device reconnects and purge queue
+  useEffect(() => {
+    let unlistenConnect: Promise<() => void>;
+    (async () => {
+      unlistenConnect = listen('device:connected', async (event: any) => {
+        const deviceId = event.payload?.device_id || event.payload;
+        try {
+          console.log(TAG, 'Device reconnected', deviceId, '- resetting queue');
+          await DeviceQueueAPI.resetDeviceQueue(deviceId);
+          await getXpubsFromDeviceQueue();
+        } catch (e) {
+          console.error(TAG, 'Failed to reset queue on reconnect:', e);
+        }
+      });
+    })();
+
+    return () => {
+      unlistenConnect?.then(fn => fn());
+    };
+  }, []);
 
   // Initial load
   useEffect(() => {

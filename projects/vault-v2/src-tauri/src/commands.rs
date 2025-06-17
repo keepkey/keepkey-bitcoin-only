@@ -7,6 +7,7 @@ use keepkey_rust::{
 };
 use uuid;
 use hex;
+use crate::logging::{log_device_request, log_device_response, log_raw_device_message};
 
 type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
 
@@ -115,11 +116,47 @@ pub struct InitializationCheck {
 
 /// Unified device queue command - all device operations go through this
 #[tauri::command]
+pub async fn reset_device_queue(
+    device_id: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    println!("♻️  Resetting device queue for {}", device_id);
+    let mut manager = queue_manager.lock().await;
+    if let Some(handle) = manager.remove(&device_id) {
+        let _ = handle.shutdown().await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn add_to_device_queue(
     request: DeviceRequestWrapper,
     queue_manager: State<'_, DeviceQueueManager>,
 ) -> Result<String, String> {
     println!("Adding to device queue: {:?}", request);
+    
+    // Log the incoming request
+    let request_data = serde_json::json!({
+        "request": request.request,
+        "device_id": request.device_id,
+        "request_id": request.request_id
+    });
+    
+    let request_type = match &request.request {
+        DeviceRequest::GetXpub { .. } => "GetXpub",
+        DeviceRequest::GetAddress { .. } => "GetAddress", 
+        DeviceRequest::GetFeatures => "GetFeatures",
+        DeviceRequest::SendRaw { .. } => "SendRaw",
+    };
+    
+    if let Err(e) = log_device_request(
+        &request.device_id,
+        &request.request_id,
+        request_type,
+        &request_data
+    ).await {
+        eprintln!("Failed to log device request: {}", e);
+    }
     
     // Get or create device queue handle
     let queue_handle = {
@@ -170,41 +207,84 @@ pub async fn add_to_device_queue(
                 .await
                 .map_err(|e| format!("Failed to get address: {}", e))
         }
-                 DeviceRequest::GetFeatures => {
-             let features = queue_handle
-                 .get_features()
-                 .await
-                 .map_err(|e| format!("Failed to get features: {}", e))?;
-             
-             // Create a serializable version of features
-             let features_json = serde_json::json!({
-                 "version": format!("{}.{}.{}", 
-                     features.major_version.unwrap_or(0), 
-                     features.minor_version.unwrap_or(0), 
-                     features.patch_version.unwrap_or(0)),
-                 "initialized": features.initialized.unwrap_or(false),
-                 "label": features.label.unwrap_or_default(),
-                 "vendor": features.vendor.unwrap_or_default(),
-                 "model": features.model.unwrap_or_default(),
-                 "bootloader_mode": features.bootloader_mode.unwrap_or(false)
-             });
-             
-             Ok(features_json.to_string())
-         }
-        DeviceRequest::SendRaw { message_type: _, message_data: _ } => {
+        DeviceRequest::GetFeatures => {
+            let features = queue_handle
+                .get_features()
+                .await
+                .map_err(|e| format!("Failed to get features: {}", e))?;
+            
+            // Create a serializable version of features
+            let features_json = serde_json::json!({
+                "version": format!("{}.{}.{}", 
+                    features.major_version.unwrap_or(0), 
+                    features.minor_version.unwrap_or(0), 
+                    features.patch_version.unwrap_or(0)),
+                "initialized": features.initialized.unwrap_or(false),
+                "label": features.label.unwrap_or_default(),
+                "vendor": features.vendor.unwrap_or_default(),
+                "model": features.model.unwrap_or_default(),
+                "bootloader_mode": features.bootloader_mode.unwrap_or(false)
+            });
+            
+            Ok(features_json.to_string())
+        }
+        DeviceRequest::SendRaw { message_type, message_data } => {
+            // Log the raw message being sent
+            if let Err(e) = log_raw_device_message(
+                &request.device_id,
+                "SEND",
+                &message_type,
+                &message_data
+            ).await {
+                eprintln!("Failed to log raw device message: {}", e);
+            }
+            
             // For raw messages, we'd need to implement proper message parsing
             Err("Raw message sending not yet implemented".to_string())
         }
     };
     
-    match result {
+    // Log the response
+    match &result {
         Ok(response) => {
             println!("✅ Device operation completed: {}", response);
+            
+            let response_data = serde_json::json!({
+                "response": response,
+                "request_type": request_type
+            });
+            
+            if let Err(e) = log_device_response(
+                &request.device_id,
+                &request.request_id,
+                true,
+                &response_data,
+                None
+            ).await {
+                eprintln!("Failed to log device response: {}", e);
+            }
+            
             Ok(request.request_id)
         }
         Err(e) => {
             println!("❌ Device operation failed: {}", e);
-            Err(e)
+            
+            let error_data = serde_json::json!({
+                "error": e,
+                "request_type": request_type
+            });
+            
+            if let Err(log_err) = log_device_response(
+                &request.device_id,
+                &request.request_id,
+                false,
+                &error_data,
+                Some(e)
+            ).await {
+                eprintln!("Failed to log device error response: {}", log_err);
+            }
+            
+            Err(e.clone())
         }
     }
 }
@@ -310,6 +390,18 @@ pub async fn get_device_status(
 ) -> Result<Option<DeviceStatus>, String> {
     println!("Getting device status for: {}", device_id);
     
+    let request_id = uuid::Uuid::new_v4().to_string();
+    
+    // Log the request
+    let request_data = serde_json::json!({
+        "device_id": device_id,
+        "operation": "get_device_status"
+    });
+    
+    if let Err(e) = log_device_request(&device_id, &request_id, "GetDeviceStatus", &request_data).await {
+        eprintln!("Failed to log get device status request: {}", e);
+    }
+    
     // Get connected devices to find the one we want
     let devices = keepkey_rust::features::list_connected_devices();
     let device_info = devices
@@ -344,11 +436,32 @@ pub async fn get_device_status(
         };
         
         // Evaluate device status
-        let status = evaluate_device_status(device_id, features.as_ref());
+        let status = evaluate_device_status(device_id.clone(), features.as_ref());
+        
+        // Log the response
+        let response_data = serde_json::json!({
+            "status": status,
+            "operation": "get_device_status"
+        });
+        
+        if let Err(e) = log_device_response(&device_id, &request_id, true, &response_data, None).await {
+            eprintln!("Failed to log get device status response: {}", e);
+        }
         
         Ok(Some(status))
     } else {
         println!("Device {} not found", device_id);
+        
+        // Log the not found response
+        let response_data = serde_json::json!({
+            "error": "Device not found",
+            "operation": "get_device_status"
+        });
+        
+        if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some("Device not found")).await {
+            eprintln!("Failed to log get device status error response: {}", e);
+        }
+        
         Ok(None)
     }
 }
@@ -361,6 +474,18 @@ pub async fn get_device_info_by_id(
 ) -> Result<Option<DeviceFeatures>, String> {
     println!("Getting device info for: {}", device_id);
     
+    let request_id = uuid::Uuid::new_v4().to_string();
+    
+    // Log the request
+    let request_data = serde_json::json!({
+        "device_id": device_id,
+        "operation": "get_device_info_by_id"
+    });
+    
+    if let Err(e) = log_device_request(&device_id, &request_id, "GetDeviceInfo", &request_data).await {
+        eprintln!("Failed to log get device info request: {}", e);
+    }
+    
     // Get or create device queue handle
     let queue_handle = {
         let mut manager = queue_manager.lock().await;
@@ -372,13 +497,31 @@ pub async fn get_device_info_by_id(
             let devices = keepkey_rust::features::list_connected_devices();
             let device_info = devices
                 .iter()
-                .find(|d| d.unique_id == device_id)
-                .ok_or_else(|| format!("Device {} not found", device_id))?;
+                .find(|d| d.unique_id == device_id);
                 
-            // Spawn a new device worker
-            let handle = DeviceQueueFactory::spawn_worker(device_id.clone(), device_info.clone());
-            manager.insert(device_id.clone(), handle.clone());
-            handle
+            match device_info {
+                Some(device_info) => {
+                    // Spawn a new device worker
+                    let handle = DeviceQueueFactory::spawn_worker(device_id.clone(), device_info.clone());
+                    manager.insert(device_id.clone(), handle.clone());
+                    handle
+                }
+                None => {
+                    let error = format!("Device {} not found", device_id);
+                    
+                    // Log the error response
+                    let response_data = serde_json::json!({
+                        "error": error,
+                        "operation": "get_device_info_by_id"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                        eprintln!("Failed to log get device info error response: {}", e);
+                    }
+                    
+                    return Err(error);
+                }
+            }
         }
     };
     
@@ -387,11 +530,34 @@ pub async fn get_device_info_by_id(
         Ok(raw_features) => {
             // Convert from raw Features message to DeviceFeatures
             let device_features = convert_features_to_device_features(raw_features);
+            
+            // Log the successful response
+            let response_data = serde_json::json!({
+                "features": device_features,
+                "operation": "get_device_info_by_id"
+            });
+            
+            if let Err(e) = log_device_response(&device_id, &request_id, true, &response_data, None).await {
+                eprintln!("Failed to log get device info response: {}", e);
+            }
+            
             Ok(Some(device_features))
         }
         Err(e) => {
             println!("Failed to get features for device {}: {}", device_id, e);
-            Err(format!("Failed to get device features: {}", e))
+            let error = format!("Failed to get device features: {}", e);
+            
+            // Log the error response
+            let response_data = serde_json::json!({
+                "error": error,
+                "operation": "get_device_info_by_id"
+            });
+            
+            if let Err(log_err) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                eprintln!("Failed to log get device info error response: {}", log_err);
+            }
+            
+            Err(error)
         }
     }
 }
@@ -404,6 +570,18 @@ pub async fn wipe_device(
 ) -> Result<(), String> {
     println!("Wiping device: {}", device_id);
     
+    let request_id = uuid::Uuid::new_v4().to_string();
+    
+    // Log the request
+    let request_data = serde_json::json!({
+        "device_id": device_id,
+        "operation": "wipe_device"
+    });
+    
+    if let Err(e) = log_device_request(&device_id, &request_id, "WipeDevice", &request_data).await {
+        eprintln!("Failed to log wipe device request: {}", e);
+    }
+    
     // Get or create device queue handle
     let queue_handle = {
         let mut manager = queue_manager.lock().await;
@@ -415,13 +593,31 @@ pub async fn wipe_device(
             let devices = keepkey_rust::features::list_connected_devices();
             let device_info = devices
                 .iter()
-                .find(|d| d.unique_id == device_id)
-                .ok_or_else(|| format!("Device {} not found", device_id))?;
+                .find(|d| d.unique_id == device_id);
                 
-            // Spawn a new device worker
-            let handle = DeviceQueueFactory::spawn_worker(device_id.clone(), device_info.clone());
-            manager.insert(device_id.clone(), handle.clone());
-            handle
+            match device_info {
+                Some(device_info) => {
+                    // Spawn a new device worker
+                    let handle = DeviceQueueFactory::spawn_worker(device_id.clone(), device_info.clone());
+                    manager.insert(device_id.clone(), handle.clone());
+                    handle
+                }
+                None => {
+                    let error = format!("Device {} not found", device_id);
+                    
+                    // Log the error response
+                    let response_data = serde_json::json!({
+                        "error": error,
+                        "operation": "wipe_device"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                        eprintln!("Failed to log wipe device error response: {}", e);
+                    }
+                    
+                    return Err(error);
+                }
+            }
         }
     };
     
@@ -430,29 +626,93 @@ pub async fn wipe_device(
         keepkey_rust::messages::WipeDevice {}
     );
     
+    // Log the raw message being sent
+    let message_data = serde_json::json!({
+        "message_type": "WipeDevice",
+        "message": {}
+    });
+    
+    if let Err(e) = log_raw_device_message(&device_id, "SEND", "WipeDevice", &message_data).await {
+        eprintln!("Failed to log wipe device raw message: {}", e);
+    }
+    
     // Send wipe device command through queue
     match queue_handle.send_raw(wipe_message, true).await {
         Ok(response) => {
+            // Log the raw response
+            let response_message_data = serde_json::json!({
+                "response": format!("{:?}", response)
+            });
+            
+            if let Err(e) = log_raw_device_message(&device_id, "RECEIVE", "WipeDeviceResponse", &response_message_data).await {
+                eprintln!("Failed to log wipe device raw response: {}", e);
+            }
+            
             match response {
                 keepkey_rust::messages::Message::Success(_) => {
                     println!("✅ Device {} wiped successfully", device_id);
+                    
+                    // Log the successful response
+                    let response_data = serde_json::json!({
+                        "success": true,
+                        "operation": "wipe_device"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, true, &response_data, None).await {
+                        eprintln!("Failed to log wipe device response: {}", e);
+                    }
+                    
                     Ok(())
                 }
                 keepkey_rust::messages::Message::Failure(failure) => {
                     let error = format!("Device rejected wipe request: {}", failure.message.unwrap_or_default());
                     println!("❌ Failed to wipe device {}: {}", device_id, error);
+                    
+                    // Log the error response
+                    let response_data = serde_json::json!({
+                        "error": error,
+                        "operation": "wipe_device"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                        eprintln!("Failed to log wipe device error response: {}", e);
+                    }
+                    
                     Err(error)
                 }
                 _ => {
                     let error = "Unexpected response from device".to_string();
                     println!("❌ Failed to wipe device {}: {}", device_id, error);
+                    
+                    // Log the error response
+                    let response_data = serde_json::json!({
+                        "error": error,
+                        "operation": "wipe_device"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                        eprintln!("Failed to log wipe device error response: {}", e);
+                    }
+                    
                     Err(error)
                 }
             }
         }
         Err(e) => {
             println!("❌ Failed to wipe device {}: {}", device_id, e);
-            Err(format!("Failed to wipe device: {}", e))
+            let error = format!("Failed to wipe device: {}", e);
+            
+            // Log the error response
+            let response_data = serde_json::json!({
+                "error": error,
+                "operation": "wipe_device"
+            });
+            
+            if let Err(log_err) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                eprintln!("Failed to log wipe device error response: {}", log_err);
+            }
+            
+            Err(error)
         }
     }
 }
@@ -466,13 +726,50 @@ pub async fn set_device_label(
 ) -> Result<(), String> {
     println!("Setting device label for {}: '{}'", device_id, label);
     
+    let request_id = uuid::Uuid::new_v4().to_string();
+    
+    // Log the request
+    let request_data = serde_json::json!({
+        "device_id": device_id,
+        "label": label,
+        "operation": "set_device_label"
+    });
+    
+    if let Err(e) = log_device_request(&device_id, &request_id, "SetDeviceLabel", &request_data).await {
+        eprintln!("Failed to log set device label request: {}", e);
+    }
+    
     // Validate label (max 32 chars for KeepKey)
     if label.len() > 32 {
-        return Err("Label must be 32 characters or less".to_string());
+        let error = "Label must be 32 characters or less".to_string();
+        
+        // Log the validation error
+        let response_data = serde_json::json!({
+            "error": error,
+            "operation": "set_device_label"
+        });
+        
+        if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+            eprintln!("Failed to log set device label validation error: {}", e);
+        }
+        
+        return Err(error);
     }
     
     if !label.chars().all(|c| c.is_ascii() && !c.is_control()) {
-        return Err("Label must contain only ASCII printable characters".to_string());
+        let error = "Label must contain only ASCII printable characters".to_string();
+        
+        // Log the validation error
+        let response_data = serde_json::json!({
+            "error": error,
+            "operation": "set_device_label"
+        });
+        
+        if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+            eprintln!("Failed to log set device label validation error: {}", e);
+        }
+        
+        return Err(error);
     }
     
     // Get or create device queue handle
@@ -486,13 +783,31 @@ pub async fn set_device_label(
             let devices = keepkey_rust::features::list_connected_devices();
             let device_info = devices
                 .iter()
-                .find(|d| d.unique_id == device_id)
-                .ok_or_else(|| format!("Device {} not found", device_id))?;
+                .find(|d| d.unique_id == device_id);
                 
-            // Spawn a new device worker
-            let handle = DeviceQueueFactory::spawn_worker(device_id.clone(), device_info.clone());
-            manager.insert(device_id.clone(), handle.clone());
-            handle
+            match device_info {
+                Some(device_info) => {
+                    // Spawn a new device worker
+                    let handle = DeviceQueueFactory::spawn_worker(device_id.clone(), device_info.clone());
+                    manager.insert(device_id.clone(), handle.clone());
+                    handle
+                }
+                None => {
+                    let error = format!("Device {} not found", device_id);
+                    
+                    // Log the error response
+                    let response_data = serde_json::json!({
+                        "error": error,
+                        "operation": "set_device_label"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                        eprintln!("Failed to log set device label error response: {}", e);
+                    }
+                    
+                    return Err(error);
+                }
+            }
         }
     };
     
@@ -507,29 +822,96 @@ pub async fn set_device_label(
         }
     );
     
+    // Log the raw message being sent
+    let message_data = serde_json::json!({
+        "message_type": "ApplySettings",
+        "message": {
+            "label": label
+        }
+    });
+    
+    if let Err(e) = log_raw_device_message(&device_id, "SEND", "ApplySettings", &message_data).await {
+        eprintln!("Failed to log apply settings raw message: {}", e);
+    }
+    
     // Send label update through queue
     match queue_handle.send_raw(apply_settings, true).await {
         Ok(response) => {
+            // Log the raw response
+            let response_message_data = serde_json::json!({
+                "response": format!("{:?}", response)
+            });
+            
+            if let Err(e) = log_raw_device_message(&device_id, "RECEIVE", "ApplySettingsResponse", &response_message_data).await {
+                eprintln!("Failed to log apply settings raw response: {}", e);
+            }
+            
             match response {
                 keepkey_rust::messages::Message::Success(_) => {
                     println!("✅ Device label set successfully for {}: '{}'", device_id, label);
+                    
+                    // Log the successful response
+                    let response_data = serde_json::json!({
+                        "success": true,
+                        "label": label,
+                        "operation": "set_device_label"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, true, &response_data, None).await {
+                        eprintln!("Failed to log set device label response: {}", e);
+                    }
+                    
                     Ok(())
                 }
                 keepkey_rust::messages::Message::Failure(failure) => {
                     let error = format!("Device rejected label change: {}", failure.message.unwrap_or_default());
                     println!("❌ Failed to set device label for {}: {}", device_id, error);
+                    
+                    // Log the error response
+                    let response_data = serde_json::json!({
+                        "error": error,
+                        "operation": "set_device_label"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                        eprintln!("Failed to log set device label error response: {}", e);
+                    }
+                    
                     Err(error)
                 }
                 _ => {
                     let error = "Unexpected response from device".to_string();
                     println!("❌ Failed to set device label for {}: {}", device_id, error);
+                    
+                    // Log the error response
+                    let response_data = serde_json::json!({
+                        "error": error,
+                        "operation": "set_device_label"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                        eprintln!("Failed to log set device label error response: {}", e);
+                    }
+                    
                     Err(error)
                 }
             }
         }
         Err(e) => {
             println!("❌ Failed to set device label for {}: {}", device_id, e);
-            Err(format!("Failed to set device label: {}", e))
+            let error = format!("Failed to set device label: {}", e);
+            
+            // Log the error response
+            let response_data = serde_json::json!({
+                "error": error,
+                "operation": "set_device_label"
+            });
+            
+            if let Err(log_err) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                eprintln!("Failed to log set device label error response: {}", log_err);
+            }
+            
+            Err(error)
         }
     }
 }
@@ -541,6 +923,18 @@ pub async fn get_connected_devices_with_features(
 ) -> Result<Vec<serde_json::Value>, String> {
     let devices = keepkey_rust::features::list_connected_devices();
     
+    let request_id = uuid::Uuid::new_v4().to_string();
+    
+    // Log the request
+    let request_data = serde_json::json!({
+        "operation": "get_connected_devices_with_features",
+        "device_count": devices.len()
+    });
+    
+    if let Err(e) = log_device_request("all", &request_id, "GetConnectedDevicesWithFeatures", &request_data).await {
+        eprintln!("Failed to log get connected devices request: {}", e);
+    }
+    
     // Process devices in parallel to fetch features
     let mut tasks = Vec::new();
     
@@ -549,6 +943,17 @@ pub async fn get_connected_devices_with_features(
         let queue_manager = queue_manager.inner().clone();
         
         let task = tokio::spawn(async move {
+            // Log individual device feature request
+            let device_request_id = uuid::Uuid::new_v4().to_string();
+            let device_request_data = serde_json::json!({
+                "device_id": device_id,
+                "operation": "get_features_for_device"
+            });
+            
+            if let Err(e) = log_device_request(&device_id, &device_request_id, "GetFeaturesForDevice", &device_request_data).await {
+                eprintln!("Failed to log device features request: {}", e);
+            }
+            
             // Get or create device queue handle
             let queue_handle = {
                 let mut manager = queue_manager.lock().await;
@@ -570,14 +975,48 @@ pub async fn get_connected_devices_with_features(
             ).await {
                 Ok(Ok(raw_features)) => {
                     // Convert from raw Features message to DeviceFeatures
-                    Some(convert_features_to_device_features(raw_features))
+                    let device_features = convert_features_to_device_features(raw_features);
+                    
+                    // Log successful feature retrieval
+                    let device_response_data = serde_json::json!({
+                        "features": device_features,
+                        "operation": "get_features_for_device"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &device_request_id, true, &device_response_data, None).await {
+                        eprintln!("Failed to log device features response: {}", e);
+                    }
+                    
+                    Some(device_features)
                 }
                 Ok(Err(e)) => {
                     println!("Failed to get features for device {}: {}", device_id, e);
+                    
+                    // Log failed feature retrieval
+                    let device_response_data = serde_json::json!({
+                        "error": format!("Failed to get features: {}", e),
+                        "operation": "get_features_for_device"
+                    });
+                    
+                    if let Err(log_err) = log_device_response(&device_id, &device_request_id, false, &device_response_data, Some(&format!("Failed to get features: {}", e))).await {
+                        eprintln!("Failed to log device features error response: {}", log_err);
+                    }
+                    
                     None
                 }
                 Err(_) => {
                     println!("Timeout getting features for device {}", device_id);
+                    
+                    // Log timeout
+                    let device_response_data = serde_json::json!({
+                        "error": "Timeout getting features",
+                        "operation": "get_features_for_device"
+                    });
+                    
+                    if let Err(e) = log_device_response(&device_id, &device_request_id, false, &device_response_data, Some("Timeout getting features")).await {
+                        eprintln!("Failed to log device features timeout response: {}", e);
+                    }
+                    
                     None
                 }
             };
@@ -610,6 +1049,16 @@ pub async fn get_connected_devices_with_features(
                 // Continue with other devices
             }
         }
+    }
+    
+    // Log the overall response
+    let response_data = serde_json::json!({
+        "devices": results,
+        "operation": "get_connected_devices_with_features"
+    });
+    
+    if let Err(e) = log_device_response("all", &request_id, true, &response_data, None).await {
+        eprintln!("Failed to log get connected devices response: {}", e);
     }
     
     Ok(results)
@@ -714,4 +1163,61 @@ fn convert_features_to_device_features(raw_features: keepkey_rust::messages::Fea
             .map(|p| p.policy_name().to_string())
             .collect(),
     }
+}
+
+/// Get the path to today's device communication log file
+#[tauri::command]
+pub async fn get_device_log_path() -> Result<String, String> {
+    let logger = crate::logging::get_device_logger();
+    let log_path = logger.get_todays_log_path();
+    
+    Ok(log_path.to_string_lossy().to_string())
+}
+
+/// Get recent device communication log entries (last N entries)
+#[tauri::command]
+pub async fn get_recent_device_logs(limit: Option<usize>) -> Result<Vec<serde_json::Value>, String> {
+    let logger = crate::logging::get_device_logger();
+    let log_path = logger.get_todays_log_path();
+    let limit = limit.unwrap_or(50); // Default to last 50 entries
+    
+    if !log_path.exists() {
+        return Ok(vec![]);
+    }
+    
+    // Read the log file and parse JSON lines
+    let content = std::fs::read_to_string(&log_path)
+        .map_err(|e| format!("Failed to read log file: {}", e))?;
+    
+    let mut entries: Vec<serde_json::Value> = content
+        .lines()
+        .filter_map(|line| {
+            if line.trim().is_empty() {
+                return None;
+            }
+            match serde_json::from_str(line) {
+                Ok(json) => Some(json),
+                Err(e) => {
+                    eprintln!("Failed to parse log line: {} - Error: {}", line, e);
+                    None
+                }
+            }
+        })
+        .collect();
+    
+    // Return the last N entries
+    if entries.len() > limit {
+        let skip_count = entries.len() - limit;
+        entries = entries.into_iter().skip(skip_count).collect();
+    }
+    
+    Ok(entries)
+}
+
+/// Clear old device communication logs (manually trigger cleanup)
+#[tauri::command]
+pub async fn cleanup_device_logs() -> Result<String, String> {
+    let logger = crate::logging::get_device_logger();
+    logger.cleanup_old_logs().await?;
+    Ok("Old device logs cleaned up successfully".to_string())
 } 
