@@ -21,8 +21,9 @@ export type DeviceResponse =
     };
 
 export interface QueueStatus {
-  device_id: string;
-  queue_length: number;
-  processing: boolean;
+  device_id: string | null;
+  total_queued: number;
+  active_operations: number;
+  status: string;
   last_response?: DeviceResponse;
 } 

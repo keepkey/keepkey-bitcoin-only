@@ -18,6 +18,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+lazy_static = "1.4"
+base58 = "0.2"
+sha2 = "0.10"
 keepkey_rust = { path = "../../keepkey-rust" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"

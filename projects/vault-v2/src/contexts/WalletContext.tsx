@@ -6,12 +6,12 @@
 
 */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 
 // Import organized types and services
 import { Asset, Portfolio, QueueStatus } from '../types';
-import { WalletDatabase, PortfolioAPI, DeviceQueueAPI } from '../lib';
+import { WalletDatabase, PortfolioAPI, DeviceQueueAPI, PioneerAPI } from '../lib';
 
 const TAG = " | WalletContext | ";
 
@@ -46,16 +46,113 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [error, setError] = useState<string | null>(null);
   const [isSync, setIsSync] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
-
-  const refreshPortfolio = useCallback(async () => {
-    // ...existing refreshPortfolio logic...
-    // (This is just a move; actual logic remains unchanged)
-  }, []);
+  const initializingRef = useRef(false);
 
   // Track pending xpub requests to prevent duplicates
   const pendingXpubRequests = new Set<string>();
+  
+  // Store fetched xpubs in memory (not database for v2)
+  const [fetchedXpubs, setFetchedXpubs] = useState<Array<{path: string, xpub: string, caip: string}>>([]);
 
-  // Requests all required xpubs from device queue and stores them in DB
+  const refreshPortfolio = useCallback(async () => {
+    const tag = TAG + " | refreshPortfolio | ";
+    setLoading(true);
+    
+    try {
+      console.log(tag, `Refreshing portfolio with ${fetchedXpubs.length} xpubs in memory`);
+      
+      if (fetchedXpubs.length === 0) {
+        console.log(tag, 'No xpubs available yet, showing empty portfolio');
+        setPortfolio(null);
+        return;
+      }
+      
+      // Convert in-memory xpubs to Pioneer API format and fetch portfolio
+      const requests = fetchedXpubs.map(x => ({
+        caip: x.caip,
+        pubkey: x.xpub
+      }));
+      
+      console.log(tag, 'Calling Pioneer API with in-memory xpubs:', requests);
+      
+      // Call Pioneer API directly with in-memory xpubs
+      const portfolioData = await PioneerAPI.getPortfolio(requests);
+      
+      // Transform to portfolio format (simplified version of PortfolioAPI.transformToPortfolio)
+      let totalValueUsd = 0;
+      const assets: Asset[] = [];
+      const networks = [
+        {
+          id: 1,
+          network_name: "Bitcoin",
+          symbol: "BTC", 
+          chain_id_caip2: "bip122:000000000019d6689c085ae165831e93",
+          is_evm: false
+        }
+      ];
+
+      // Group by symbol and sum balances
+      const symbolGroups = new Map<string, {
+        balance: number,
+        valueUsd: number,
+        priceUsd: number,
+        caip: string
+      }>();
+
+      for (const item of portfolioData) {
+        const balance = parseFloat(item.balance) || 0;
+        const valueUsd = parseFloat(item.valueUsd) || 0;
+        const priceUsd = parseFloat(item.priceUsd) || 0;
+        
+        if (symbolGroups.has(item.symbol)) {
+          const existing = symbolGroups.get(item.symbol)!;
+          existing.balance += balance;
+          existing.valueUsd += valueUsd;
+        } else {
+          symbolGroups.set(item.symbol, {
+            balance,
+            valueUsd,
+            priceUsd,
+            caip: item.caip
+          });
+        }
+        
+        totalValueUsd += valueUsd;
+      }
+
+      // Convert to assets
+      for (const [symbol, group] of symbolGroups) {
+        assets.push({
+          symbol,
+          name: symbol === 'BTC' ? 'Bitcoin' : symbol,
+          balance: group.balance.toString(),
+          value_usd: group.valueUsd,
+          network_id: 'bitcoin',
+          caip: group.caip,
+          price_usd: group.priceUsd,
+          change_24h: 0
+        });
+      }
+
+      const portfolio: Portfolio = {
+        total_value_usd: totalValueUsd.toFixed(2),
+        assets,
+        networks
+      };
+      
+      setPortfolio(portfolio);
+      setError(null);
+      console.log(tag, 'Portfolio refreshed successfully:', portfolio);
+      
+    } catch (error) {
+      console.error(tag, 'Failed to refresh portfolio:', error);
+      setError('Failed to refresh portfolio: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchedXpubs]);
+
+  // Requests all required xpubs from device queue (event-driven, no polling!)
   async function getXpubsFromDeviceQueue() {
     const tag = TAG + " | getXpubsFromDeviceQueue | ";
     
@@ -78,6 +175,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       
       const requiredPaths = WalletDatabase.getRequiredPaths();
 
+      // Send all xpub requests at once (no polling needed - events will handle responses)
       for (const pathInfo of requiredPaths) {
         const requestKey = `${deviceId}:${pathInfo.path}`;
         
@@ -87,12 +185,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           continue;
         }
 
-        // Check if xpub already exists in database
-        // const existingXpubs = await WalletDatabase.getXpubs(deviceId);
-        const existingXpubs:any = []
-        const alreadyHas = existingXpubs.some((x: { path: string; caip: string; }) => x.path === pathInfo.path && x.caip === pathInfo.caip);
+        // Skip if we already have this xpub in memory
+        const alreadyHas = fetchedXpubs.some(x => x.path === pathInfo.path && x.caip === pathInfo.caip);
         if (alreadyHas) {
-          console.log(tag, `Xpub already exists for ${deviceId} ${pathInfo.path}`);
+          console.log(tag, `Xpub already fetched for ${deviceId} ${pathInfo.path}`);
           continue;
         }
 
@@ -102,61 +198,15 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         try {
           console.log(tag, `🔄 Requesting xpub for ${deviceId} ${pathInfo.path}`);
           
-          // 1. Queue xpub request
+          // Send xpub request (response will come via event)
           const requestId = await DeviceQueueAPI.requestXpubFromDevice(deviceId, pathInfo.path);
-          console.log(tag, `✅ Queued xpub request (requestId: ${requestId})`);
-
-          // 2. Poll for result with longer timeout and exponential backoff
-          const start = Date.now();
-          let pollInterval = 2000; // Start with 2 seconds
-          const maxPollInterval = 10000; // Max 10 seconds
-          
-          while (Date.now() - start < 120000) { // 2 minute timeout
-            await new Promise(res => setTimeout(res, pollInterval));
-            
-            try {
-              const status = await DeviceQueueAPI.getQueueStatus(deviceId);
-              if (
-                status.last_response &&
-                'Xpub' in status.last_response &&
-                status.last_response.Xpub.request_id === requestId
-              ) {
-                if (status.last_response.Xpub.success) {
-                  // 3. Store xpub
-                  await WalletDatabase.insertXpubFromQueue(
-                    deviceId,
-                    pathInfo.path,
-                    status.last_response.Xpub.xpub
-                  );
-                  console.log(tag, `✅ Stored xpub for ${deviceId} ${pathInfo.path}`);
-                  break;
-                } else {
-                  throw new Error(status.last_response.Xpub.error || 'Device returned error');
-                }
-              }
-              
-              // Exponential backoff - increase poll interval
-              pollInterval = Math.min(pollInterval * 1.5, maxPollInterval);
-              
-            } catch (pollError) {
-              console.warn(tag, `Poll error for ${requestKey}:`, pollError);
-              // Continue polling despite poll errors
-            }
-          }
-          
-          console.log(tag, `⏰ Finished polling for ${requestKey}`);
+          console.log(tag, `✅ Queued xpub request (requestId: ${requestId}) - waiting for event...`);
           
         } catch (err) {
-          console.error(tag, `❌ Failed to get xpub for ${deviceId} ${pathInfo.path}:`, err);
-        } finally {
-          // Always remove from pending set
+          console.error(tag, `❌ Failed to queue xpub request for ${deviceId} ${pathInfo.path}:`, err);
           pendingXpubRequests.delete(requestKey);
         }
       }
-      
-      // Refresh portfolio after all xpub attempts
-      console.log(tag, `🔄 Refreshing portfolio after xpub fetching`);
-      await refreshPortfolio();
       
     } catch (error) {
       console.error(tag, 'Error in getXpubsFromDeviceQueue:', error);
@@ -167,11 +217,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     const tag = TAG + " | onStart | ";
     
     // Prevent multiple simultaneous initializations
-    if (isInitializing) {
+    if (isInitializing || initializingRef.current) {
       console.log(tag, 'Already initializing, skipping duplicate onStart call');
       return;
     }
     
+    initializingRef.current = true;
     setIsInitializing(true);
     setLoading(true);
     
@@ -239,10 +290,18 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Set final sync status
       setIsSync(allXpubsPresent);
       console.log(tag, 'Final sync status:', allXpubsPresent);
-      // Get portfolio data regardless of sync status
-      const portfolioData = await PortfolioAPI.getPortfolio();
-      console.log(tag, 'portfolioData:', portfolioData);
-      setPortfolio(portfolioData);
+      // Skip the old portfolio API call - we'll use in-memory xpubs via refreshPortfolio
+      console.log(tag, 'Skipping database portfolio call - using in-memory xpubs instead');
+      
+      // If we have xpubs in memory, refresh portfolio immediately
+      if (fetchedXpubs.length > 0) {
+        console.log(tag, `We have ${fetchedXpubs.length} xpubs in memory, refreshing portfolio`);
+        await refreshPortfolio();
+      } else {
+        console.log(tag, 'No xpubs in memory yet, portfolio will refresh when xpubs arrive via events');
+        setPortfolio(null);
+      }
+      
       setError(null);
 
     } catch (error) {
@@ -251,6 +310,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     } finally {
       setLoading(false);
       setIsInitializing(false);
+      initializingRef.current = false;
     }
   }
 
@@ -401,6 +461,69 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     
     return () => clearInterval(interval);
   }, [getQueueStatus, refreshPortfolio]);
+
+  // Listen for device responses (event-driven xpub handling)
+  useEffect(() => {
+    let unlistenResponse: Promise<() => void>;
+    
+    (async () => {
+      unlistenResponse = listen('device:response', async (event: any) => {
+        const tag = TAG + " | device:response | ";
+        const { device_id, request_id, response } = event.payload;
+        
+        console.log(tag, `Received response for ${request_id}:`, response);
+        
+        // Handle xpub responses
+        if (response && 'Xpub' in response) {
+          const xpubResponse = response.Xpub;
+          const requestKey = `${device_id}:${xpubResponse.path}`;
+          
+          // Remove from pending requests
+          pendingXpubRequests.delete(requestKey);
+          
+          if (xpubResponse.success) {
+            // Find the path info to get the CAIP
+            const requiredPaths = WalletDatabase.getRequiredPaths();
+            const pathInfo = requiredPaths.find(p => p.path === xpubResponse.path);
+            
+            if (pathInfo) {
+              const xpubData = {
+                path: xpubResponse.path,
+                xpub: xpubResponse.xpub,
+                caip: pathInfo.caip
+              };
+              
+              setFetchedXpubs(prev => {
+                // Avoid duplicates
+                const exists = prev.some(x => x.path === xpubData.path && x.caip === xpubData.caip);
+                if (exists) {
+                  console.log(tag, `Duplicate xpub for ${xpubData.path}, skipping`);
+                  return prev;
+                }
+
+                console.log(tag, `✅ Added xpub for ${xpubData.path}: ${xpubData.xpub.substring(0, 20)}...`);
+                const newXpubs = [...prev, xpubData];
+                console.log(tag, `Now have ${newXpubs.length} xpubs in memory:`, newXpubs.map(x => x.path));
+
+                // Immediately refresh portfolio with whatever xpubs are present
+                setTimeout(() => {
+                  refreshPortfolio();
+                }, 100);
+
+                return newXpubs;
+              });
+            }
+          } else {
+            console.error(tag, `❌ Xpub request failed for ${xpubResponse.path}:`, xpubResponse.error);
+          }
+        }
+      });
+    })();
+
+    return () => {
+      unlistenResponse?.then(fn => fn());
+    };
+  }, [refreshPortfolio]);
 
   // Listen for device reconnects and purge queue
   useEffect(() => {

@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{State, Emitter};
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use keepkey_rust::{
@@ -8,6 +8,7 @@ use keepkey_rust::{
 use uuid;
 use hex;
 use crate::logging::{log_device_request, log_device_response, log_raw_device_message};
+use crate::slip132::convert_xpub_prefix;
 
 type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
 
@@ -43,6 +44,7 @@ pub enum DeviceResponse {
         device_id: String,
         path: String,
         xpub: String,
+        script_type: Option<String>,
         success: bool,
         error: Option<String>,
     },
@@ -133,6 +135,7 @@ pub async fn add_to_device_queue(
     request: DeviceRequestWrapper,
     queue_manager: State<'_, DeviceQueueManager>,
     last_responses: State<'_, Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>>,
+    app: tauri::AppHandle,
 ) -> Result<String, String> {
     println!("Adding to device queue: {:?}", request);
     
@@ -222,7 +225,7 @@ pub async fn add_to_device_queue(
                 }
             }
         }
-        DeviceRequest::GetAddress { ref path, ref coin_name, ref script_type, show_display: _ } => {
+        DeviceRequest::GetAddress { ref path, ref coin_name, ref script_type, show_display } => {
             let path_parts = parse_derivation_path(&path)?;
             let script_type_int = match script_type.as_deref() {
                 Some("p2pkh") => Some(0),
@@ -232,7 +235,7 @@ pub async fn add_to_device_queue(
             };
             
             queue_handle
-                .get_address(path_parts, coin_name.clone(), script_type_int)
+                .get_address(path_parts, coin_name.clone(), script_type_int, show_display)
                 .await
                 .map_err(|e| format!("Failed to get address: {}", e))
         }
@@ -276,21 +279,61 @@ pub async fn add_to_device_queue(
     // Create and store the response
     let device_response = match (&request.request, &result) {
         (DeviceRequest::GetXpub { path }, Ok(xpub)) => {
+            // Infer script_type from path
+            let script_type = if path.starts_with("m/44'") {
+                Some("p2pkh".to_string())
+            } else if path.starts_with("m/49'") {
+                Some("p2sh-p2wpkh".to_string())
+            } else if path.starts_with("m/84'") {
+                Some("p2wpkh".to_string())
+            } else {
+                None
+            };
+            // Debug logging for xpub conversion
+            println!("[slip132-debug] Original xpub: {}", xpub);
+            println!("[slip132-debug] Inferred script_type: {:?}", script_type);
+            // Convert xpub prefix if possible
+            let converted_xpub = if let Some(ref st) = script_type {
+                match convert_xpub_prefix(&xpub, st) {
+                    Ok(res) => {
+                        println!("[slip132-debug] Converted xpub: {}", res);
+                        res
+                    },
+                    Err(e) => {
+                        eprintln!("[slip132] Failed to convert xpub prefix: {}", e);
+                        xpub.clone()
+                    }
+                }
+            } else {
+                xpub.clone()
+            };
             DeviceResponse::Xpub {
                 request_id: request.request_id.clone(),
                 device_id: request.device_id.clone(),
                 path: path.clone(),
-                xpub: xpub.clone(),
+                xpub: converted_xpub,
+                script_type,
                 success: true,
                 error: None,
             }
         }
         (DeviceRequest::GetXpub { path }, Err(e)) => {
+            // Infer script_type from path for error case as well
+            let script_type = if path.starts_with("m/44'") {
+                Some("p2pkh".to_string())
+            } else if path.starts_with("m/49'") {
+                Some("p2sh-p2wpkh".to_string())
+            } else if path.starts_with("m/84'") {
+                Some("p2wpkh".to_string())
+            } else {
+                None
+            };
             DeviceResponse::Xpub {
                 request_id: request.request_id.clone(),
                 device_id: request.device_id.clone(),
                 path: path.clone(),
                 xpub: String::new(),
+                script_type,
                 success: false,
                 error: Some(e.clone()),
             }
@@ -333,7 +376,20 @@ pub async fn add_to_device_queue(
     // Store the response for queue status queries
     {
         let mut responses = last_responses.lock().await;
-        responses.insert(request.device_id.clone(), device_response);
+        responses.insert(request.device_id.clone(), device_response.clone());
+    }
+    
+    // Emit event to frontend with the response
+    let event_payload = serde_json::json!({
+        "device_id": request.device_id,
+        "request_id": request.request_id,
+        "response": device_response
+    });
+    
+    if let Err(e) = app.emit("device:response", &event_payload) {
+        eprintln!("Failed to emit device:response event: {}", e);
+    } else {
+        println!("📡 Emitted device:response event for request {}", request.request_id);
     }
     
     // Log the response

@@ -68,6 +68,7 @@ pub enum DeviceCmd {
         path: Vec<u32>,
         coin_name: String,
         script_type: Option<i32>,
+        show_display: Option<bool>,
         respond_to: oneshot::Sender<Result<String>>,
         enqueued_at: Instant,
     },
@@ -214,8 +215,8 @@ impl DeviceWorker {
                 let result = self.handle_get_features().await;
                 let _ = respond_to.send(result);
             }
-            DeviceCmd::GetAddress { path, coin_name, script_type, respond_to, .. } => {
-                let result = self.handle_get_address(path, coin_name, script_type).await;
+            DeviceCmd::GetAddress { path, coin_name, script_type, show_display, respond_to, .. } => {
+                let result = self.handle_get_address(path, coin_name, script_type, show_display).await;
                 let _ = respond_to.send(result);
             }
             DeviceCmd::SendRaw { message, respond_to, bypass_cache, .. } => {
@@ -350,7 +351,7 @@ impl DeviceWorker {
     }
     
     /// Handle GetAddress command with caching
-    async fn handle_get_address(&mut self, path: Vec<u32>, coin_name: String, script_type: Option<i32>) -> Result<String> {
+    async fn handle_get_address(&mut self, path: Vec<u32>, coin_name: String, script_type: Option<i32>, show_display: Option<bool>) -> Result<String> {
         // Simple hash for parameters without bincode dependency
         let mut params = Vec::new();
         for &part in &path {
@@ -359,6 +360,9 @@ impl DeviceWorker {
         params.extend_from_slice(coin_name.as_bytes());
         if let Some(st) = script_type {
             params.extend_from_slice(&st.to_le_bytes());
+        }
+        if let Some(sd) = show_display {
+            params.extend_from_slice(&[sd as u8]);
         }
         
         let cache_key = CacheKey::new(self.device_id.clone(), "get_address", &params);
@@ -376,10 +380,11 @@ impl DeviceWorker {
         
         // Execute on device
         let transport = self.ensure_transport().await?;
-        let get_address = GetAddress {
+        let mut get_address = GetAddress {
             address_n: path,
             coin_name: Some(coin_name),
             script_type,
+            show_display,
             ..Default::default()
         };
         
@@ -479,12 +484,13 @@ impl DeviceQueueHandle {
     
     /// Get address for given path
     #[instrument(level = "debug", skip(self))]
-    pub async fn get_address(&self, path: Vec<u32>, coin_name: String, script_type: Option<i32>) -> Result<String> {
+    pub async fn get_address(&self, path: Vec<u32>, coin_name: String, script_type: Option<i32>, show_display: Option<bool>) -> Result<String> {
         let (tx, rx) = oneshot::channel();
         let cmd = DeviceCmd::GetAddress {
             path,
             coin_name,
             script_type,
+            show_display,
             respond_to: tx,
             enqueued_at: Instant::now(),
         };

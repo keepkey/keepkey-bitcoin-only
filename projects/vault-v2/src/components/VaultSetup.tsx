@@ -25,7 +25,8 @@ export function VaultSetup() {
 
   const checkVault = async () => {
     try {
-      const exists = await invoke<boolean>('check_vault_exists')
+      // const exists = await invoke<boolean>('check_vault_exists')
+      const exists = true
       setVaultExists(exists)
     } catch (e) {
       console.error('Failed to check vault:', e)

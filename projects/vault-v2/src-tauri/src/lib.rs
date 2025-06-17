@@ -5,6 +5,7 @@ mod db;
 mod commands;
 mod event_controller;
 mod logging;
+mod slip132;
 
 // Re-export commonly used types
 pub use db::{Database, DeviceInfo, XpubInfo};
