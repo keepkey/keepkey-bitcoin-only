@@ -429,6 +429,24 @@ export class DeviceQueueAPI {
   ): Promise<string> {
     try {
       const requestId = `addr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      return await this.requestReceiveAddressFromDeviceWithId(
+        deviceId, path, coinName, scriptType, showDisplay, requestId
+      );
+    } catch (error) {
+      console.error('Failed to add address request to device queue:', error);
+      throw error;
+    }
+  }
+
+  static async requestReceiveAddressFromDeviceWithId(
+    deviceId: string, 
+    path: string, 
+    coinName: string, 
+    scriptType: string | undefined,
+    showDisplay: boolean | undefined,
+    requestId: string
+  ): Promise<string> {
+    try {
       const request = {
         device_id: deviceId,
         request_id: requestId,

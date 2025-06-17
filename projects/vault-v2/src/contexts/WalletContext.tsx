@@ -381,38 +381,53 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // For Bitcoin, use the first available path (can be enhanced later)
       const receivePath = "m/84'/0'/0'/0/0"; // Native SegWit receive path
 
-      // (1) Create the promise up front and stash its resolver
-      let requestId: string;
+      // (1) Generate a unique request ID first
+      const requestId = `addr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log(tag, '🆔 Generated requestId:', requestId);
+
+      // (2) Store resolver functions in variables
+      let resolveAddress: (addr: string) => void;
+      let rejectAddress: (error: any) => void;
+
+      // (3) Create the promise and capture the resolvers
       const addrPromise = new Promise<string>((resolve, reject) => {
-        // We'll set requestId after the device call, then add to map
-        const setupResolver = (id: string) => {
-          pendingReceiveRequests.set(id, { resolve, reject });
-
-          // Hard timeout so the UI is never stuck forever
-          setTimeout(() => {
-            if (pendingReceiveRequests.delete(id)) {
-              reject(new Error('Timeout waiting for device response'));
-            }
-          }, 60_000);
-        };
-
-        // Store the setup function for use after device call
-        (addrPromise as any)._setupResolver = setupResolver;
+        resolveAddress = resolve;
+        rejectAddress = reject;
       });
 
-      // (2) NOW queue the request
-      requestId = await DeviceQueueAPI.requestReceiveAddressFromDevice(
-        device.device_id,
-        receivePath,
-        'Bitcoin',
-        'p2wpkh',
-        true // Always show on device
-      );
-      
-      console.log(tag, '🟢 Device queue requestId:', requestId);
-      
-      // Set up the resolver now that we have the requestId
-      (addrPromise as any)._setupResolver(requestId);
+      // (4) Set up the resolver in the map BEFORE sending the request
+      pendingReceiveRequests.set(requestId, { 
+        resolve: resolveAddress!, 
+        reject: rejectAddress! 
+      });
+
+      console.log(tag, `📋 Added request ${requestId} to pending map BEFORE device call. Current pending count:`, pendingReceiveRequests.size);
+
+      // (5) NOW queue the request with our pre-generated ID
+      try {
+        await DeviceQueueAPI.requestReceiveAddressFromDeviceWithId(
+          device.device_id,
+          receivePath,
+          'Bitcoin',
+          'p2wpkh',
+          true, // Always show on device
+          requestId // Pass our pre-generated ID
+        );
+        
+        console.log(tag, '🟢 Device request queued with requestId:', requestId);
+      } catch (error) {
+        // If the device call fails, clean up the pending request
+        pendingReceiveRequests.delete(requestId);
+        throw error;
+      }
+
+      // Hard timeout so the UI is never stuck forever
+      setTimeout(() => {
+        if (pendingReceiveRequests.delete(requestId)) {
+          console.log(tag, `⏰ Request ${requestId} timed out`);
+          rejectAddress!(new Error('Timeout waiting for device response'));
+        }
+      }, 60_000);
 
       return addrPromise; // Receive.tsx can still await this
     } catch (error) {
@@ -543,6 +558,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         if (response && 'Address' in response) {
           const addressResponse = response.Address;
           console.log(tag, `📥 Address response:`, addressResponse);
+          
+          console.log(tag, `🔍 Looking for request_id: ${request_id} in pending map`);
+          console.log(tag, `📋 Current pending requests:`, Array.from(pendingReceiveRequests.keys()));
           
           const entry = pendingReceiveRequests.get(request_id);
           if (!entry) {
