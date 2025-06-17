@@ -2,14 +2,14 @@ use tauri::{Emitter, Manager};
 
 // Modules for better organization
 mod db;
-mod device_queue;
 mod commands;
+mod event_controller;
 
 // Re-export commonly used types
 pub use db::{Database, DeviceInfo, XpubInfo};
-pub use device_queue::{DeviceQueueManager, MockDeviceQueue};
+use std::sync::Arc;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+// Learn more about Tauri commands at https://tauri.app/develop/rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -99,9 +99,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
-            // Initialize the device queue manager
-            let queue_manager = DeviceQueueManager::new();
-            app.manage(queue_manager);
+            // Initialize real device system using keepkey_rust
+            let device_queue_manager = Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::<String, keepkey_rust::device_queue::DeviceQueueHandle>::new()
+            ));
+            
+            app.manage(device_queue_manager);
+            event_controller::spawn_event_controller(&app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -111,9 +115,10 @@ pub fn run() {
             vault_change_view,
             vault_open_support,
             restart_backend_startup,
-            // Only queue operations allowed from frontend
-            commands::add_to_device_queue,
-            commands::get_queue_status
+            // Real device operations
+            commands::get_device_features,
+            commands::get_device_address,
+            commands::list_connected_devices
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

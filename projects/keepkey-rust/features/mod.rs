@@ -500,3 +500,87 @@ pub fn get_device_features_via_hid(target_device: &FriendlyUsbDevice) -> Result<
     Err(anyhow!("All HID attempts failed for device {}. Errors: {}", target_device.unique_id, errors.join(" | ")))
 }
 
+/// Convert a low-level USB device to a FriendlyUsbDevice
+/// This function handles all the USB string descriptor reading internally
+fn device_to_friendly(device: &rusb::Device<rusb::GlobalContext>) -> FriendlyUsbDevice {
+    let desc = device.device_descriptor().unwrap();
+    let unique_id = format!("bus{}_addr{}", device.bus_number(), device.address());
+    
+    // Try to get string descriptors
+    let (manufacturer, product, serial_number) = if let Ok(handle) = device.open() {
+        let timeout = std::time::Duration::from_millis(100);
+        let langs = handle.read_languages(timeout).unwrap_or_default();
+        
+        if let Some(&lang) = langs.first() {
+            let manuf = if desc.manufacturer_string_index().is_some() {
+                handle.read_manufacturer_string(lang, &desc, timeout).ok()
+            } else {
+                None
+            };
+            
+            let prod = if desc.product_string_index().is_some() {
+                handle.read_product_string(lang, &desc, timeout).ok()
+            } else {
+                None
+            };
+            
+            let serial = if desc.serial_number_string_index().is_some() {
+                handle.read_serial_number_string(lang, &desc, timeout).ok()
+            } else {
+                None
+            };
+            
+            (manuf, prod, serial)
+        } else {
+            (None, None, None)
+        }
+    } else {
+        (None, None, None)
+    };
+    
+    FriendlyUsbDevice::new(
+        unique_id,
+        desc.vendor_id(),
+        desc.product_id(),
+        manufacturer,
+        product,
+        serial_number,
+    )
+}
+
+/// List all connected KeepKey devices as FriendlyUsbDevice structures
+/// 
+/// This is the high-level API that applications should use instead of 
+/// directly calling list_devices() and doing USB string descriptor operations.
+///
+/// # Returns
+/// - `Vec<FriendlyUsbDevice>` containing all connected KeepKey devices with friendly names
+pub fn list_connected_devices() -> Vec<FriendlyUsbDevice> {
+    let devices = list_devices();
+    devices
+        .iter()
+        .map(device_to_friendly)
+        .collect()
+}
+
+/// Get device features by device ID using high-level API
+/// 
+/// This function finds the device by ID and gets its features with automatic USB/HID fallback.
+/// Applications should use this instead of manually finding devices and calling feature functions.
+///
+/// # Arguments
+/// * `device_id` - The unique device ID to get features for
+///
+/// # Returns
+/// - `Ok(DeviceFeatures)` if successful with all device information
+/// - `Err` if device not found or feature retrieval fails
+pub fn get_device_features_by_id(device_id: &str) -> Result<DeviceFeatures> {
+    let devices = list_connected_devices();
+    let device = devices
+        .iter()
+        .find(|d| d.unique_id == device_id)
+        .ok_or_else(|| anyhow!("Device {} not found", device_id))?;
+    
+    get_device_features_with_fallback(device)
+}
+
