@@ -505,10 +505,14 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
                 const newXpubs = [...prev, xpubData];
                 console.log(tag, `Now have ${newXpubs.length} xpubs in memory:`, newXpubs.map(x => x.path));
 
-                // Immediately refresh portfolio with whatever xpubs are present
-                setTimeout(() => {
-                  refreshPortfolio();
-                }, 100);
+                // Let useEffect handle portfolio refresh when fetchedXpubs updates
+                const requiredPaths = WalletDatabase.getRequiredPaths();
+                const expectedXpubCount = requiredPaths.length;
+                if (newXpubs.length === expectedXpubCount) {
+                  console.log(tag, `All expected xpubs (${expectedXpubCount}) are present. Portfolio will refresh via useEffect.`);
+                } else {
+                  console.log(tag, `Waiting for all xpubs: have ${newXpubs.length}, need ${expectedXpubCount}`);
+                }
 
                 return newXpubs;
               });
@@ -545,6 +549,26 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       unlistenConnect?.then(fn => fn());
     };
   }, []);
+
+  // Watch fetchedXpubs and refresh portfolio when all expected xpubs are present
+  useEffect(() => {
+    const tag = TAG + " | fetchedXpubs useEffect | ";
+    
+    if (fetchedXpubs.length === 0) {
+      console.log(tag, 'No xpubs in memory yet');
+      return;
+    }
+    
+    const requiredPaths = WalletDatabase.getRequiredPaths();
+    const expectedXpubCount = requiredPaths.length;
+    
+    console.log(tag, `Current xpubs: ${fetchedXpubs.length}, expected: ${expectedXpubCount}`);
+    
+    if (fetchedXpubs.length === expectedXpubCount) {
+      console.log(tag, `All ${expectedXpubCount} xpubs present, refreshing portfolio with current state`);
+      refreshPortfolio();
+    }
+  }, [fetchedXpubs, refreshPortfolio]);
 
   // Initial load
   useEffect(() => {
