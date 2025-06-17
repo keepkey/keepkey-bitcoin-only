@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    keepkey_gui_lib::run()
+    println!("keepkey-rust queue CLI (stub). Use --help for commands – implementation WIP");
 }
