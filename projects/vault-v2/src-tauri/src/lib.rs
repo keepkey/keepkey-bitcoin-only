@@ -22,12 +22,7 @@ fn is_first_time_install() -> Result<bool, String> {
     Ok(false)
 }
 
-// Blocking actions related commands
-#[tauri::command]
-fn get_blocking_actions() -> Result<Vec<String>, String> {
-    // Return empty array for now - can be enhanced to return actual blocking actions
-    Ok(vec![])
-}
+
 
 // Vault interface commands
 #[tauri::command]
@@ -111,14 +106,18 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             is_first_time_install,
-            get_blocking_actions,
             vault_change_view,
             vault_open_support,
             restart_backend_startup,
             // Real device operations
             commands::get_device_features,
             commands::get_device_address,
-            commands::list_connected_devices
+            commands::list_connected_devices,
+            commands::get_connected_devices,
+            commands::check_vault_exists,
+            commands::get_queue_status,
+            commands::get_blocking_actions,
+            commands::debug_device_communication
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

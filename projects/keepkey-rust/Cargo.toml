@@ -19,6 +19,11 @@ name = "kkcli-v2"
 path = "src/bin/kkcli_v2.rs"
 edition = "2021"
 
+[[bin]]
+name = "test_devices"
+path = "test_devices.rs"
+edition = "2021"
+
 [build-dependencies]
 prost-build = "0.11"
 protoc-bin-vendored = "3.0"

@@ -12,7 +12,43 @@ type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<Strin
 pub async fn list_connected_devices() -> Result<Vec<FriendlyUsbDevice>, String> {
     let devices = keepkey_rust::features::list_connected_devices();
     println!("Found {} connected devices", devices.len());
+    for device in &devices {
+        println!("  - {} (VID: 0x{:04x}, PID: 0x{:04x}) - {} {}", 
+                 device.unique_id, device.vid, device.pid,
+                 device.manufacturer.as_deref().unwrap_or("Unknown"),
+                 device.product.as_deref().unwrap_or("Unknown"));
+    }
     Ok(devices)
+}
+
+#[tauri::command]
+pub async fn debug_device_communication(device_id: String) -> Result<String, String> {
+    println!("🔍 Debug: Testing communication with device {}", device_id);
+    
+    // Get device info
+    let devices = keepkey_rust::features::list_connected_devices();
+    let device = devices
+        .iter()
+        .find(|d| d.unique_id == device_id)
+        .ok_or_else(|| format!("Device {} not found in enumeration", device_id))?;
+    
+    println!("🔍 Debug: Device info - VID: 0x{:04x}, PID: 0x{:04x}, IsKeepKey: {}", 
+             device.vid, device.pid, device.is_keepkey);
+    
+    // Try to get features with detailed error reporting
+    match keepkey_rust::features::get_device_features_with_fallback(device) {
+        Ok(features) => {
+            let result = format!("✅ SUCCESS: Device {} responded with firmware v{}, initialized: {}", 
+                                device_id, features.version, features.initialized);
+            println!("{}", result);
+            Ok(result)
+        }
+        Err(e) => {
+            let error_msg = format!("❌ FAILED: Device {} communication error: {}", device_id, e);
+            println!("{}", error_msg);
+            Ok(error_msg) // Return as Ok so frontend gets the debug info
+        }
+    }
 }
 
 #[tauri::command]
@@ -123,4 +159,36 @@ pub async fn get_device_address(
         .get_address(path, coin_name, script_type)
         .await
         .map_err(|e| format!("Failed to get device address: {}", e))
+}
+
+/// Get connected devices (frontend expects this name, not list_connected_devices)
+#[tauri::command]
+pub async fn get_connected_devices() -> Result<Vec<FriendlyUsbDevice>, String> {
+    let devices = keepkey_rust::features::list_connected_devices();
+    Ok(devices)
+}
+
+/// Check if vault exists (needed by frontend)
+#[tauri::command]
+pub fn check_vault_exists() -> bool {
+    // For now, return false - can be enhanced to check actual vault state
+    false
+}
+
+/// Get queue status (needed by frontend)
+#[tauri::command]
+pub async fn get_queue_status() -> Result<serde_json::Value, String> {
+    // Return empty queue status for now
+    Ok(serde_json::json!({
+        "total_queued": 0,
+        "active_operations": 0,
+        "status": "idle"
+    }))
+}
+
+/// Get blocking actions (enhanced version)
+#[tauri::command]
+pub async fn get_blocking_actions() -> Result<Vec<serde_json::Value>, String> {
+    // Return empty array for now - can be enhanced later
+    Ok(vec![])
 } 

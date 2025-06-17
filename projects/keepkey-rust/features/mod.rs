@@ -504,7 +504,8 @@ pub fn get_device_features_via_hid(target_device: &FriendlyUsbDevice) -> Result<
 /// This function handles all the USB string descriptor reading internally
 fn device_to_friendly(device: &rusb::Device<rusb::GlobalContext>) -> FriendlyUsbDevice {
     let desc = device.device_descriptor().unwrap();
-    let unique_id = format!("bus{}_addr{}", device.bus_number(), device.address());
+    let vid = desc.vendor_id();
+    let pid = desc.product_id();
     
     // Try to get string descriptors
     let (manufacturer, product, serial_number) = if let Ok(handle) = device.open() {
@@ -535,13 +536,47 @@ fn device_to_friendly(device: &rusb::Device<rusb::GlobalContext>) -> FriendlyUsb
             (None, None, None)
         }
     } else {
-        (None, None, None)
+        // If it's a KeepKey device and we can't open it, still add it with default values
+        if vid == 0x2B24 { // KEEPKEY_VID
+            log::warn!("Could not open KeepKey device {:04x}:{:04x}. Using default values.", vid, pid);
+            (Some("KeyHodlers, LLC".to_string()), Some("KeepKey".to_string()), None)
+        } else {
+            (None, None, None)
+        }
+    };
+    
+    // Create a stable unique system_id for the device (same logic as working vault)
+    let mut use_serial_as_id = false;
+    if let Some(sn) = &serial_number {
+        if !sn.is_empty() {
+            use_serial_as_id = true;
+        }
+    }
+
+    let unique_id = if use_serial_as_id {
+        serial_number.clone().unwrap() // Safe: checked is_some and !is_empty
+    } else {
+        // Serial is None or Some("")
+        if vid == 0x2B24 { // KEEPKEY_VID
+            if serial_number.is_some() { // Implies Some("") because use_serial_as_id is false
+                log::info!("KeepKey device (VID:{:04x}, PID:{:04x}) with empty serial. Using fallback ID.", vid, pid);
+            } else { // Implies None
+                log::info!("KeepKey device (VID:{:04x}, PID:{:04x}) with no serial. Using fallback ID.", vid, pid);
+            }
+            format!("keepkey_{:04x}_{:04x}_bus{}_addr{}", 
+                    vid, pid, 
+                    device.bus_number(), 
+                    device.address())
+        } else {
+            // Non-KeepKey device, and serial is None or Some("")
+            format!("bus{}_addr{}", device.bus_number(), device.address())
+        }
     };
     
     FriendlyUsbDevice::new(
         unique_id,
-        desc.vendor_id(),
-        desc.product_id(),
+        vid,
+        pid,
         manufacturer,
         product,
         serial_number,
