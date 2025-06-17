@@ -1,13 +1,10 @@
 use super::{ProtocolAdapter, Transport};
 use crate::messages::Message;
 use anyhow::{anyhow, Result};
-use lazy_static::lazy_static;
-use std::sync::RwLock;
+
 use log::{info, debug};
 
-lazy_static! {
-    pub static ref VERBOSE: RwLock<bool> = RwLock::new(false);
-}
+
 
 impl<T, E> ProtocolAdapter for T
 where
@@ -21,9 +18,7 @@ where
     fn send(&mut self, msg: Message) -> Result<()> {
         info!("ProtocolAdapter::send: Sending message type: {:?}", msg.message_type());
         
-        if *VERBOSE.read().unwrap() {
-            println!("-> {:?}", msg);
-        }
+        println!("-> {:?}", msg);
         let mut out_buf = Vec::<u8>::with_capacity(msg.encoded_len());
         msg.encode(&mut out_buf)?;
         
@@ -53,9 +48,7 @@ where
         let out = Message::decode(&mut in_buf.as_slice()).map_err(|x| anyhow!(x))?;
         info!("ProtocolAdapter::handle: Decoded response type: {:?}", out.message_type());
         
-        if *VERBOSE.read().unwrap() {
-            println!("<- {:?}", out);
-        }
+        println!("<- {:?}", out);
         Ok(out)
     }
 }

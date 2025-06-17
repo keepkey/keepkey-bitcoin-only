@@ -8,7 +8,7 @@ use tracing::{info, warn, error, debug, instrument};
 
 use crate::messages::{Message, GetFeatures, GetAddress, Features};
 use crate::transport::ProtocolAdapter;
-use crate::usb_manager::FriendlyUsbDevice;
+use crate::friendly_usb::FriendlyUsbDevice;
 
 // Default timeouts and limits
 const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(30);

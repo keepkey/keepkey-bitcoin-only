@@ -17,22 +17,13 @@ const TAG: &str = " | lib | ";
 // ---------- Public modules ----------
 pub mod messages;
 pub mod transport;
-pub mod commands;
+
 pub mod features;
-pub mod usb_manager;   // low‑level detection / HID wrappers
-pub mod error;
-pub mod utils;        // REST + MCP server layer
-pub mod device_registry;  // Multi-device registry
-pub mod device_controller;  // Background device management
-pub mod device_queue;      // Device request queue for serialized device communication
-pub mod device_update; // Device update workflow and version checking
-pub mod vault;         // SQLCipher encrypted vault
-pub mod index_db;      // SQLite index database for metadata and onboarding
-pub mod blocking_actions; // Device blocking actions tracking (mandatory updates)
-pub mod updates;       // Firmware and bootloader update functionality
-pub mod server;        // REST API and MCP server
-pub mod cache;         // Device cache and frontload functionality
-mod device_controller_ext; // Extension to DeviceController for update functionality
+pub mod device_queue;
+pub mod friendly_usb;
+
+
+
 
 // ---------- Std / 3rd‑party ----------
 use std::sync::{Arc, Mutex};

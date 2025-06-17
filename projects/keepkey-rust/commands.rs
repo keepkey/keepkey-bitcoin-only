@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::features::DeviceFeatures;
 use crate::device_registry;
-use crate::device_update::{evaluate_device_status, DeviceStatus};
+
 use crate::blocking_actions::{BlockingAction, BlockingActionType, BlockingActionsState};
-use crate::usb_manager::FriendlyUsbDevice;
+
 use tauri::{Manager, Emitter};
 use crate::device_queue::DeviceQueueHandle;
 use crate::index_db::{IndexDb, RequiredPath, WalletXpub, PortfolioCache, PortfolioCacheInput, FeeRateCache};

@@ -1,9 +1,14 @@
 [package]
 name = "keepkey_rust"
+
+[lib]
+name = "keepkey_rust"
+path = "core_lib.rs"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Headless multi-device queue and transport layer for KeepKey hardware wallets."
+
 
 [[bin]]
 name = "kkq"
@@ -12,6 +17,7 @@ path = "main.rs"
 [[bin]]
 name = "kkcli-v2"
 path = "src/bin/kkcli_v2.rs"
+edition = "2021"
 
 [build-dependencies]
 prost-build = "0.11"

@@ -9,7 +9,7 @@ use crate::usb_manager::FriendlyUsbDevice;
 use crate::device_registry::{DeviceEntry, add_or_update_device, add_or_update_device_with_queue, remove_device};
 use crate::device_queue::{DeviceQueueFactory};
 use crate::index_db::IndexDb;
-use crate::device_update::{evaluate_device_status, DeviceStatus};
+
 use crate::blocking_actions::{BlockingActionsState, BlockingAction};
 
 const FEATURE_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
