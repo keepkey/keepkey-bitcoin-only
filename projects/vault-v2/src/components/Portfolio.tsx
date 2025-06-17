@@ -19,6 +19,8 @@ interface PortfolioProps {
 export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   const { portfolio, loading, error, refreshPortfolio } = useWallet();
 
+  console.log('portfolio: ', portfolio);
+
   // Format USD value
   const formatUsd = (value: number | string) => {
     const numValue = typeof value === 'string' ? parseFloat(value) : value;
@@ -41,7 +43,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
       if (portfolio.assets && portfolio.assets.length > 0) {
         console.log('💵 Individual asset USD values:');
         portfolio.assets.forEach((asset, index) => {
-          console.log(`  [${index}] ${asset.symbol}: balance="${asset.balance}", value_usd=${asset.value_usd} (${typeof asset.value_usd})`);
+          console.log(`  [${index}] ${asset.caip}: balance="${asset.balance}", value_usd=${asset.value_usd} (${typeof asset.value_usd})`);
         });
       }
     }
@@ -110,7 +112,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
 
   // Find BTC balance (sum all BTC balances if multiple, or 0 if none)
   const btcTotal = portfolio.assets
-    .filter(asset => asset.symbol === 'BTC')
+    .filter(asset => asset.caip === 'bip122:000000000019d6689c085ae165831e93/slip44:0')
     .reduce((sum, asset) => sum + parseFloat(asset.balance), 0);
 
   return (
