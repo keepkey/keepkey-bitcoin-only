@@ -28,7 +28,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
 
   // Get BTC asset from portfolio
-  const btcAsset = portfolio?.assets.find(asset => asset.symbol === 'BTC');
+  const btcAsset = portfolio?.assets.find(asset => asset.caip === 'bip122:000000000019d6689c085ae165831e93/slip44:0');
 
   // Generate receive address
   const generateAddress = async () => {
@@ -41,21 +41,39 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
       setLoading(true);
       setError(null);
       
-      // Select the BTC asset first
+      // Select the BTC asset first and wait for it to be set
       selectAsset(btcAsset);
       
-      // Get receive address from wallet context
+      // Add a small delay to ensure the asset is selected in context
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Get receive address from wallet context (now uses device queue)
       const receiveAddress = await getReceiveAddress();
       
       if (receiveAddress) {
         setAddress(receiveAddress);
       } else {
-        throw new Error('Failed to generate receive address');
+        throw new Error('Failed to generate receive address - device queue error');
       }
       
     } catch (error) {
       console.error('Error generating address:', error);
-      setError(error instanceof Error ? error.message : 'Failed to generate address');
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to generate address';
+      if (error instanceof Error) {
+        if (error.message.includes('No devices available')) {
+          errorMessage = 'No KeepKey device found. Please connect your device.';
+        } else if (error.message.includes('Timeout')) {
+          errorMessage = 'Device confirmation timeout. Please try again and confirm on your device.';
+        } else if (error.message.includes('No asset selected')) {
+          errorMessage = 'Please wait for wallet to load and try again.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

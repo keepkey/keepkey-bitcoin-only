@@ -163,14 +163,63 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       return null;
     }
 
-    console.log(`📥 Getting receive address for ${selectedAsset.symbol}`);
+    console.log(`📥 Getting receive address for ${selectedAsset.symbol} using device queue`);
     try {
-      const address = await PortfolioAPI.getReceiveAddress(selectedAsset);
-      console.log('✅ Receive address obtained:', address);
-      return address;
+      // Get the first device from database
+      const devices = await WalletDatabase.getDevices();
+      if (devices.length === 0) {
+        throw new Error('No devices available');
+      }
+      
+      const device = devices[0];
+      
+      // For Bitcoin, use the first available path (we'll enhance this later)
+      // TODO: Make this configurable or determine from asset type
+      const receivePath = "m/84'/0'/0'/0/0"; // Native SegWit receive path
+      
+      // Request address from device queue with display confirmation
+      const requestId = await DeviceQueueAPI.requestReceiveAddressFromDevice(
+        device.device_id,
+        receivePath,
+        'Bitcoin',
+        'p2wpkh',
+        true // Show on device for security
+      );
+      
+      console.log(`📝 Address request queued with ID: ${requestId}`);
+      
+      // Poll for completion (in a real app, you'd use websockets or events)
+      for (let i = 0; i < 30; i++) { // 30 second timeout
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const status = await DeviceQueueAPI.getQueueStatus(device.device_id);
+        
+        if (status.last_response) {
+          // Check if this is our address response
+          if ('Address' in status.last_response && 
+              status.last_response.Address.request_id === requestId &&
+              status.last_response.Address.success) {
+            
+            const address = status.last_response.Address.address;
+            console.log('✅ Receive address obtained from device:', address);
+            return address;
+          }
+          
+          // Check for error
+          if ('Address' in status.last_response && 
+              status.last_response.Address.request_id === requestId &&
+              !status.last_response.Address.success) {
+            
+            throw new Error(status.last_response.Address.error || 'Device returned error');
+          }
+        }
+      }
+      
+      throw new Error('Timeout waiting for device response');
+      
     } catch (error) {
-      console.error('❌ Failed to get receive address');
-      return null;
+      console.error('❌ Failed to get receive address from device:', error);
+      throw error;
     }
   };
 
@@ -191,22 +240,31 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         for (const device of devices) {
           const status = await getQueueStatus(device.device_id);
           
-          if (status.last_response && status.last_response.success) {
-            const { device_id, path, xpub } = status.last_response;
-            
-            // Check if we already have this xpub in the database
-            const existingXpubs = await WalletDatabase.getXpubs(device_id);
-            const exists = existingXpubs.some(x => x.path === path && x.pubkey === xpub);
-            
-            if (!exists) {
-              console.log('📥 Storing completed xpub request:', path, '->', xpub.substring(0, 20) + '...');
-              await WalletDatabase.insertXpubFromQueue(device_id, path, xpub);
+          if (status.last_response) {
+            // Handle xpub responses
+            if ('Xpub' in status.last_response && status.last_response.Xpub.success) {
+              const { device_id, path, xpub } = status.last_response.Xpub;
               
-              // Clear balance cache to force refresh with new xpub
-              await WalletDatabase.clearBalanceCache();
+              // Check if we already have this xpub in the database
+              const existingXpubs = await WalletDatabase.getXpubs(device_id);
+              const exists = existingXpubs.some(x => x.path === path && x.pubkey === xpub);
               
-              // Refresh portfolio to include new xpub data
-              await refreshPortfolio();
+              if (!exists) {
+                console.log('📥 Storing completed xpub request:', path, '->', xpub.substring(0, 20) + '...');
+                await WalletDatabase.insertXpubFromQueue(device_id, path, xpub);
+                
+                // Clear balance cache to force refresh with new xpub
+                await WalletDatabase.clearBalanceCache();
+                
+                // Refresh portfolio to include new xpub data
+                await refreshPortfolio();
+              }
+            }
+            
+            // Handle address responses (for receive address generation)
+            if ('Address' in status.last_response && status.last_response.Address.success) {
+              console.log('📥 Address generated:', status.last_response.Address.address);
+              // Address responses are handled by the getReceiveAddress method
             }
           }
         }

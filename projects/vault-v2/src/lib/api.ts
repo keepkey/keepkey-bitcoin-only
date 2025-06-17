@@ -363,10 +363,37 @@ export class PortfolioAPI {
 export class DeviceQueueAPI {
   static async requestXpubFromDevice(deviceId: string, path: string): Promise<string> {
     try {
-      const requestId = await invoke('add_to_device_queue', { deviceId, path });
+      const request = {
+        GetXpub: { path }
+      };
+      const requestId = await invoke('add_to_device_queue', { deviceId, request });
       return requestId as string;
     } catch (error) {
-      console.error('Failed to add to device queue:', error);
+      console.error('Failed to add xpub request to device queue:', error);
+      throw error;
+    }
+  }
+
+  static async requestReceiveAddressFromDevice(
+    deviceId: string, 
+    path: string, 
+    coinName: string, 
+    scriptType?: string,
+    showDisplay: boolean = true
+  ): Promise<string> {
+    try {
+      const request = {
+        GetAddress: { 
+          path, 
+          coin_name: coinName, 
+          script_type: scriptType, 
+          show_display: showDisplay 
+        }
+      };
+      const requestId = await invoke('add_to_device_queue', { deviceId, request });
+      return requestId as string;
+    } catch (error) {
+      console.error('Failed to add address request to device queue:', error);
       throw error;
     }
   }
