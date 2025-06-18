@@ -267,7 +267,7 @@ pub async fn add_to_device_queue(
             let mut signatures = Vec::new();
             let mut serialized_tx_parts = Vec::new();
             
-            loop {
+            let signing_result = loop {
                 let response = queue_handle.send_raw(current_message, false).await
                     .map_err(|e| format!("Device communication error: {}", e))?;
                 
@@ -311,23 +311,26 @@ pub async fn add_to_device_queue(
                                     }
                                 }
                                 
-                                return Ok(signed_tx_hex);
+                                // Don't return early - let the function continue to response creation
+                                break Ok(signed_tx_hex);
                             }
-                            Err(e) => return Err(e),
+                            Err(e) => break Err(e),
                         }
                     }
                     keepkey_rust::messages::Message::Failure(failure) => {
                         let error = format!("Device returned error: {}", failure.message.unwrap_or_default());
                         println!("❌ Failed to sign transaction: {}", error);
-                        return Err(error);
+                        break Err(error);
                     }
                     _ => {
                         let error = format!("Unexpected response from device: {:?}", response);
                         println!("❌ Failed to sign transaction: {}", error);
-                        return Err(error);
+                        break Err(error);
                     }
                 }
-            }
+            };
+            
+            signing_result
         }
         DeviceRequest::SendRaw { ref message_type, ref message_data } => {
             // Log the raw message being sent
@@ -472,7 +475,7 @@ pub async fn add_to_device_queue(
     {
         let mut responses = last_responses.lock().await;
         println!("🗄️ Inserting DeviceResponse into last_responses: device_id={}, request_id={}", request.device_id, request.request_id);
-        responses.insert(request.device_id.clone(), device_response.clone());
+        responses.insert(request.request_id.clone(), device_response.clone());
     }
     
     // Emit event to frontend with the response

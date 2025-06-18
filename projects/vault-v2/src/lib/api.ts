@@ -529,6 +529,32 @@ export class DeviceQueueAPI {
     }
     try {
       const requestId = `sign_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      return await this.signTransactionWithId(deviceId, coin, inputs, outputs, version, lockTime, requestId);
+    } catch (error) {
+      console.error('Failed to add transaction signing request to device queue:', error);
+      throw error;
+    }
+  }
+
+  static async signTransactionWithId(
+    deviceId: string,
+    coin: string,
+    inputs: any[],
+    outputs: any[],
+    version: number = 1,
+    lockTime: number = 0,
+    requestId: string
+  ): Promise<string> {
+    // Validation: deviceId must be present and valid
+    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+      throw new Error('DeviceQueueAPI: Cannot queue signTransaction: deviceId is missing or invalid.');
+    }
+    // Validation: device must be connected
+    const connected = await DeviceQueueAPI.getConnectedDevices();
+    if (!connected.some(d => getCanonicalDeviceId(d) === deviceId)) {
+      throw new Error(`DeviceQueueAPI: Cannot queue signTransaction: device ${deviceId} is not connected.`);
+    }
+    try {
       const request = {
         device_id: deviceId,
         request_id: requestId,
@@ -543,7 +569,7 @@ export class DeviceQueueAPI {
         }
       };
       
-      console.log('🔐 Requesting transaction signing from device:', { deviceId, coin, inputCount: inputs.length, outputCount: outputs.length });
+      console.log('🔐 Requesting transaction signing from device:', { deviceId, coin, inputCount: inputs.length, outputCount: outputs.length, requestId });
       await invoke('add_to_device_queue', { request });
       return requestId;
     } catch (error) {

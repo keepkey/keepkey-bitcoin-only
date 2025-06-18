@@ -13,7 +13,7 @@ import {
   Badge,
   Code
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaQrcode, FaPaperPlane, FaEye, FaSignature, FaCheck } from 'react-icons/fa';
+import { FaArrowLeft, FaQrcode, FaPaperPlane, FaEye, FaSignature, FaCheck, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
 import { PioneerAPI, DeviceQueueAPI } from '../lib/api';
@@ -62,6 +62,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const [amountCurrency, setAmountCurrency] = useState<'BTC' | 'USD'>('BTC');
   const [btcPrice, setBtcPrice] = useState<number>(43000);
   const [isMaxSend, setIsMaxSend] = useState(false);
+  const [isShowingHex, setIsShowingHex] = useState(false); // Hex collapsed by default
   
   // Fee-related state
   const [feeRates, setFeeRates] = useState<FeeRates>({ slow: 1, medium: 5, fast: 10 }); // Fallback rates
@@ -798,69 +799,64 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
 
   const renderCompleteStep = () => {
     return (
-      <VStack gap={6} align="center">
-        <Box bg="gray.800" p={8} borderRadius="lg" textAlign="center" w="100%">
-          <VStack gap={4}>
-            <Box color="green.400" fontSize="4xl">
+      <VStack gap={4} align="center">
+        <Box bg="gray.800" p={6} borderRadius="lg" textAlign="center" w="100%">
+          <VStack gap={3}>
+            <Box color="green.400" fontSize="3xl">
               <FaCheck />
             </Box>
             <Heading size="md" color="white">Transaction Signed!</Heading>
-            <Text color="gray.400" textAlign="center">
+            <Text color="gray.400" textAlign="center" fontSize="sm">
               Your transaction has been successfully signed
             </Text>
 
             {signedTransaction && (
-              <Box w="100%" mt={4}>
-                <Text color="gray.400" fontSize="sm" mb={2}>Signed Transaction:</Text>
-                <Box bg="gray.900" p={4} borderRadius="md" border="1px solid" borderColor="gray.600">
-                  <Code fontSize="xs" wordBreak="break-all" color="green.300">
-                    {signedTransaction}
-                  </Code>
-                </Box>
+              <Box w="100%" mt={3}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsShowingHex(!isShowingHex)}
+                  color="gray.400"
+                  _hover={{ color: "white" }}
+                >
+                  <HStack gap={2}>
+                    <Text>{isShowingHex ? 'Hide' : 'Show'} Signed Transaction</Text>
+                    {isShowingHex ? <FaChevronUp /> : <FaChevronDown />}
+                  </HStack>
+                </Button>
+                
+                {isShowingHex && (
+                  <Box bg="gray.900" p={3} borderRadius="md" border="1px solid" borderColor="gray.600" mt={2}>
+                    <Code fontSize="2xs" wordBreak="break-all" color="gray.300" bg="transparent">
+                      {signedTransaction}
+                    </Code>
+                  </Box>
+                )}
               </Box>
             )}
           </VStack>
         </Box>
 
-        <VStack gap={3} w="100%">
-          <Button
-            colorScheme="orange"
-            size="lg"
-            width="100%"
-            onClick={() => {
-              console.log('🚀 Broadcasting transaction (placeholder):', signedTransaction);
-              // TODO: Implement actual broadcast to Bitcoin network
-              alert('Broadcasting functionality not yet implemented');
-            }}
-          >
-            <HStack gap={2}>
-              <FaPaperPlane />
-              <Text>Broadcast Transaction</Text>
-            </HStack>
-          </Button>
-          <Button
-            colorScheme="green"
-            size="lg"
-            width="100%"
-            onClick={handleNewTransaction}
-          >
-            <HStack gap={2}>
-              <FaCheck />
-              <Text>Send Another Transaction</Text>
-            </HStack>
-          </Button>
-          <Button
-            variant="ghost"
-            color="gray.400"
-            onClick={onBack}
-          >
-            Back to Wallet
-          </Button>
-        </VStack>
+        {/* Single main action button */}
+        <Button
+          colorScheme="orange"
+          size="lg"
+          width="100%"
+          onClick={() => {
+            console.log('🚀 Broadcasting transaction (placeholder):', signedTransaction);
+            // TODO: Implement actual broadcast to Bitcoin network
+            alert('Broadcasting functionality not yet implemented');
+          }}
+        >
+          <HStack gap={2}>
+            <FaPaperPlane />
+            <Text>Broadcast Transaction</Text>
+          </HStack>
+        </Button>
 
         {success && (
-          <Box bg="green.900" p={3} borderRadius="md" border="1px solid" borderColor="green.600" w="100%">
-            <Text color="green.200" fontSize="sm">✅ {success}</Text>
+          <Box bg="green.900" p={2} borderRadius="md" border="1px solid" borderColor="green.600" w="100%">
+            <Text color="green.200" fontSize="sm" textAlign="center">✅ {success}</Text>
           </Box>
         )}
       </VStack>

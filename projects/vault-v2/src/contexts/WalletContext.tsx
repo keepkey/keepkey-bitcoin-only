@@ -493,7 +493,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     try {
       console.log(tag, `🔐 Signing transaction on device ${deviceId}`);
       
-      // Create promise resolvers
+      // (1) Generate a unique request ID first
+      const requestId = `sign_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      let finalRequestId = requestId; // Track the actual request ID for cleanup
+      console.log(tag, '🆔 Generated requestId:', requestId);
+      
+      // (2) Create promise resolvers
       let resolveSignature: (signedTx: string) => void;
       let rejectSignature: (error: any) => void;
       
@@ -502,75 +507,45 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         rejectSignature = reject;
       });
       
-      // Queue the signing request and get the actual request ID used by the device queue
-      let requestId: string;
-      try {
-        requestId = await DeviceQueueAPI.signTransaction(deviceId, coin, inputs, outputs, version, lockTime);
-        console.log(tag, '🆔 Using request ID from device queue:', requestId);
-      } catch (error) {
-        throw error;
-      }
-      
-      // Store the resolvers using the actual request ID from device queue
+      // (3) Store the resolvers using the pre-generated request ID BEFORE device call
       pendingSigningRequests.set(requestId, {
         resolve: resolveSignature!,
         reject: rejectSignature!
       });
       
-      console.log(tag, `📋 Added signing request ${requestId} to pending map`);
-      console.log(tag, '🟢 Transaction signing request queued');
+      console.log(tag, `📋 Added signing request ${requestId} to pending map BEFORE device call`);
       
-      // Fallback polling: if for any reason the frontend event bridge misses the
-      // `device:response` emission, periodically query the backend queue status
-      // and resolve the promise as soon as the SignedTransaction response is
-      // visible.  This guarantees that the UI will never be stuck in the "Sign"
-      // step solely because of a lost event.
-      const POLL_MS = 1_0000; // 1-second interval
-      console.log(tag, '[FALLBACK_POLL_START] Fallback polling for SignedTransaction response is ACTIVE for request', requestId);
-      const pollInterval = setInterval(async () => {
-        console.log(tag, `[FALLBACK_POLL_INTERVAL_FIRED] Interval fired for requestId: ${requestId}`);
-        try {
-          console.log(tag, `[FALLBACK_POLL_DEVICE_ID] Polling with deviceId: ${deviceId} for requestId: ${requestId}`);
-          const status = await getQueueStatus(deviceId);
-          if (status?.last_response && (
-              'SignedTransaction' in status.last_response ||
-              (status.last_response.type === 'SignedTransaction')) ) {
-            console.log(tag, '[FALLBACK_POLL_CHECK] Polled queue status, found SignedTransaction shape for request', requestId);
-            const resp = 'SignedTransaction' in status.last_response
-              ? status.last_response.SignedTransaction
-              : status.last_response.data;
-            if (resp.request_id === requestId) {
-              console.log(tag, '[FALLBACK_POLL_MATCH] Polled response matches requestId:', requestId);
-              console.log(tag, '⚡ Fallback poll captured SignedTransaction response');
-              const entry = pendingSigningRequests.get(requestId);
-              if (entry) {
-                pendingSigningRequests.delete(requestId);
-                clearInterval(pollInterval);
-                if (resp.success) {
-                  entry.resolve(resp.signed_tx);
-                } else {
-                  entry.reject(new Error(resp.error || 'Device signing error'));
-                }
-              }
-            }
+      // (4) NOW queue the signing request with our pre-generated ID
+      try {
+        // We need to modify the API to accept a pre-generated request ID
+        const actualRequestId = await DeviceQueueAPI.signTransactionWithId(deviceId, coin, inputs, outputs, version, lockTime, requestId);
+        console.log(tag, '🆔 Device call completed with requestId:', actualRequestId);
+        
+        // Verify the request ID matches what we expect
+        if (actualRequestId !== requestId) {
+          console.warn(tag, `⚠️ Request ID mismatch! Expected: ${requestId}, Got: ${actualRequestId}`);
+          // Update the map with the actual ID if they differ
+          const resolver = pendingSigningRequests.get(requestId);
+          if (resolver) {
+            pendingSigningRequests.delete(requestId);
+            pendingSigningRequests.set(actualRequestId, resolver);
+            finalRequestId = actualRequestId; // Update for timeout cleanup
           }
-        } catch (e) {
-          console.debug(tag, 'Polling error (ignored):', e);
         }
-      }, POLL_MS);
-
-      // Clear fallback polling when the promise settles
-      signingPromise.finally(() => {
-        console.log(tag, '[FALLBACK_POLL_CLEAR] Fallback polling cleared by promise settle for request', requestId);
-        clearInterval(pollInterval);
-      });
+      } catch (error) {
+        // If the device call fails, clean up the pending request
+        pendingSigningRequests.delete(requestId);
+        throw error;
+      }
+      
+      console.log(tag, '🟢 Transaction signing request queued - waiting for device:response event');
       
       // Set timeout to prevent infinite waiting
       setTimeout(() => {
-        if (pendingSigningRequests.delete(requestId)) {
-          console.log(tag, `⏰ Signing request ${requestId} timed out`);
-          clearInterval(pollInterval);
-          console.log(tag, '[FALLBACK_POLL_CLEAR] Fallback polling cleared by TIMEOUT for request', requestId);
+        // Try to clean up using either the original or updated request ID
+        const deleted = pendingSigningRequests.delete(finalRequestId) || pendingSigningRequests.delete(requestId);
+        if (deleted) {
+          console.log(tag, `⏰ Signing request ${finalRequestId} timed out`);
           rejectSignature!(new Error('Timeout waiting for transaction signing'));
         }
       }, 120_000); // 2-minute timeout for signing
@@ -581,38 +556,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       throw error;
     }
   };
-
-  // Queue monitoring - check for completed xpub requests every 5 seconds
-  useEffect(() => {
-    const monitorQueue = async () => {
-      try {
-        const devices: any[] = []; // No DB, use empty array
-        
-        for (const device of devices) {
-          const status = await getQueueStatus(device.device_id);
-          
-          if (status.last_response) {
-            if ('Xpub' in status.last_response && status.last_response.Xpub.success) {
-              // No DB: xpubs are not persisted
-              // In-memory xpub handling would go here if needed
-            }
-            if ('Address' in status.last_response && status.last_response.Address.success) {
-              console.log('📥 Address generated:', status.last_response.Address.address);
-              // Address responses are handled by the getReceiveAddress method
-            }
-          }
-        }
-      } catch (error) {
-        // Silently ignore errors in queue monitoring
-        console.debug('Queue monitoring error:', error);
-      }
-    };
-
-    // Monitor every 5 seconds
-    const interval = setInterval(monitorQueue, 5000);
-    
-    return () => clearInterval(interval);
-  }, [getQueueStatus, refreshPortfolio]);
 
   // Listen for device responses (event-driven xpub and address handling)
   useEffect(() => {
@@ -625,19 +568,29 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         console.log(tag, `📡 Raw event received:`, event);
         console.log(tag, `📡 Event payload:`, event.payload);
         
-        // EXPLICIT DEBUGGING FOR SIGNING EVENTS
-        if (event.payload && event.payload.response) {
-          console.log(tag, `🔍 DEBUGGING: Response keys:`, Object.keys(event.payload.response));
-          if ('SignedTransaction' in event.payload.response) {
-            console.log(tag, `🔐 FOUND SignedTransaction event!`, event.payload.response.SignedTransaction);
-          }
+        // Validate event structure
+        if (!event.payload) {
+          console.error(tag, '❌ Event payload is missing');
+          return;
         }
         
         const { device_id, request_id, response } = event.payload;
         
+        if (!device_id || !request_id || !response) {
+          console.error(tag, '❌ Event payload missing required fields:', { device_id, request_id, response });
+          return;
+        }
+        
         console.log(tag, `📥 Extracted - device_id: ${device_id}, request_id: ${request_id}`);
         console.log(tag, `📥 Response type:`, Object.keys(response || {}));
         console.log(tag, `📥 Response content:`, response);
+        
+        // EXPLICIT DEBUGGING FOR SIGNING EVENTS
+        if ('SignedTransaction' in response) {
+          console.log(tag, `🔐 FOUND SignedTransaction event!`);
+          console.log(tag, `🔐 SignedTransaction data:`, response.SignedTransaction);
+          console.log(tag, `🔐 Current pending signing requests:`, Array.from(pendingSigningRequests.keys()));
+        }
         
         // Handle xpub responses
         if (response && 'Xpub' in response) {
@@ -743,9 +696,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           pendingSigningRequests.delete(request_id);
 
           if (signingResponse.success) {
-            console.log(tag, `✅ Transaction signed successfully!`);
+            console.log(tag, `✅ Transaction signed successfully via event!`);
             console.log(tag, `🔐 Signed transaction hex length:`, signingResponse.signed_tx.length);
             console.log(tag, `🔐 Signed transaction preview:`, signingResponse.signed_tx.substring(0, 40) + '...');
+            console.log(tag, `🚀 Resolving promise with signed transaction`);
             entry.resolve(signingResponse.signed_tx);
           } else {
             console.error(tag, `❌ Transaction signing failed:`, signingResponse.error);
@@ -753,9 +707,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           }
         }
       });
+      
+      console.log(TAG, '✅ Device response event listener established');
     })();
 
     return () => {
+      console.log(TAG, '🧹 Cleaning up device response event listener');
       unlistenResponse?.then(fn => fn());
     };
   }, [refreshPortfolio]);

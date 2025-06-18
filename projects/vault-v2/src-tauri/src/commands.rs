@@ -13,6 +13,9 @@ use crate::logging::{log_device_request, log_device_response, log_raw_device_mes
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
 
+// Change the response storage to use request_id as key instead of device_id
+type LastResponsesMap = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitcoinUtxoInput {
     pub address_n_list: Vec<u32>,     // Derivation path [2147483692, 2147483648, ...]
@@ -181,11 +184,35 @@ pub async fn get_queue_status(
     
     println!("[QUEUE_STATUS_CALL] get_queue_status called for device: {:?}", device_id);
     if let Some(device_id) = device_id {
-        // Return status for specific device
-        let last_response = responses.get(&device_id).cloned();
-        if let Some(DeviceResponse::SignedTransaction { request_id, .. }) = &last_response {
-            println!("[QUEUE_STATUS_SIGNED_TX] Returning SignedTransaction for request_id: {} in get_queue_status for device_id: {}", request_id, device_id);
+        // Find the most recent response for this device_id from all stored responses
+        let mut last_response = None;
+        let mut newest_timestamp = 0u64;
+        
+        for (request_id, response) in responses.iter() {
+            // Check if this response belongs to the requested device
+            if match response {
+                DeviceResponse::Xpub { device_id: resp_device_id, .. } => resp_device_id == &device_id,
+                DeviceResponse::Address { device_id: resp_device_id, .. } => resp_device_id == &device_id,
+                DeviceResponse::Features { device_id: resp_device_id, .. } => resp_device_id == &device_id,
+                DeviceResponse::SignedTransaction { device_id: resp_device_id, .. } => resp_device_id == &device_id,
+                DeviceResponse::Raw { device_id: resp_device_id, .. } => resp_device_id == &device_id,
+            } {
+                // For now, use a simple heuristic: the response with the most recent request_id (timestamp-based)
+                // Extract timestamp from request_id format like "sign_tx_1750283052093_4af7u3ebr"
+                if let Some(timestamp_str) = request_id.split('_').nth(2) {
+                    if let Ok(timestamp) = timestamp_str.parse::<u64>() {
+                        if timestamp > newest_timestamp {
+                            newest_timestamp = timestamp;
+                            last_response = Some(response.clone());
+                            if let DeviceResponse::SignedTransaction { request_id, .. } = response {
+                                println!("[QUEUE_STATUS_SIGNED_TX] Returning SignedTransaction for request_id: {} in get_queue_status for device_id: {}", request_id, device_id);
+                            }
+                        }
+                    }
+                }
+            }
         }
+        
         Ok(QueueStatus {
             device_id: Some(device_id.clone()),
             total_queued: 0, // Would need to track this per device
