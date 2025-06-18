@@ -58,6 +58,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   
   // Define fetchDeviceStatus function outside of useEffect
   const fetchDeviceStatus = async (deviceId = selectedDeviceId) => {
+  console.debug('[SettingsDialog] fetchDeviceStatus called with deviceId:', deviceId);
     if (deviceId) {
       try {
         console.log('Fetching device status for deviceId:', deviceId)

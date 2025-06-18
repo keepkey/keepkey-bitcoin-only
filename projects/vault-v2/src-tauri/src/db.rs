@@ -1,9 +1,3 @@
-use serde::{Deserialize, Serialize};
-use tauri_plugin_sql::{Migration, MigrationKind};
-
-// pub const DB_PATH: &str = "sqlite:vault.db"; // Commented out - not currently used
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
     pub id: i64,
     pub device_id: String,

@@ -5,7 +5,7 @@ import { listen } from '@tauri-apps/api/event'
 import { FaUsb, FaDownload, FaWallet, FaShieldAlt, FaExclamationTriangle, FaTools, FaTrash, FaCheckCircle } from 'react-icons/fa'
 import type { DeviceFeatures, DeviceStatus } from '../types/device'
 import { useTroubleshootingWizard } from '../contexts/DialogContext'
-
+const TAG = " | KeepKeyDeviceList | "
 interface Device {
   id: string
   name: string
@@ -158,16 +158,18 @@ export const KeepKeyDeviceList = ({
   }, [])
 
   const loadDevices = async () => {
+    let tag = TAG + " | loadDevices | "
     try {
       setLoading(true)
       // Use the enhanced command that fetches features through the device queue
       const connectedDevices = await invoke<any[]>('get_connected_devices_with_features')
-      
+      console.log(tag, connectedDevices)
       // Map the devices to our format and fetch status for each
       const mappedDevices: Device[] = await Promise.all(
         connectedDevices
           .filter(entry => entry.device.is_keepkey)
           .map(async (entry) => {
+            console.log('connectedDevices: ',connectedDevices)
             const device: Device = {
               id: entry.device.unique_id,
               name: entry.device.name || 'KeepKey Device',

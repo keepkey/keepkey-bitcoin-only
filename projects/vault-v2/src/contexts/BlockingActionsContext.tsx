@@ -118,9 +118,10 @@ export const BlockingActionsProvider: React.FC<{ children: React.ReactNode }> = 
 
       if (wasResolved) {
         // Remove the resolved action from local state
-        setActions(prev => prev.filter(
-          a => !(a.device_id === deviceId && a.action_type === actionType)
-        ));
+        setActions(prev => prev.filter(a => {
+          console.debug('[BlockingActionsContext] Checking action with deviceId:', deviceId, 'against', a.device_id, a.action_type);
+          return !(a.device_id === deviceId && a.action_type === actionType);
+        }));
 
         // Update the count
         setPendingActionsCount(prev => prev - 1);

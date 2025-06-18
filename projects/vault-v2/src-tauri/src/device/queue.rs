@@ -295,11 +295,23 @@ pub async fn add_to_device_queue(
                                     serialized_tx.extend_from_slice(part);
                                 }
                                 
+                                let signed_tx_hex = hex::encode(&serialized_tx);
+                                
                                 println!("✅ Transaction signed successfully!");
                                 println!("   Signatures: {}", signatures.len());
                                 println!("   Serialized TX: {} bytes", serialized_tx.len());
+                                println!("📦 Raw Transaction Hex:");
+                                println!("   {}", signed_tx_hex);
                                 
-                                return Ok(hex::encode(serialized_tx));
+                                // Log individual signatures
+                                if !signatures.is_empty() {
+                                    println!("📝 Individual Signatures:");
+                                    for (idx, sig) in &signatures {
+                                        println!("   Input {}: {}", idx, sig);
+                                    }
+                                }
+                                
+                                return Ok(signed_tx_hex);
                             }
                             Err(e) => return Err(e),
                         }
@@ -416,6 +428,11 @@ pub async fn add_to_device_queue(
             }
         }
         (DeviceRequest::SignTransaction { .. }, Ok(ref signed_tx)) => {
+            println!("🔐 Creating SignedTransaction DeviceResponse");
+            println!("    request_id: {}", request.request_id);
+            println!("    device_id: {}", request.device_id);
+            println!("    signed_tx length: {}", signed_tx.len());
+            println!("    signed_tx preview: {}...", if signed_tx.len() > 40 { &signed_tx[..40] } else { signed_tx });
             DeviceResponse::SignedTransaction {
                 request_id: request.request_id.clone(),
                 device_id: request.device_id.clone(),
@@ -454,6 +471,7 @@ pub async fn add_to_device_queue(
     // Store the response for queue status queries
     {
         let mut responses = last_responses.lock().await;
+        println!("🗄️ Inserting DeviceResponse into last_responses: device_id={}, request_id={}", request.device_id, request.request_id);
         responses.insert(request.device_id.clone(), device_response.clone());
     }
     
@@ -463,6 +481,15 @@ pub async fn add_to_device_queue(
         "request_id": request.request_id,
         "response": device_response
     });
+    
+    // EXPLICIT LOGGING FOR SIGNING EVENTS
+    if let DeviceResponse::SignedTransaction { ref signed_tx, .. } = device_response {
+        println!("🚀 Emitting SignedTransaction event to frontend!");
+        println!("    device_id: {}", request.device_id);
+        println!("    request_id: {}", request.request_id);
+        println!("    signed_tx length: {}", signed_tx.len());
+        println!("    event_payload: {}", serde_json::to_string_pretty(&event_payload).unwrap_or_else(|_| "failed to serialize".to_string()));
+    }
     
     if let Err(e) = app.emit("device:response", &event_payload) {
         eprintln!("Failed to emit device:response event: {}", e);

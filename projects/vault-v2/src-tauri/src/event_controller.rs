@@ -58,13 +58,29 @@ impl EventController {
                                 let _ = app_handle.emit("device:connected", device);
                                 
                                 // Emit basic device state without features to avoid crashes
-                                // Frontend can fetch features separately using get_device_features_by_id
                                 let payload = serde_json::json!({
                                     "device": device,
                                     "features": null,
                                     "status": "connected"
                                 });
-                                let _ = app_handle.emit("device:state-changed", payload);
+                                let _ = app_handle.emit("device:state-changed", &payload);
+
+                                // Try to fetch device features and emit 'device:ready' if successful
+                                match keepkey_rust::features::get_device_features_by_id(&device.unique_id) {
+                                    Ok(features) => {
+                                        let ready_payload = serde_json::json!({
+                                            "device": device,
+                                            "features": features,
+                                            "status": "ready"
+                                        });
+                                        let _ = app_handle.emit("device:ready", &ready_payload);
+                                        // Optionally, emit another state-changed with status 'ready'
+                                        let _ = app_handle.emit("device:state-changed", &ready_payload);
+                                    },
+                                    Err(e) => {
+                                        println!("[event_controller] Could not fetch device features for {}: {}", device.unique_id, e);
+                                    }
+                                }
                             }
                         }
                         

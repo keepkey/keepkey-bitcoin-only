@@ -301,6 +301,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       
       const device = connectedDevices[0].device || connectedDevices[0];
       const deviceId = device.unique_id;
+console.debug('[Send] deviceId from device.unique_id:', deviceId);
       
       console.log('🔑 Using device:', deviceId);
       
@@ -408,17 +409,34 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       }));
       
       // Sign the transaction using real device with properly selected UTXOs
-      const signedTxHex = await signTransaction(
-        deviceId,
-        unsignedTx.coin,
-        realInputs,
-        realOutputs,
-        unsignedTx.version,
-        unsignedTx.locktime
-      );
+      console.log('🔐 Calling signTransaction with device queue...');
+      console.log('🔐 Request ID will be:', `sign_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
       
-      console.log('✅ Transaction signed successfully!');
-      console.log('🔐 Signed transaction hex:', signedTxHex.substring(0, 20) + '...');
+      let signedTxHex: string;
+      try {
+        signedTxHex = await signTransaction(
+          deviceId,
+          unsignedTx.coin,
+          realInputs,
+          realOutputs,
+          unsignedTx.version,
+          unsignedTx.locktime
+        );
+        
+        console.log('✅ SEND COMPONENT: signTransaction promise resolved successfully!');
+        console.log('🔐 SEND COMPONENT: Signed transaction hex received:');
+        console.log(`   Type: ${typeof signedTxHex}`);
+        console.log(`   Length: ${signedTxHex ? signedTxHex.length : 'null/undefined'} characters`);
+        console.log(`   Full hex: "${signedTxHex}"`);
+        
+        if (!signedTxHex || signedTxHex.length === 0) {
+          throw new Error('Received empty or null signed transaction hex');
+        }
+        
+      } catch (promiseError) {
+        console.error('❌ SEND COMPONENT: signTransaction promise rejected:', promiseError);
+        throw promiseError;
+      }
       
       setSignedTransaction(signedTxHex);
       setCurrentStep('complete');
@@ -806,13 +824,28 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
         <VStack gap={3} w="100%">
           <Button
+            colorScheme="orange"
+            size="lg"
+            width="100%"
+            onClick={() => {
+              console.log('🚀 Broadcasting transaction (placeholder):', signedTransaction);
+              // TODO: Implement actual broadcast to Bitcoin network
+              alert('Broadcasting functionality not yet implemented');
+            }}
+          >
+            <HStack gap={2}>
+              <FaPaperPlane />
+              <Text>Broadcast Transaction</Text>
+            </HStack>
+          </Button>
+          <Button
             colorScheme="green"
             size="lg"
             width="100%"
             onClick={handleNewTransaction}
           >
             <HStack gap={2}>
-              <FaPaperPlane />
+              <FaCheck />
               <Text>Send Another Transaction</Text>
             </HStack>
           </Button>

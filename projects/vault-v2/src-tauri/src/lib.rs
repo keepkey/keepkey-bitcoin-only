@@ -1,7 +1,7 @@
 use tauri::{Emitter, Manager};
 
 // Modules for better organization
-mod db;
+
 mod commands;
 mod device;
 mod event_controller;
@@ -9,7 +9,7 @@ mod logging;
 mod slip132;
 
 // Re-export commonly used types
-pub use db::{Database, DeviceInfo, XpubInfo};
+
 use std::sync::Arc;
 
 // Learn more about Tauri commands at https://tauri.app/develop/rust/

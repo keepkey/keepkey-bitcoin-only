@@ -39,6 +39,7 @@ export function WalletCreationWizard({
   onComplete, 
   onClose 
 }: WalletCreationWizardProps) {
+  console.debug('[WalletCreationWizard] deviceId prop on mount:', deviceId);
   const [state, setState] = useState<FlowState>({
     step: 'factory-state',
     deviceLabel: '',
@@ -172,10 +173,12 @@ export function WalletCreationWizard({
 
   // Handle device initialization
   const handleDeviceInitialization = useCallback(async () => {
+    console.debug('[WalletCreationWizard] handleDeviceInitialization using deviceId:', deviceId);
     console.log("Initializing device wallet");
     setLoading(true);
     
     try {
+      console.debug('[WalletCreationWizard] Invoking initialize_device_wallet with deviceId:', deviceId);
       await invoke('initialize_device_wallet', { 
         deviceId, 
         label: state.deviceLabel || 'KeepKey' 
@@ -311,20 +314,8 @@ export function WalletCreationWizard({
           />
         );
 
-      case 'pin':
-        return (
-          <DevicePin
-            deviceId={deviceId}
-            deviceLabel={state.deviceLabel}
-            mode="create"
-            onComplete={handlePinComplete}
-            onBack={handleBack}
-            isLoading={state.isLoading}
-            error={state.error}
-          />
-        );
-
       case 'backup-display':
+        console.debug('[WalletCreationWizard] Rendering BackupPhraseDisplay with deviceId:', deviceId);
         return (
           <BackupPhraseDisplay
             deviceId={deviceId}
@@ -335,6 +326,7 @@ export function WalletCreationWizard({
         );
 
       case 'complete':
+        console.debug('[WalletCreationWizard] Rendering WalletCreationComplete with deviceId:', deviceId);
         return (
           <WalletCreationComplete
             deviceLabel={state.deviceLabel}

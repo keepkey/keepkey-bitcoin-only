@@ -179,9 +179,13 @@ pub async fn get_queue_status(
     let manager = queue_manager.lock().await;
     let responses = last_responses.lock().await;
     
+    println!("[QUEUE_STATUS_CALL] get_queue_status called for device: {:?}", device_id);
     if let Some(device_id) = device_id {
         // Return status for specific device
         let last_response = responses.get(&device_id).cloned();
+        if let Some(DeviceResponse::SignedTransaction { request_id, .. }) = &last_response {
+            println!("[QUEUE_STATUS_SIGNED_TX] Returning SignedTransaction for request_id: {} in get_queue_status for device_id: {}", request_id, device_id);
+        }
         Ok(QueueStatus {
             device_id: Some(device_id.clone()),
             total_queued: 0, // Would need to track this per device

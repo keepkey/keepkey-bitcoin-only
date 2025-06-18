@@ -1,14 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import axios from 'axios';
-import Database from '@tauri-apps/plugin-sql';
+
 import { Asset, Portfolio } from '../types/wallet';
 import { QueueStatus } from '../types/queue';
-import { XpubInfo } from '../types/database';
 
 const TAG = " | API | ";
 const PIONEER_BASE_URL = 'https://pioneers.dev';
 const CACHE_TTL_MINUTES = 10;
-const DB_PATH = 'sqlite:vault.db';
+
 
 // Pioneer API Types
 export interface PioneerPortfolioRequest {
@@ -207,142 +206,22 @@ export class PioneerAPI {
 }
 
 // Global flag to enable/disable SQL caching (default: ON for xpub storage)
-export const SQL_CACHE_ENABLED = true;
 
 export class PortfolioAPI {
   static async getPortfolio(): Promise<Portfolio> {
     const tag = TAG + " | getPortfolio | ";
-    
     try {
       console.log(tag, 'Getting portfolio from live Pioneer API data');
-
-      if (!SQL_CACHE_ENABLED) {
-        // SQL caching is globally disabled; skip all DB reads/writes
-        try {
-          // Instead, get xpubs and portfolio data directly from API
-          // (simulate empty xpubs if DB is not used)
-          const xpubs: XpubInfo[] = [];
-          const requests = xpubs.map(x => ({ caip: x.caip, pubkey: x.pubkey }));
-          const portfolioData: PioneerPortfolioResponse[] = await PioneerAPI.getPortfolio(requests);
-          return this.transformToPortfolio(portfolioData);
-        } catch (error) {
-          console.error(tag, 'Portfolio API Error (cache disabled):', error);
-          return this.getEmptyPortfolio();
-        }
-      }
-
-      // 1. Get all xpubs from database
-      const db = await Database.load(DB_PATH);
-      const xpubs = await db.select('SELECT * FROM xpubs ORDER BY created_at ASC') as XpubInfo[];
-      
-      if (xpubs.length === 0) {
-        console.warn(tag, 'No xpubs found in database');
-        return this.getEmptyPortfolio();
-      }
-
-      console.log(tag, `Found ${xpubs.length} xpubs in database`);
-
-      // 2. Check cache for fresh data
-      let portfolioData: PioneerPortfolioResponse[] = [];
-      let cacheFresh = false;
-      if (SQL_CACHE_ENABLED) {
-        try {
-          const db = await Database.load(DB_PATH);
-          const cached = await db.select('SELECT * FROM balance_cache') as BalanceCache[];
-          if (cached.length > 0) {
-            const latest = Math.max(...cached.map(c => c.last_updated));
-            const now = Math.floor(Date.now() / 1000);
-            cacheFresh = now - latest < 300; // 5 min
-            if (cacheFresh) {
-              portfolioData = cached.map(item => ({
-                caip: item.caip,
-                pubkey: item.pubkey,
-                balance: item.balance,
-                valueUsd: item.balance_usd,
-                priceUsd: item.price_usd,
-                symbol: item.symbol || 'BTC'
-              }));
-              console.log(tag, 'Using fresh cached data');
-            }
-          }
-        } catch (cacheErr) {
-          console.warn(tag, 'Cache read failed:', cacheErr);
-        }
-      }
-      if (!cacheFresh) {
-        try {
-          const requests = xpubs.map(x => ({ caip: x.caip, pubkey: x.pubkey }));
-            portfolioData = await PioneerAPI.getPortfolio(requests);
-          if (SQL_CACHE_ENABLED) {
-            await this.cachePortfolioData(portfolioData);
-            console.log(tag, 'Portfolio data cached successfully');
-          }
-        } catch (apiError) {
-          console.warn(tag, 'Pioneer API failed, using cached data if available:', apiError);
-          if (SQL_CACHE_ENABLED) {
-            portfolioData = await this.getPortfolioDataFromCache();
-          }
-        }
-      }
-
-      // 5. Transform to Portfolio format
+      // Only use Pioneer API (no DB or cache)
+      // TODO: Replace with real xpubs from context if available
+      const xpubs: any[] = [];
+      const requests = xpubs.map(x => ({ caip: x.caip, pubkey: x.pubkey }));
+      const portfolioData: any[] = await PioneerAPI.getPortfolio(requests);
       return this.transformToPortfolio(portfolioData);
-
     } catch (error) {
       console.error(tag, 'Portfolio API Error:', error);
       return this.getEmptyPortfolio();
     }
-  }
-
-  private static async cachePortfolioData(data: PioneerPortfolioResponse[]): Promise<void> {
-    const db = await Database.load(DB_PATH);
-    const now = Math.floor(Date.now() / 1000);
-
-    // Clear old cache
-    await db.execute('DELETE FROM balance_cache');
-
-    // Insert new data
-    for (const item of data) {
-      // Derive symbol from CAIP if not provided
-      let symbol = item.symbol;
-      if (!symbol) {
-        // Extract symbol from CAIP - e.g., "bip122:000000000019d6689c085ae165831e93/slip44:0" -> "BTC"
-        if (item.caip.includes('bip122:000000000019d6689c085ae165831e93')) {
-          symbol = 'BTC';
-        } else {
-          symbol = 'UNKNOWN';
-        }
-      }
-
-      console.log('💾 Caching:', {
-        pubkey: item.pubkey.substring(0, 20) + '...',
-        symbol,
-        balance: item.balance,
-        valueUsd: item.valueUsd
-      });
-
-      await db.execute(
-        `INSERT INTO balance_cache (pubkey, caip, balance, balance_usd, price_usd, symbol, last_updated) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [item.pubkey, item.caip, item.balance, item.valueUsd, item.priceUsd, symbol, now]
-      );
-    }
-  }
-
-  private static async getPortfolioDataFromCache(): Promise<PioneerPortfolioResponse[]> {
-    const db = await Database.load(DB_PATH);
-    const cached = await db.select('SELECT * FROM balance_cache') as BalanceCache[];
-    
-    console.log('📊 Loading from cache:', cached.length, 'entries');
-    
-    return cached.map(item => ({
-      caip: item.caip,
-      pubkey: item.pubkey,
-      balance: item.balance,
-      valueUsd: item.balance_usd,
-      priceUsd: item.price_usd,
-      symbol: item.symbol || 'BTC' // Fallback to BTC if symbol is null
-    }));
   }
 
   private static transformToPortfolio(data: PioneerPortfolioResponse[]): Portfolio {
@@ -476,30 +355,10 @@ export class PortfolioAPI {
 
   static async getReceiveAddress(asset: Asset): Promise<string> {
     const tag = TAG + " | getReceiveAddress | ";
-    
     try {
       console.log(tag, 'Getting receive address for asset:', asset.symbol);
-      
-      // Get the xpub for this asset
-      const db = await Database.load(DB_PATH);
-      const xpubs = await db.select(
-        'SELECT * FROM xpubs WHERE caip = ? ORDER BY created_at ASC LIMIT 1',
-        [asset.caip]
-      ) as XpubInfo[];
-
-      if (xpubs.length === 0) {
-        throw new Error(`No xpub found for asset ${asset.symbol}`);
-      }
-
-      const xpub = xpubs[0];
-      console.log(tag, `Using xpub for ${asset.symbol}:`, xpub.pubkey.substring(0, 20) + '...');
-
-      // Call Pioneer API for fresh address
-      const addressResponse = await PioneerAPI.getReceiveAddress('BTC', xpub.pubkey);
-      
-      console.log(tag, 'Generated fresh receive address:', addressResponse.address);
-      return addressResponse.address;
-      
+      // DB is removed, so always throw for now
+      throw new Error('getReceiveAddress: DB code removed. Cannot fetch xpub for asset.');
     } catch (error) {
       console.error(tag, 'Failed to get receive address:', error);
       throw error;
@@ -507,10 +366,26 @@ export class PortfolioAPI {
   }
 }
 
+// Utility to extract canonical device ID (hardware unique_id)
+function getCanonicalDeviceId(device: any): string {
+  if (device && typeof device === 'object') {
+    if (device.unique_id) return device.unique_id;
+    if (device.device && device.device.unique_id) return device.device.unique_id;
+  }
+  throw new Error('Invalid device object: cannot extract unique_id');
+}
+
+/**
+ * DeviceQueueAPI expects all device IDs to be the canonical unique_id (hardware ID).
+ * Do NOT use friendly names or composite keys for device queue operations.
+ */
 export class DeviceQueueAPI {
+
   static async getConnectedDevices(): Promise<any[]> {
+    let tag = TAG + " | getConnectedDevices | ";
     try {
       const devices = await invoke('get_connected_devices');
+      console.log(tag,'devices: ',devices);
       return devices as any[];
     } catch (error) {
       console.error('Failed to get connected devices:', error);
@@ -519,6 +394,15 @@ export class DeviceQueueAPI {
   }
 
   static async requestXpubFromDevice(deviceId: string, path: string): Promise<string> {
+    // Validation: deviceId must be present and valid
+    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+      throw new Error('DeviceQueueAPI: Cannot queue xpub request: deviceId is missing or invalid.');
+    }
+    // Validation: device must be connected
+    const connected = await DeviceQueueAPI.getConnectedDevices();
+    if (!connected.some(d => getCanonicalDeviceId(d) === deviceId)) {
+      throw new Error(`DeviceQueueAPI: Cannot queue xpub request: device ${deviceId} is not connected.`);
+    }
     try {
       const requestId = `xpub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const request = {
@@ -545,6 +429,15 @@ export class DeviceQueueAPI {
     scriptType?: string,
     showDisplay?: boolean
   ): Promise<string> {
+    // Validation: deviceId must be present and valid
+    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+      throw new Error('DeviceQueueAPI: Cannot queue address request: deviceId is missing or invalid.');
+    }
+    // Validation: device must be connected
+    const connected = await DeviceQueueAPI.getConnectedDevices();
+    if (!connected.some(d => getCanonicalDeviceId(d) === deviceId)) {
+      throw new Error(`DeviceQueueAPI: Cannot queue address request: device ${deviceId} is not connected.`);
+    }
     try {
       const requestId = `addr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       return await this.requestReceiveAddressFromDeviceWithId(
@@ -564,6 +457,15 @@ export class DeviceQueueAPI {
     showDisplay: boolean | undefined,
     requestId: string
   ): Promise<string> {
+    // Validation: deviceId must be present and valid
+    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+      throw new Error('DeviceQueueAPI: Cannot queue address request (withId): deviceId is missing or invalid.');
+    }
+    // Validation: device must be connected
+    const connected = await DeviceQueueAPI.getConnectedDevices();
+    if (!connected.some(d => getCanonicalDeviceId(d) === deviceId)) {
+      throw new Error(`DeviceQueueAPI: Cannot queue address request (withId): device ${deviceId} is not connected.`);
+    }
     try {
       const request = {
         device_id: deviceId,
@@ -591,9 +493,16 @@ export class DeviceQueueAPI {
     await invoke('reset_device_queue', { deviceId });
   }
 
-  static async getQueueStatus(deviceId?: string): Promise<QueueStatus> {
+  static async getQueueStatus(deviceId: string): Promise<QueueStatus> {
     try {
-      const status = await invoke('get_queue_status', { device_id: deviceId });
+      if(!deviceId) throw Error('DeviceQueueAPI: Cannot get queue status without a device id');
+      const payload: { deviceId?: string } = {};
+      if (deviceId !== undefined) {
+        payload.deviceId = deviceId;
+      }
+      console.trace('🛠 getQueueStatus call stack for deviceId:', deviceId);
+      console.log('🛠 getQueueStatus payload', payload);
+      const status = await invoke('get_queue_status', payload);
       return status as QueueStatus;
     } catch (error) {
       console.error('Failed to get queue status:', error);
@@ -609,6 +518,15 @@ export class DeviceQueueAPI {
     version: number = 1,
     lockTime: number = 0
   ): Promise<string> {
+    // Validation: deviceId must be present and valid
+    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+      throw new Error('DeviceQueueAPI: Cannot queue signTransaction: deviceId is missing or invalid.');
+    }
+    // Validation: device must be connected
+    const connected = await DeviceQueueAPI.getConnectedDevices();
+    if (!connected.some(d => getCanonicalDeviceId(d) === deviceId)) {
+      throw new Error(`DeviceQueueAPI: Cannot queue signTransaction: device ${deviceId} is not connected.`);
+    }
     try {
       const requestId = `sign_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const request = {

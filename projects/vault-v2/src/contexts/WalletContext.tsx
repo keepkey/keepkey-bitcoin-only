@@ -11,7 +11,7 @@ import { listen } from '@tauri-apps/api/event';
 
 // Import organized types and services
 import { Asset, Portfolio, QueueStatus } from '../types';
-import { WalletDatabase, PortfolioAPI, DeviceQueueAPI, PioneerAPI } from '../lib';
+import { PortfolioAPI, DeviceQueueAPI, PioneerAPI } from '../lib';
 
 const TAG = " | WalletContext | ";
 
@@ -52,6 +52,15 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 // Provider Props
 interface WalletProviderProps {
   children: ReactNode;
+}
+
+// Utility to extract canonical device ID (hardware unique_id)
+function getCanonicalDeviceId(device: any): string {
+  if (device && typeof device === 'object') {
+    if (device.unique_id) return device.unique_id;
+    if (device.device && device.device.unique_id) return device.device.unique_id;
+  }
+  throw new Error('Invalid device object: cannot extract unique_id');
 }
 
 // Provider Component
@@ -186,14 +195,18 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Use the first connected device (in a multi-device setup, we'd handle all)
       const deviceData = connectedDevicesResponse[0];
       const device = deviceData.device || deviceData;
-      const deviceId = device.unique_id;
+      const deviceId = getCanonicalDeviceId(device);
+      console.debug('[WalletContext] deviceId from getCanonicalDeviceId:', deviceId);
       
       console.log(tag, `Using device: ${deviceId}`);
       
-      const requiredPaths = WalletDatabase.getRequiredPaths();
+      const requiredPaths = [
+        { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
+      ];
 
       // Send all xpub requests at once (no polling needed - events will handle responses)
       for (const pathInfo of requiredPaths) {
+        // Always use canonical deviceId
         const requestKey = `${deviceId}:${pathInfo.path}`;
         
         // Skip if request is already pending
@@ -216,6 +229,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           console.log(tag, `🔄 Requesting xpub for ${deviceId} ${pathInfo.path}`);
           
           // Send xpub request (response will come via event)
+          // Always use canonical deviceId for requests
           const requestId = await DeviceQueueAPI.requestXpubFromDevice(deviceId, pathInfo.path);
           console.log(tag, `✅ Queued xpub request (requestId: ${requestId}) - waiting for event...`);
           
@@ -244,9 +258,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     setLoading(true);
     
     try {
-      // Initialize database
-      await WalletDatabase.init();
-
       // Check if onboarded
       const isOnboarded = true;
       console.log(tag, 'isOnboarded:', isOnboarded);
@@ -264,10 +275,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       }
 
       // Store detected devices in database for future reference
-      await WalletDatabase.storeConnectedDevices(connectedDevicesResponse);
+      
 
       // Get all devices from db (now includes freshly detected ones)
-      const devices = await WalletDatabase.getDevices();
+      const devices: any[] = []; // No DB, use empty array
       console.log(tag, 'devices from db:', devices);
 
       if (devices.length === 0) {
@@ -282,16 +293,16 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       await getXpubsFromDeviceQueue();
 
       // After fetching, check final sync status
-      const finalDevices = await WalletDatabase.getDevices();
-      const requiredPaths = WalletDatabase.getRequiredPaths();
+      const finalDevices: any[] = []; // No DB, use empty array
+      const requiredPaths = [
+  { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
+]; // No DB, use static array
       let allXpubsPresent = true;
       
       for (const device of finalDevices) {
         console.log(tag, 'Final check - xpubs for device:', device.device_id);
 
-        const existingXpubs:any[] = []
-        // const existingXpubs = await WalletDatabase.getXpubs(device.device_id);
-        // console.log(tag, 'Final existing xpubs:', existingXpubs.length);
+        const existingXpubs: any[] = []; // No DB, use empty array
 
         for (const requiredPath of requiredPaths) {
           const existingXpub = existingXpubs.find(
@@ -378,7 +389,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     
     try {
       // Get the first device from database
-      const devices = await WalletDatabase.getDevices();
+      const devices: any[] = []; // No DB, use empty array
       if (!devices || devices.length === 0) {
         throw new Error('No devices available');
       }
@@ -496,13 +507,60 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       console.log(tag, `📋 Added signing request ${requestId} to pending map`);
       console.log(tag, '🟢 Transaction signing request queued');
       
+      // Fallback polling: if for any reason the frontend event bridge misses the
+      // `device:response` emission, periodically query the backend queue status
+      // and resolve the promise as soon as the SignedTransaction response is
+      // visible.  This guarantees that the UI will never be stuck in the “Sign”
+      // step solely because of a lost event.
+      const POLL_MS = 1_0000; // 1-second interval
+      console.log(tag, '[FALLBACK_POLL_START] Fallback polling for SignedTransaction response is ACTIVE for request', requestId);
+      const pollInterval = setInterval(async () => {
+        console.log(tag, `[FALLBACK_POLL_INTERVAL_FIRED] Interval fired for requestId: ${requestId}`);
+        try {
+          console.log(tag, `[FALLBACK_POLL_DEVICE_ID] Polling with deviceId: ${deviceId} for requestId: ${requestId}`);
+          const status = await getQueueStatus(deviceId);
+          if (status?.last_response && (
+              'SignedTransaction' in status.last_response ||
+              (status.last_response.type === 'SignedTransaction')) ) {
+            console.log(tag, '[FALLBACK_POLL_CHECK] Polled queue status, found SignedTransaction shape for request', requestId);
+            const resp = 'SignedTransaction' in status.last_response
+              ? status.last_response.SignedTransaction
+              : status.last_response.data;
+            if (resp.request_id === requestId) {
+              console.log(tag, '[FALLBACK_POLL_MATCH] Polled response matches requestId:', requestId);
+              console.log(tag, '⚡ Fallback poll captured SignedTransaction response');
+              const entry = pendingSigningRequests.get(requestId);
+              if (entry) {
+                pendingSigningRequests.delete(requestId);
+                clearInterval(pollInterval);
+                if (resp.success) {
+                  entry.resolve(resp.signed_tx);
+                } else {
+                  entry.reject(new Error(resp.error || 'Device signing error'));
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.debug(tag, 'Polling error (ignored):', e);
+        }
+      }, POLL_MS);
+
+      // Clear fallback polling when the promise settles
+      signingPromise.finally(() => {
+        console.log(tag, '[FALLBACK_POLL_CLEAR] Fallback polling cleared by promise settle for request', requestId);
+        clearInterval(pollInterval);
+      });
+      
       // Set timeout to prevent infinite waiting
       setTimeout(() => {
         if (pendingSigningRequests.delete(requestId)) {
           console.log(tag, `⏰ Signing request ${requestId} timed out`);
+          clearInterval(pollInterval);
+          console.log(tag, '[FALLBACK_POLL_CLEAR] Fallback polling cleared by TIMEOUT for request', requestId);
           rejectSignature!(new Error('Timeout waiting for transaction signing'));
         }
-      }, 120_000); // 2 minute timeout for signing
+      }, 120_000); // 2-minute timeout for signing
       
       return signingPromise;
     } catch (error) {
@@ -515,34 +573,16 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   useEffect(() => {
     const monitorQueue = async () => {
       try {
-        const devices = await WalletDatabase.getDevices();
+        const devices: any[] = []; // No DB, use empty array
         
         for (const device of devices) {
           const status = await getQueueStatus(device.device_id);
           
           if (status.last_response) {
-            // Handle xpub responses
             if ('Xpub' in status.last_response && status.last_response.Xpub.success) {
-              const { device_id, path, xpub } = status.last_response.Xpub;
-              
-              // Check if we already have this xpub in the database
-              const existingXpubs: any[] = []
-              // const existingXpubs = await WalletDatabase.getXpubs(device_id);
-              const exists = existingXpubs.some(x => x.path === path && x.pubkey === xpub);
-              
-              if (!exists) {
-                console.log('📥 Storing completed xpub request:', path, '->', xpub.substring(0, 20) + '...');
-                await WalletDatabase.insertXpubFromQueue(device_id, path, xpub);
-                
-                // Clear balance cache to force refresh with new xpub
-                await WalletDatabase.clearBalanceCache();
-                
-                // Refresh portfolio to include new xpub data
-                await refreshPortfolio();
-              }
+              // No DB: xpubs are not persisted
+              // In-memory xpub handling would go here if needed
             }
-            
-            // Handle address responses (for receive address generation)
             if ('Address' in status.last_response && status.last_response.Address.success) {
               console.log('📥 Address generated:', status.last_response.Address.address);
               // Address responses are handled by the getReceiveAddress method
@@ -572,6 +612,14 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         console.log(tag, `📡 Raw event received:`, event);
         console.log(tag, `📡 Event payload:`, event.payload);
         
+        // EXPLICIT DEBUGGING FOR SIGNING EVENTS
+        if (event.payload && event.payload.response) {
+          console.log(tag, `🔍 DEBUGGING: Response keys:`, Object.keys(event.payload.response));
+          if ('SignedTransaction' in event.payload.response) {
+            console.log(tag, `🔐 FOUND SignedTransaction event!`, event.payload.response.SignedTransaction);
+          }
+        }
+        
         const { device_id, request_id, response } = event.payload;
         
         console.log(tag, `📥 Extracted - device_id: ${device_id}, request_id: ${request_id}`);
@@ -588,7 +636,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           
           if (xpubResponse.success) {
             // Find the path info to get the CAIP
-            const requiredPaths = WalletDatabase.getRequiredPaths();
+            const requiredPaths = [
+  { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
+]; // No DB, use static array
             const pathInfo = requiredPaths.find(p => p.path === xpubResponse.path);
             
             if (pathInfo) {
@@ -611,7 +661,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
                 console.log(tag, `Now have ${newXpubs.length} xpubs in memory:`, newXpubs.map(x => x.path));
 
                 // Let useEffect handle portfolio refresh when fetchedXpubs updates
-                const requiredPaths = WalletDatabase.getRequiredPaths();
+                const requiredPaths = [
+  { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
+]; // No DB, use static array
                 const expectedXpubCount = requiredPaths.length;
                 if (newXpubs.length === expectedXpubCount) {
                   console.log(tag, `All expected xpubs (${expectedXpubCount}) are present. Portfolio will refresh via useEffect.`);
@@ -697,6 +749,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     (async () => {
       unlistenConnect = listen('device:connected', async (event: any) => {
         const deviceId = event.payload?.device_id || event.payload;
+console.debug('[WalletContext] deviceId from event payload:', deviceId);
         try {
           console.log(TAG, 'Device reconnected', deviceId, '- resetting queue');
           await DeviceQueueAPI.resetDeviceQueue(deviceId);
@@ -721,7 +774,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       return;
     }
     
-    const requiredPaths = WalletDatabase.getRequiredPaths();
+    const requiredPaths = [
+  { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
+]; // No DB, use static array
     const expectedXpubCount = requiredPaths.length;
     
     console.log(tag, `Current xpubs: ${fetchedXpubs.length}, expected: ${expectedXpubCount}`);
