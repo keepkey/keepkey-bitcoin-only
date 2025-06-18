@@ -18,6 +18,7 @@ const TAG = " | WalletContext | ";
 // ---- Global Event Bridge for Receive Address Requests ---------------------------------------------------------
 type AddrResolver = { resolve: (addr: string) => void; reject: (e: any) => void };
 const pendingReceiveRequests: Map<string, AddrResolver> = new Map();
+const pendingSigningRequests: Map<string, { resolve: (signedTx: string) => void; reject: (error: any) => void }> = new Map();
 // ----------------------------------------------------------------------------------------------------------------
 
 // Context Type
@@ -69,15 +70,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   
   // Store fetched xpubs in memory (not database for v2)
   const [fetchedXpubs, setFetchedXpubs] = useState<Array<{path: string, xpub: string, caip: string}>>([]);
-  
-  // Track pending receive address requests
-  const pendingReceiveRequests = new Map<string, AddrResolver>();
-  
-  // Track pending transaction signing requests
-  const pendingSigningRequests = new Map<string, { 
-    resolve: (signedTx: string) => void; 
-    reject: (error: any) => void; 
-  }>();
 
   const refreshPortfolio = useCallback(async () => {
     const tag = TAG + " | refreshPortfolio | ";
@@ -477,10 +469,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     try {
       console.log(tag, `🔐 Signing transaction on device ${deviceId}`);
       
-      // Generate a unique request ID
-      const requestId = `sign_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      console.log(tag, '🆔 Generated requestId:', requestId);
-      
       // Create promise resolvers
       let resolveSignature: (signedTx: string) => void;
       let rejectSignature: (error: any) => void;
@@ -490,23 +478,23 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         rejectSignature = reject;
       });
       
-      // Store the resolvers before making the request
+      // Queue the signing request and get the actual request ID used by the device queue
+      let requestId: string;
+      try {
+        requestId = await DeviceQueueAPI.signTransaction(deviceId, coin, inputs, outputs, version, lockTime);
+        console.log(tag, '🆔 Using request ID from device queue:', requestId);
+      } catch (error) {
+        throw error;
+      }
+      
+      // Store the resolvers using the actual request ID from device queue
       pendingSigningRequests.set(requestId, {
         resolve: resolveSignature!,
         reject: rejectSignature!
       });
       
       console.log(tag, `📋 Added signing request ${requestId} to pending map`);
-      
-      // Queue the signing request
-      try {
-        await DeviceQueueAPI.signTransaction(deviceId, coin, inputs, outputs, version, lockTime);
-        console.log(tag, '🟢 Transaction signing request queued');
-      } catch (error) {
-        // Clean up on request failure
-        pendingSigningRequests.delete(requestId);
-        throw error;
-      }
+      console.log(tag, '🟢 Transaction signing request queued');
       
       // Set timeout to prevent infinite waiting
       setTimeout(() => {
@@ -580,9 +568,15 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     (async () => {
       unlistenResponse = listen('device:response', async (event: any) => {
         const tag = TAG + " | device:response | ";
+        
+        console.log(tag, `📡 Raw event received:`, event);
+        console.log(tag, `📡 Event payload:`, event.payload);
+        
         const { device_id, request_id, response } = event.payload;
         
-        console.log(tag, `Received response for ${request_id}:`, response);
+        console.log(tag, `📥 Extracted - device_id: ${device_id}, request_id: ${request_id}`);
+        console.log(tag, `📥 Response type:`, Object.keys(response || {}));
+        console.log(tag, `📥 Response content:`, response);
         
         // Handle xpub responses
         if (response && 'Xpub' in response) {
@@ -662,22 +656,27 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         // Handle transaction signing responses
         if (response && 'SignedTransaction' in response) {
           const signingResponse = response.SignedTransaction;
-          console.log(tag, `🔐 Transaction signing response:`, signingResponse);
+          console.log(tag, `🔐 Transaction signing response received:`, signingResponse);
+          console.log(tag, `🆔 Response request_id: ${request_id}`);
+          console.log(tag, `📊 Response device_id: ${device_id}`);
           
           console.log(tag, `🔍 Looking for signing request_id: ${request_id} in pending map`);
           console.log(tag, `📋 Current pending signing requests:`, Array.from(pendingSigningRequests.keys()));
           
           const entry = pendingSigningRequests.get(request_id);
           if (!entry) {
-            console.log(tag, 'Transaction signing response for unknown request_id:', request_id);
+            console.error(tag, `❌ Transaction signing response for unknown request_id: ${request_id}`);
+            console.error(tag, `❌ Available pending requests:`, Array.from(pendingSigningRequests.keys()));
             return; // Response for something else
           }
 
+          console.log(tag, `✅ Found matching pending signing request for: ${request_id}`);
           pendingSigningRequests.delete(request_id);
 
           if (signingResponse.success) {
-            console.log(tag, `✅ Transaction signed successfully`);
-            console.log(tag, `🔐 Signed transaction hex:`, signingResponse.signed_tx.substring(0, 20) + '...');
+            console.log(tag, `✅ Transaction signed successfully!`);
+            console.log(tag, `🔐 Signed transaction hex length:`, signingResponse.signed_tx.length);
+            console.log(tag, `🔐 Signed transaction preview:`, signingResponse.signed_tx.substring(0, 40) + '...');
             entry.resolve(signingResponse.signed_tx);
           } else {
             console.error(tag, `❌ Transaction signing failed:`, signingResponse.error);
