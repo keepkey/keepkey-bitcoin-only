@@ -7,6 +7,7 @@ use keepkey_rust::{
 };
 use uuid;
 use hex;
+use std::io::Cursor;
 use crate::logging::{log_device_request, log_device_response, log_raw_device_message};
 
 
@@ -19,7 +20,7 @@ pub struct BitcoinUtxoInput {
     pub amount: String,               // Amount in satoshis as string
     pub vout: u32,                    // Output index
     pub txid: String,                 // Transaction ID
-    pub hex: String,                  // Raw transaction hex
+    pub prev_tx_hex: Option<String>,  // Raw previous transaction hex
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]  
@@ -28,6 +29,8 @@ pub struct BitcoinUtxoOutput {
     pub amount: u64,                  // Amount in satoshis
     pub address_type: String,         // "spend" or "change"
     pub is_change: Option<bool>,      // Optional change flag
+    pub address_n_list: Option<Vec<u32>>, // Derivation path for change outputs
+    pub script_type: Option<String>,  // Script type for change outputs
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1113,4 +1116,122 @@ pub async fn cleanup_device_logs() -> Result<String, String> {
     let logger = crate::logging::get_device_logger();
     logger.cleanup_old_logs().await?;
     Ok("Old device logs cleaned up successfully".to_string())
+}
+
+/// Parse transaction from hex string
+/// Returns (metadata, inputs, outputs) where metadata is (version, input_count, output_count, lock_time)
+pub fn parse_transaction_from_hex(hex_data: &str) -> Result<((u32, u32, u32, u32), Vec<keepkey_rust::messages::TxInputType>, Vec<keepkey_rust::messages::TxOutputBinType>), String> {
+    let tx_bytes = hex::decode(hex_data).map_err(|e| format!("Invalid hex: {}", e))?;
+    let mut cursor = Cursor::new(tx_bytes);
+    
+    // Parse version (4 bytes, little-endian)
+    let version = read_u32_le(&mut cursor)?;
+    
+    // Parse input count (varint)
+    let input_count = read_varint(&mut cursor)?;
+    
+    // Parse inputs
+    let mut inputs = Vec::new();
+    for _ in 0..input_count {
+        // Previous output hash (32 bytes, needs to be reversed)
+        let mut prev_hash = vec![0u8; 32];
+        read_exact(&mut cursor, &mut prev_hash)?;
+        prev_hash.reverse(); // Bitcoin uses little-endian for display but big-endian for hashing
+        
+        // Previous output index (4 bytes, little-endian)
+        let prev_index = read_u32_le(&mut cursor)?;
+        
+        // Script length (varint)
+        let script_len = read_varint(&mut cursor)? as usize;
+        
+        // Script
+        let mut script_sig = vec![0u8; script_len];
+        read_exact(&mut cursor, &mut script_sig)?;
+        
+        // Sequence (4 bytes, little-endian)
+        let sequence = read_u32_le(&mut cursor)?;
+        
+        inputs.push(keepkey_rust::messages::TxInputType {
+            address_n: vec![], // Will be filled by caller
+            prev_hash,
+            prev_index,
+            script_sig: if script_sig.is_empty() { None } else { Some(script_sig) },
+            sequence: Some(sequence),
+            script_type: None, // Will be filled by caller
+            multisig: None,
+            amount: None, // Will be filled by caller
+            decred_tree: None,
+            decred_script_version: None,
+        });
+    }
+    
+    // Parse output count (varint)
+    let output_count = read_varint(&mut cursor)?;
+    
+    // Parse outputs
+    let mut outputs = Vec::new();
+    for _ in 0..output_count {
+        // Value (8 bytes, little-endian)
+        let amount = read_u64_le(&mut cursor)?;
+        
+        // Script length (varint)
+        let script_len = read_varint(&mut cursor)? as usize;
+        
+        // Script
+        let mut script_pubkey = vec![0u8; script_len];
+        read_exact(&mut cursor, &mut script_pubkey)?;
+        
+        outputs.push(keepkey_rust::messages::TxOutputBinType {
+            amount,
+            script_pubkey,
+            decred_script_version: None,
+        });
+    }
+    
+    // Parse lock time (4 bytes, little-endian)
+    let lock_time = read_u32_le(&mut cursor)?;
+    
+    Ok(((version, input_count as u32, output_count as u32, lock_time), inputs, outputs))
+}
+
+fn read_u32_le(cursor: &mut Cursor<Vec<u8>>) -> Result<u32, String> {
+    let mut buf = [0u8; 4];
+    read_exact(cursor, &mut buf)?;
+    Ok(u32::from_le_bytes(buf))
+}
+
+fn read_u64_le(cursor: &mut Cursor<Vec<u8>>) -> Result<u64, String> {
+    let mut buf = [0u8; 8];
+    read_exact(cursor, &mut buf)?;
+    Ok(u64::from_le_bytes(buf))
+}
+
+fn read_varint(cursor: &mut Cursor<Vec<u8>>) -> Result<u64, String> {
+    let mut buf = [0u8; 1];
+    read_exact(cursor, &mut buf)?;
+    let first_byte = buf[0];
+    
+    match first_byte {
+        0..=252 => Ok(first_byte as u64),
+        253 => {
+            let mut buf = [0u8; 2];
+            read_exact(cursor, &mut buf)?;
+            Ok(u16::from_le_bytes(buf) as u64)
+        }
+        254 => {
+            let mut buf = [0u8; 4];
+            read_exact(cursor, &mut buf)?;
+            Ok(u32::from_le_bytes(buf) as u64)
+        }
+        255 => {
+            let mut buf = [0u8; 8];
+            read_exact(cursor, &mut buf)?;
+            Ok(u64::from_le_bytes(buf))
+        }
+    }
+}
+
+fn read_exact(cursor: &mut Cursor<Vec<u8>>, buf: &mut [u8]) -> Result<(), String> {
+    use std::io::Read;
+    cursor.read_exact(buf).map_err(|e| format!("Failed to read data: {}", e))
 } 

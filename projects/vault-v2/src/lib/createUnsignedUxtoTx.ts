@@ -65,9 +65,37 @@ export async function createUnsignedUxtoTx(
     }
     if (!utxos || utxos.length === 0) throw Error('No UTXOs found');
 
+    // Debug: Log the UTXOs to see their structure
+    console.log(`${tag} Raw UTXOs from Pioneer API:`, utxos.length, 'utxos');
+    utxos.forEach((utxo, i) => {
+      console.log(`${tag} UTXO ${i+1}:`, {
+        txid: utxo.txid,
+        vout: utxo.vout, 
+        value: utxo.value,
+        type: typeof utxo.value,
+        address: utxo.address,
+        scriptType: utxo.scriptType,
+        allFields: Object.keys(utxo)
+      });
+    });
+
+    // Ensure UTXOs have proper numeric values for coinselect
     for (const utxo of utxos) {
       utxo.value = Number(utxo.value);
+      
+      // Ensure required fields exist
+      if (!utxo.txid || utxo.vout === undefined || !utxo.value || utxo.value <= 0) {
+        console.error(`${tag} Invalid UTXO:`, utxo);
+        throw new Error(`Invalid UTXO data: missing txid, vout, or value`);
+      }
     }
+    
+    console.log(`${tag} UTXOs after processing:`, utxos.map(u => ({ 
+      txid: u.txid, 
+      vout: u.vout, 
+      value: u.value,
+      valueType: typeof u.value 
+    })));
 
     let feeRateFromNode: any;
     try {
@@ -116,20 +144,50 @@ export async function createUnsignedUxtoTx(
     amount = parseInt(String(amount * 1e8));
     if (amount <= 0 && !isMax) throw Error('Invalid amount! 0');
 
+    // Debug coinselect parameters
+    const totalUtxoValue = utxos.reduce((sum, utxo) => sum + utxo.value, 0);
+    console.log(`${tag} Coinselect parameters:`, {
+      totalUtxoValue,
+      targetAmount: amount,
+      feeRate: effectiveFeeRate,
+      isMax,
+      utxoCount: utxos.length,
+      estimatedFee: Math.ceil(250 * effectiveFeeRate), // ~250 vBytes typical tx
+      totalNeeded: amount + Math.ceil(250 * effectiveFeeRate)
+    });
+
     let result;
     if (isMax) {
-      //console.log(tag, 'isMax:', isMax);
-      // For max send, use coinSelectSplit
+      console.log(`${tag} Using coinSelectSplit for max send`);
       result = coinSelectSplit(utxos, [{ address: to }], effectiveFeeRate);
     } else {
-      //console.log(tag, 'isMax:', isMax)
-      // Regular send
+      console.log(`${tag} Using coinSelect for regular send`);
       result = coinSelect(utxos, [{ address: to, value: amount }], effectiveFeeRate);
     }
-    //console.log(tag, 'result:', result);
+    
+    console.log(`${tag} Coinselect result:`, {
+      inputs: result.inputs?.length || 'null',
+      outputs: result.outputs?.length || 'null', 
+      fee: result.fee,
+      inputsTotal: result.inputs ? result.inputs.reduce((sum, inp) => sum + inp.value, 0) : 0,
+      outputsTotal: result.outputs ? result.outputs.reduce((sum, out) => sum + (out.value || 0), 0) : 0
+    });
+    
     let { inputs, outputs, fee } = result;
-    if (!inputs) throw Error('Failed to create transaction: Missing inputs');
-    if (!outputs) throw Error('Failed to create transaction: Missing outputs');
+    
+    // Better error messages for coinselect failures
+    if (!inputs || !outputs) {
+      const actualFee = fee || Math.ceil(250 * effectiveFeeRate);
+      const totalNeeded = amount + actualFee;
+      const shortfall = totalNeeded - totalUtxoValue;
+      
+      if (shortfall > 0) {
+        throw new Error(`Insufficient funds: need ${totalNeeded} sats (${amount} + ${actualFee} fee) but only have ${totalUtxoValue} sats. Shortfall: ${shortfall} sats. Try sending ${Math.max(0, totalUtxoValue - actualFee)} sats or less.`);
+      } else {
+        throw new Error(`Coinselect failed to find a solution. Available: ${totalUtxoValue} sats, Target: ${amount} sats, Fee rate: ${effectiveFeeRate} sat/vB`);
+      }
+    }
+    
     if (fee === undefined) throw Error('Failed to calculate transaction fee');
 
     const uniqueInputSet = new Set();
@@ -225,10 +283,8 @@ function transformInput(input) {
     tx,
     coin,
     network,
-    witnessUtxo: {
-      value: parseInt(tx.vout[0].value),
-      script: Buffer.from(tx.vout[0].scriptPubKey.hex, 'hex'),
-    },
+    // Note: witnessUtxo removed - not needed for KeepKey device signing
+    // (only needed for PSBT which we're not using)
   };
 }
 

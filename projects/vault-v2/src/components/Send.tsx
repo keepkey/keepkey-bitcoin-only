@@ -16,7 +16,8 @@ import {
 import { FaArrowLeft, FaQrcode, FaPaperPlane, FaEye, FaSignature, FaCheck } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
-import { PioneerAPI } from '../lib/api';
+import { PioneerAPI, DeviceQueueAPI } from '../lib/api';
+import { createUnsignedUxtoTx } from '../lib/createUnsignedUxtoTx';
 
 interface SendPageProps {
   onBack: () => void;
@@ -43,7 +44,7 @@ interface TransactionReview {
 }
 
 const Send: React.FC<SendPageProps> = ({ onBack }) => {
-  const { portfolio, loading: walletLoading, error: walletError, selectAsset } = useWallet();
+  const { portfolio, loading: walletLoading, error: walletError, selectAsset, selectedAsset, signTransaction, fetchedXpubs } = useWallet();
   
   // Step management
   const [currentStep, setCurrentStep] = useState<SendStep>('compose');
@@ -60,6 +61,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const [addressValidation, setAddressValidation] = useState<{ valid: boolean; error?: string }>({ valid: false });
   const [amountCurrency, setAmountCurrency] = useState<'BTC' | 'USD'>('BTC');
   const [btcPrice, setBtcPrice] = useState<number>(43000);
+  const [isMaxSend, setIsMaxSend] = useState(false);
   
   // Fee-related state
   const [feeRates, setFeeRates] = useState<FeeRates>({ slow: 1, medium: 5, fast: 10 }); // Fallback rates
@@ -152,7 +154,8 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
   const handleMaxAmount = () => {
     if (availableBalance > 0) {
-      // Calculate more accurate fee estimate based on selected fee rate
+      // For max send, coinSelectSplit will handle the calculation automatically
+      // We still show an estimated amount in the UI for user feedback
       const selectedFeeRate = feeRates[feeRate];
       const estimatedFeeInBtc = (250 * selectedFeeRate) / 100000000; // Assume ~250 vBytes for typical tx
       const maxAmountInBtc = Math.max(0, availableBalance - estimatedFeeInBtc);
@@ -164,6 +167,10 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       } else {
         setAmount(maxAmountInBtc.toFixed(8));
       }
+      
+      // Mark this as a max send
+      setIsMaxSend(true);
+      console.log('💰 Max button clicked - will use coinSelectSplit for max send');
     }
   };
 
@@ -240,9 +247,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       setSuccess(null);
 
       console.log('🔄 Building transaction...');
-      
-      // TODO: Implement transaction building using createUnsignedUxtoTx
-      // For now, create a mock transaction review
+
       const selectedFeeRateValue = feeRates[feeRate];
       const estimatedFee = (250 * selectedFeeRateValue) / 100000000; // ~250 vBytes typical tx
       const amountInSats = Math.round(sendAmountInBtc * 100000000);
@@ -286,23 +291,143 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       
       setCurrentStep('sign');
       
-      // TODO: Implement actual device signing
-      // For now, simulate signing process
-      console.log('🔐 Signing transaction...');
+            console.log('🔐 Building and signing real Bitcoin transaction with proper UTXO selection...');
       
-      // Simulate signing delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Get the connected device
+      const connectedDevices = await DeviceQueueAPI.getConnectedDevices();
+      if (!connectedDevices || connectedDevices.length === 0) {
+        throw new Error('No KeepKey device connected');
+      }
       
-      // Mock signed transaction
-      const mockSignedTx = "0100000001abc123...def456"; // This would be the actual signed transaction hex
+      const device = connectedDevices[0].device || connectedDevices[0];
+      const deviceId = device.unique_id;
       
-      setSignedTransaction(mockSignedTx);
+      console.log('🔑 Using device:', deviceId);
+      
+      // Get ALL Bitcoin xpubs (legacy, segwit, native segwit)
+      const btcNetworkId = "bip122:000000000019d6689c085ae165831e93";
+      const btcXpubs = fetchedXpubs.filter(x => 
+        x.caip && x.caip.includes(btcNetworkId)
+      );
+      
+      if (!btcXpubs || btcXpubs.length === 0) {
+        throw new Error('No Bitcoin xpubs found. Please sync your wallet first.');
+      }
+      
+      console.log('💰 Using ALL Bitcoin xpubs:', btcXpubs.length, 'found');
+      btcXpubs.forEach((xpub, i) => {
+        const prefix = xpub.xpub.substring(0, 4);
+        const scriptType = prefix === 'xpub' ? 'p2pkh' : prefix === 'ypub' ? 'p2sh-p2wpkh' : prefix === 'zpub' ? 'p2wpkh' : 'unknown';
+        console.log(`   ${i+1}. ${prefix}... (${scriptType}) - CAIP: ${xpub.caip}`);
+      });
+      
+      // Prepare pubkeys array for createUnsignedUxtoTx with ALL Bitcoin xpubs
+      const pubkeys = btcXpubs.map(btcXpub => {
+        const prefix = btcXpub.xpub.substring(0, 4);
+        let scriptType = 'p2pkh'; // Default to legacy
+        
+        if (prefix === 'ypub') {
+          scriptType = 'p2sh-p2wpkh'; // P2WPKH nested in P2SH
+        } else if (prefix === 'zpub') {
+          scriptType = 'p2wpkh'; // Native SegWit
+        }
+        
+        return {
+          pubkey: btcXpub.xpub,
+          xpub: btcXpub.xpub,
+          networks: ['bip122:000000000019d6689c085ae165831e93'],
+          scriptType: scriptType
+        };
+      });
+      
+      // Create Pioneer API client that uses our already-loaded fee rates
+      const pioneer = {
+        async ListUnspent({ network, xpub }: { network: string; xpub: string }) {
+          const data = await PioneerAPI.listUnspent('Bitcoin', xpub);
+          return { data };
+        },
+        async GetChangeAddress({ network, xpub }: { network: string; xpub: string }) {
+          const data = await PioneerAPI.getChangeAddress('Bitcoin', xpub);
+          return { data };
+        },
+        async GetFeeRate({ networkId }: { networkId: string }) {
+          // Use our already-loaded fee rates instead of fetching again
+          console.log('💰 Using pre-loaded fee rates instead of fetching again');
+          const selectedFeeRateValue = feeRates[feeRate];
+          return { 
+            data: {
+              slow: feeRates.slow,
+              average: feeRates.medium, 
+              fastest: feeRates.fast
+            }
+          };
+        }
+      };
+      
+                    // Use the proper transaction builder with real input selection
+       console.log('⚙️ Building transaction with proper coinselect algorithm...');
+        const sendAmountBtc = amountCurrency === 'USD' ? convertUsdToBtc(parseFloat(amount)) : parseFloat(amount); // Amount in BTC (not satoshis)
+      
+      console.log(`💰 Transaction type: ${isMaxSend ? 'MAX SEND (coinSelectSplit)' : 'REGULAR SEND (coinSelect)'}`);
+      console.log(`💰 Send amount: ${sendAmountBtc} BTC (${isMaxSend ? 'will be calculated by coinSelectSplit' : 'fixed amount'})`);
+      
+      
+      const unsignedTx = await createUnsignedUxtoTx(
+        btcXpubs[0].caip, // Use first Bitcoin CAIP (any will work since they're all Bitcoin)
+        recipientAddress,
+        sendAmountBtc,
+        '', // memo (empty for now)
+        pubkeys,
+        pioneer,
+        null, // keepKeySdk (not needed for signing)
+        isMaxSend // Use tracked max send state instead of hardcoded false
+      );
+      
+      console.log('📊 Transaction built by coinselect:');
+      console.log(`   Inputs: ${unsignedTx.inputs.length} UTXOs`);
+      console.log(`   Outputs: ${unsignedTx.outputs.length} outputs`);
+      console.log(`   Total input value: ${unsignedTx.inputs.reduce((sum: number, input: any) => sum + parseInt(input.amount), 0)} sats`);
+      console.log(`   Total output value: ${unsignedTx.outputs.reduce((sum: number, output: any) => sum + parseInt(output.amount), 0)} sats`);
+      
+      // Transform to format expected by our device signing API
+      const realInputs = unsignedTx.inputs.map((input: any) => ({
+        address_n_list: input.addressNList,
+        script_type: input.scriptType,
+        amount: input.amount,
+        vout: input.vout,
+        txid: input.txid,
+        prev_tx_hex: input.hex
+      }));
+      
+      const realOutputs = unsignedTx.outputs.map((output: any) => ({
+        address: output.address,
+        amount: parseInt(output.amount),
+        address_type: output.addressType === 'change' ? 'change' : 'spend',
+        script_type: output.scriptType || 'p2pkh',
+        address_n_list: output.addressNList
+      }));
+      
+      // Sign the transaction using real device with properly selected UTXOs
+      const signedTxHex = await signTransaction(
+        deviceId,
+        unsignedTx.coin,
+        realInputs,
+        realOutputs,
+        unsignedTx.version,
+        unsignedTx.locktime
+      );
+      
+      console.log('✅ Transaction signed successfully!');
+      console.log('🔐 Signed transaction hex:', signedTxHex.substring(0, 20) + '...');
+      
+      setSignedTransaction(signedTxHex);
       setCurrentStep('complete');
       setSuccess('Transaction signed successfully!');
 
     } catch (error) {
       console.error('Error signing transaction:', error);
       setError(error instanceof Error ? error.message : 'Failed to sign transaction');
+      setCurrentStep('review'); // Go back to review on error
     } finally {
       setLoading(false);
     }
@@ -317,6 +442,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
     setAmount('');
     setError(null);
     setSuccess(null);
+    setIsMaxSend(false);
   };
 
   // Currency conversion helpers
@@ -470,7 +596,14 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             <Input
               placeholder={amountCurrency === 'BTC' ? "0.00000000" : "0.00"}
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                // Clear max send flag if user manually types amount
+                if (isMaxSend) {
+                  setIsMaxSend(false);
+                  console.log('💰 Manual amount entered - clearing max send flag');
+                }
+              }}
               color="white"
               bg="gray.700"
               border="1px solid"
@@ -481,6 +614,11 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
               min="0"
             />
             <Text fontSize="xs" color="gray.500" mt={1}>
+              {isMaxSend && (
+                <Text color="orange.400" fontSize="xs" mb={1}>
+                  💰 MAX SEND: Will send all available funds minus network fees
+                </Text>
+              )}
               {amount && parseFloat(amount) > 0 && (
                 <>
                   ≈ {amountCurrency === 'BTC' 

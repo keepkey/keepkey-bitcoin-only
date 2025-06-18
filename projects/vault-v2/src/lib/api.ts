@@ -117,8 +117,9 @@ export class PioneerAPI {
     try {
       console.log('🏠 Getting receive address for', coin, 'xpub');
       
+      // Use REAL Pioneer API endpoint from test-pioneer-live.js
       const response = await axios.get(
-        `${PIONEER_BASE_URL}/api/v1/getNewAddress/${coin}/${xpub}`,
+        `${PIONEER_BASE_URL}/api/v1/getNewAddress/BTC/${xpub}`,
         { 
           headers: { 'accept': 'application/json' },
           timeout: 10000
@@ -137,14 +138,11 @@ export class PioneerAPI {
     try {
       console.log('🪙 Getting UTXOs for', network, 'xpub:', xpub.substring(0, 20) + '...');
       
-      const response = await axios.post(
-        `${PIONEER_BASE_URL}/api/v1/listUnspent`,
-        { network, xpub },
+      // Use REAL Pioneer API endpoint from test-pioneer-live.js
+      const response = await axios.get(
+        `${PIONEER_BASE_URL}/api/v1/listUnspent/BTC/${xpub}`,
         { 
-          headers: { 
-            'Content-Type': 'application/json',
-            'accept': 'application/json' 
-          },
+          headers: { 'accept': 'application/json' },
           timeout: 30000
         }
       );
@@ -161,14 +159,11 @@ export class PioneerAPI {
     try {
       console.log('🔄 Getting change address for', network, 'xpub:', xpub.substring(0, 20) + '...');
       
-      const response = await axios.post(
-        `${PIONEER_BASE_URL}/api/v1/getChangeAddress`,
-        { network, xpub },
+      // Use REAL Pioneer API endpoint from test-pioneer-live.js
+      const response = await axios.get(
+        `${PIONEER_BASE_URL}/api/v1/getChangeAddress/BTC/${xpub}`,
         { 
-          headers: { 
-            'Content-Type': 'application/json',
-            'accept': 'application/json' 
-          },
+          headers: { 'accept': 'application/json' },
           timeout: 10000
         }
       );
@@ -192,11 +187,13 @@ export class PioneerAPI {
   static createClient() {
     return {
       async ListUnspent({ network, xpub }: { network: string; xpub: string }) {
-        const data = await PioneerAPI.listUnspent(network, xpub);
+        // Use real Pioneer API endpoints - network parameter is ignored since endpoint is hardcoded to BTC
+        const data = await PioneerAPI.listUnspent('Bitcoin', xpub);
         return { data };
       },
       async GetChangeAddress({ network, xpub }: { network: string; xpub: string }) {
-        const data = await PioneerAPI.getChangeAddress(network, xpub);
+        // Use real Pioneer API endpoints - network parameter is ignored since endpoint is hardcoded to BTC
+        const data = await PioneerAPI.getChangeAddress('Bitcoin', xpub);
         return { data };
       },
       async GetFeeRate({ networkId }: { networkId: string }) {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 
 // Import types needed for DeviceRequestWrapper
-use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, DeviceQueueManager};
+use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, DeviceQueueManager, parse_transaction_from_hex};
 
 #[tauri::command]
 pub async fn add_to_device_queue(
@@ -137,84 +137,183 @@ pub async fn add_to_device_queue(
             Ok(features_json.to_string())
         }
         DeviceRequest::SignTransaction { ref coin, ref inputs, ref outputs, version, lock_time } => {
-            // Convert our structured inputs to the format expected by keepkey_rust
-            let mut keepkey_inputs = Vec::new();
+            // Build transaction map with previous transactions and unsigned transaction
+            let mut tx_map = std::collections::HashMap::new();
+            
+            // Cache previous transactions
+            for (idx, input) in inputs.iter().enumerate() {
+                if let Some(hex_data) = &input.prev_tx_hex {
+                    let tx_hash = hex::decode(&input.txid).map_err(|e| format!("Invalid txid hex: {}", e))?;
+                    let tx_hash_hex = hex::encode(&tx_hash);
+                    
+                    // Parse the previous transaction from hex
+                    match parse_transaction_from_hex(hex_data) {
+                        Ok((metadata, tx_inputs, tx_outputs)) => {
+                            let tx = keepkey_rust::messages::TransactionType {
+                                version: Some(metadata.0),
+                                lock_time: Some(metadata.3),
+                                inputs_cnt: Some(metadata.1),
+                                outputs_cnt: Some(metadata.2),
+                                inputs: tx_inputs,
+                                bin_outputs: tx_outputs,
+                                outputs: vec![],
+                                extra_data: None,
+                                extra_data_len: Some(0),
+                                ..Default::default()
+                            };
+                            tx_map.insert(tx_hash_hex.clone(), tx);
+                            println!("✅ Cached previous transaction: {} (v{}, {} inputs, {} outputs)", 
+                                   tx_hash_hex, metadata.0, metadata.1, metadata.2);
+                        }
+                        Err(e) => {
+                            eprintln!("⚠️ Failed to parse previous transaction for input {}: {}", idx, e);
+                            return Err(format!("Failed to parse previous transaction for input {}: {}", idx, e));
+                        }
+                    }
+                } else {
+                    return Err(format!("Input {} missing previous transaction hex", idx));
+                }
+            }
+
+            // Build the unsigned transaction
+            let mut new_tx_inputs = Vec::new();
             for input in inputs {
-                let keepkey_input = keepkey_rust::messages::TxInputType {
+                let script_type = match input.script_type.as_str() {
+                    "p2pkh" => keepkey_rust::messages::InputScriptType::Spendaddress,
+                    "p2sh-p2wpkh" => keepkey_rust::messages::InputScriptType::Spendp2shwitness,
+                    "p2wpkh" => keepkey_rust::messages::InputScriptType::Spendwitness,
+                    _ => keepkey_rust::messages::InputScriptType::Spendaddress,
+                };
+
+                new_tx_inputs.push(keepkey_rust::messages::TxInputType {
                     address_n: input.address_n_list.clone(),
                     prev_hash: hex::decode(&input.txid).map_err(|e| format!("Invalid txid hex: {}", e))?,
                     prev_index: input.vout,
-                    script_sig: None, // Will be filled by device
-                    sequence: Some(0xffffffff), // Default sequence
-                    script_type: match input.script_type.as_str() {
-                        "p2pkh" => Some(keepkey_rust::messages::InputScriptType::Spendaddress as i32),
-                        "p2sh" => Some(keepkey_rust::messages::InputScriptType::Spendp2shwitness as i32),
-                        "p2wpkh" => Some(keepkey_rust::messages::InputScriptType::Spendwitness as i32),
-                        _ => Some(keepkey_rust::messages::InputScriptType::Spendaddress as i32),
-                    },
+                    script_sig: None,
+                    sequence: Some(0xffffffff),
+                    script_type: Some(script_type as i32),
                     amount: Some(input.amount.parse::<u64>().map_err(|_| "Invalid amount")?),
                     ..Default::default()
-                };
-                keepkey_inputs.push(keepkey_input);
+                });
             }
 
-            // Convert outputs
-            let mut keepkey_outputs = Vec::new();
+            let mut new_tx_outputs = Vec::new();
             for output in outputs {
-                let keepkey_output = if output.address_type == "change" {
-                    // For change outputs, we need addressNList instead of address
-                    // TODO: Calculate and set proper change address derivation path (address_n)
-                    // WARNING: Leaving this as an empty vec will result in invalid change outputs!
-                    keepkey_rust::messages::TxOutputType {
-                        amount: output.amount,
-                        script_type: keepkey_rust::messages::OutputScriptType::Paytoaddress as i32,
-                        address_n: vec![], // FIXME: Must set correct derivation path
-                        ..Default::default()
-                    }
-                } else {
-                    // For spend outputs, use the address
-                    keepkey_rust::messages::TxOutputType {
-                        address: Some(output.address.clone()),
-                        amount: output.amount,
-                        script_type: keepkey_rust::messages::OutputScriptType::Paytoaddress as i32,
-                        ..Default::default()
+                let script_type = match output.address_type.as_str() {
+                    "change" => {
+                        // For change outputs, use address_n and appropriate script type
+                        match output.script_type.as_deref().unwrap_or("p2pkh") {
+                            "p2pkh" => keepkey_rust::messages::OutputScriptType::Paytoaddress,
+                            "p2sh" => keepkey_rust::messages::OutputScriptType::Paytoscripthash,
+                            "p2wpkh" => keepkey_rust::messages::OutputScriptType::Paytowitness,
+                            _ => keepkey_rust::messages::OutputScriptType::Paytoaddress,
+                        }
+                    },
+                    _ => {
+                        // For spend outputs
+                        keepkey_rust::messages::OutputScriptType::Paytoaddress
                     }
                 };
-                keepkey_outputs.push(keepkey_output);
+
+                new_tx_outputs.push(keepkey_rust::messages::TxOutputType {
+                    address: if output.address_type == "change" { None } else { Some(output.address.clone()) },
+                    address_n: if output.address_type == "change" { 
+                        output.address_n_list.clone().unwrap_or_default() 
+                    } else { 
+                        vec![] 
+                    },
+                    amount: output.amount,
+                    script_type: script_type as i32,
+                    address_type: Some(if output.address_type == "change" {
+                        keepkey_rust::messages::OutputAddressType::Change as i32
+                    } else {
+                        keepkey_rust::messages::OutputAddressType::Spend as i32
+                    }),
+                    ..Default::default()
+                });
             }
 
-            // Create SignTx message
+            let unsigned_tx = keepkey_rust::messages::TransactionType {
+                version: Some(version),
+                lock_time: Some(lock_time),
+                inputs_cnt: Some(inputs.len() as u32),
+                outputs_cnt: Some(outputs.len() as u32),
+                inputs: new_tx_inputs,
+                bin_outputs: vec![],
+                outputs: new_tx_outputs,
+                extra_data: None,
+                extra_data_len: Some(0),
+                ..Default::default()
+            };
+
+            tx_map.insert("unsigned".to_string(), unsigned_tx);
+
+            // Start the Bitcoin signing protocol
             let sign_tx = keepkey_rust::messages::Message::SignTx(
                 keepkey_rust::messages::SignTx {
                     coin_name: Some(coin.clone()),
-                    inputs_count: keepkey_inputs.len() as u32,
-                    outputs_count: keepkey_outputs.len() as u32,
+                    inputs_count: inputs.len() as u32,
+                    outputs_count: outputs.len() as u32,
                     version: Some(version),
                     lock_time: Some(lock_time),
                     ..Default::default()
                 }
             );
 
-            // Sign the transaction through the device queue
-            // There is no sign_transaction method; use send_raw instead
-            match queue_handle.send_raw(sign_tx, false).await {
-                Ok(message) => {
-                    // Try to extract signed tx string from Message
-                    let signed_tx_hex = match message {
-                        keepkey_rust::messages::Message::TxAck(ref tx_ack) => {
-                            // Use Debug format for TransactionType since it doesn't implement Serialize
-                            format!("{:?}", tx_ack.tx)
-                        },
-                        _ => {
-                            format!("Unexpected response: {:?}", message)
+            println!("📤 Sending SignTx message to device");
+            
+            // Execute the signing protocol
+            let mut current_message = sign_tx;
+            let mut signatures = Vec::new();
+            let mut serialized_tx_parts = Vec::new();
+            
+            loop {
+                let response = queue_handle.send_raw(current_message, false).await
+                    .map_err(|e| format!("Device communication error: {}", e))?;
+                
+                match response {
+                    keepkey_rust::messages::Message::TxRequest(tx_req) => {
+                        // Handle serialized data if present
+                        if let Some(serialized) = &tx_req.serialized {
+                            if let Some(serialized_tx) = &serialized.serialized_tx {
+                                serialized_tx_parts.push(serialized_tx.clone());
+                            }
+                            if let Some(signature) = &serialized.signature {
+                                if let Some(sig_index) = serialized.signature_index {
+                                    signatures.push((sig_index, hex::encode(signature)));
+                                }
+                            }
                         }
-                    };
-                    println!("✅ Transaction signed successfully: {:?}", signed_tx_hex);
-                    Ok(signed_tx_hex)
-                }
-                Err(e) => {
-                    println!("❌ Failed to sign transaction: {}", e);
-                    Err(format!("Failed to sign transaction: {}", e))
+                        
+                        // Handle the transaction request
+                        match handle_tx_request(tx_req, &tx_map) {
+                            Ok(Some(next_msg)) => current_message = next_msg,
+                            Ok(None) => {
+                                // Transaction finished
+                                let mut serialized_tx = Vec::new();
+                                for part in &serialized_tx_parts {
+                                    serialized_tx.extend_from_slice(part);
+                                }
+                                
+                                println!("✅ Transaction signed successfully!");
+                                println!("   Signatures: {}", signatures.len());
+                                println!("   Serialized TX: {} bytes", serialized_tx.len());
+                                
+                                return Ok(hex::encode(serialized_tx));
+                            }
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    keepkey_rust::messages::Message::Failure(failure) => {
+                        let error = format!("Device returned error: {}", failure.message.unwrap_or_default());
+                        println!("❌ Failed to sign transaction: {}", error);
+                        return Err(error);
+                    }
+                    _ => {
+                        let error = format!("Unexpected response from device: {:?}", response);
+                        println!("❌ Failed to sign transaction: {}", error);
+                        return Err(error);
+                    }
                 }
             }
         }
@@ -413,5 +512,125 @@ pub async fn add_to_device_queue(
             
             Err(e.to_string())
         }
+    }
+}
+
+/// Handle transaction request from device during Bitcoin signing protocol
+fn handle_tx_request(
+    tx_req: keepkey_rust::messages::TxRequest,
+    tx_map: &std::collections::HashMap<String, keepkey_rust::messages::TransactionType>,
+) -> Result<Option<keepkey_rust::messages::Message>, String> {
+    // Extract transaction hash if provided
+    let tx_hash_hex = if let Some(details) = &tx_req.details {
+        if let Some(tx_hash) = &details.tx_hash {
+            hex::encode(tx_hash)
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    // Handle request type
+    match tx_req.request_type {
+        Some(rt) if rt == keepkey_rust::messages::RequestType::Txinput as i32 => {
+            let details = tx_req.details.as_ref()
+                .ok_or_else(|| "Missing details in TXINPUT request".to_string())?;
+            let req_index = details.request_index
+                .ok_or_else(|| "Missing request_index".to_string())? as usize;
+            
+            let current_tx = if tx_hash_hex.is_empty() {
+                tx_map.get("unsigned")
+                    .ok_or_else(|| "Unsigned transaction not found".to_string())?
+            } else {
+                tx_map.get(&tx_hash_hex)
+                    .ok_or_else(|| format!("Previous transaction {} not found", tx_hash_hex))?
+            };
+            
+            let input = current_tx.inputs.get(req_index)
+                .ok_or_else(|| format!("Input {} not found", req_index))?;
+            
+            let mut tx_ack_msg = keepkey_rust::messages::TransactionType::default();
+            tx_ack_msg.inputs = vec![input.clone()];
+            
+            Ok(Some(keepkey_rust::messages::Message::TxAck(
+                keepkey_rust::messages::TxAck { tx: Some(tx_ack_msg) }
+            )))
+        }
+        Some(rt) if rt == keepkey_rust::messages::RequestType::Txoutput as i32 => {
+            let details = tx_req.details.as_ref()
+                .ok_or_else(|| "Missing details in TXOUTPUT request".to_string())?;
+            let req_index = details.request_index
+                .ok_or_else(|| "Missing request_index".to_string())? as usize;
+            
+            let current_tx = if tx_hash_hex.is_empty() {
+                tx_map.get("unsigned")
+                    .ok_or_else(|| "Unsigned transaction not found".to_string())?
+            } else {
+                tx_map.get(&tx_hash_hex)
+                    .ok_or_else(|| format!("Previous transaction {} not found", tx_hash_hex))?
+            };
+            
+            if tx_hash_hex.is_empty() {
+                // For unsigned transaction, use outputs
+                let output = current_tx.outputs.get(req_index)
+                    .ok_or_else(|| format!("Output {} not found", req_index))?;
+                
+                let mut tx_ack_msg = keepkey_rust::messages::TransactionType::default();
+                tx_ack_msg.outputs = vec![output.clone()];
+                
+                Ok(Some(keepkey_rust::messages::Message::TxAck(
+                    keepkey_rust::messages::TxAck { tx: Some(tx_ack_msg) }
+                )))
+            } else {
+                // For previous transactions, use bin_outputs
+                let bin_output = current_tx.bin_outputs.get(req_index)
+                    .ok_or_else(|| format!("Binary output {} not found", req_index))?;
+                
+                let mut tx_ack_msg = keepkey_rust::messages::TransactionType::default();
+                tx_ack_msg.bin_outputs = vec![bin_output.clone()];
+                
+                Ok(Some(keepkey_rust::messages::Message::TxAck(
+                    keepkey_rust::messages::TxAck { tx: Some(tx_ack_msg) }
+                )))
+            }
+        }
+        Some(rt) if rt == keepkey_rust::messages::RequestType::Txmeta as i32 => {
+            let current_tx = if tx_hash_hex.is_empty() {
+                tx_map.get("unsigned")
+                    .ok_or_else(|| "Unsigned transaction not found".to_string())?
+            } else {
+                tx_map.get(&tx_hash_hex)
+                    .ok_or_else(|| format!("Previous transaction {} not found", tx_hash_hex))?
+            };
+            
+            let tx_meta = keepkey_rust::messages::TransactionType {
+                version: current_tx.version,
+                inputs_cnt: current_tx.inputs_cnt,
+                outputs_cnt: if tx_hash_hex.is_empty() {
+                    Some(current_tx.outputs.len() as u32)
+                } else {
+                    current_tx.outputs_cnt
+                },
+                lock_time: current_tx.lock_time,
+                extra_data_len: current_tx.extra_data_len,
+                inputs: vec![],
+                bin_outputs: vec![],
+                outputs: vec![],
+                extra_data: None,
+                expiry: current_tx.expiry,
+                overwintered: current_tx.overwintered,
+                version_group_id: current_tx.version_group_id,
+                branch_id: current_tx.branch_id,
+            };
+            
+            Ok(Some(keepkey_rust::messages::Message::TxAck(
+                keepkey_rust::messages::TxAck { tx: Some(tx_meta) }
+            )))
+        }
+        Some(rt) if rt == keepkey_rust::messages::RequestType::Txfinished as i32 => {
+            Ok(None) // Signal completion
+        }
+        _ => Err(format!("Unknown request type: {:?}", tx_req.request_type)),
     }
 }

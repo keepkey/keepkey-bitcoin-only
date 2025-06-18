@@ -18,6 +18,11 @@ NEVER FALLBACK, never create fake credentials to fallback on
 
 NEVER allow a script to run if its missing credentials, FAIL FAST
 
+NEVER placeholder
+
+NEVER invent endpoints, never invent objects, never make things up, find source, site sources in comments
+
+NEVER invent endpoints on API's, cite the api docs or reference code when implementing apis (url to swagger)
 
 Always use Skills to start apps and services, running apps directly with flags hides from devs how things work
 

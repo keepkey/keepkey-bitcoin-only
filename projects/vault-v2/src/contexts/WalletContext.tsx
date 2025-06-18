@@ -28,12 +28,21 @@ interface WalletContextType {
   error: string | null;
   isSync: boolean;
   lastReceiveAddress: string | null;
+  fetchedXpubs: Array<{path: string, xpub: string, caip: string}>;
   refreshPortfolio: () => Promise<void>;
   selectAsset: (asset: Asset | null) => void;
   sendAsset: (toAddress: string, amount: string) => Promise<boolean>;
   getReceiveAddress: () => Promise<string | null>;
   requestXpubFromDevice: (deviceId: string, path: string) => Promise<string>;
   getQueueStatus: (deviceId: string) => Promise<QueueStatus>;
+  signTransaction: (
+    deviceId: string,
+    coin: string,
+    inputs: any[],
+    outputs: any[],
+    version?: number,
+    lockTime?: number
+  ) => Promise<string>;
 }
 
 // Create Context
@@ -60,6 +69,15 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   
   // Store fetched xpubs in memory (not database for v2)
   const [fetchedXpubs, setFetchedXpubs] = useState<Array<{path: string, xpub: string, caip: string}>>([]);
+  
+  // Track pending receive address requests
+  const pendingReceiveRequests = new Map<string, AddrResolver>();
+  
+  // Track pending transaction signing requests
+  const pendingSigningRequests = new Map<string, { 
+    resolve: (signedTx: string) => void; 
+    reject: (error: any) => void; 
+  }>();
 
   const refreshPortfolio = useCallback(async () => {
     const tag = TAG + " | refreshPortfolio | ";
@@ -446,6 +464,65 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     return DeviceQueueAPI.getQueueStatus(deviceId);
   };
 
+  const signTransaction = async (
+    deviceId: string,
+    coin: string,
+    inputs: any[],
+    outputs: any[],
+    version: number = 1,
+    lockTime: number = 0
+  ): Promise<string> => {
+    const tag = TAG + " | signTransaction | ";
+    
+    try {
+      console.log(tag, `🔐 Signing transaction on device ${deviceId}`);
+      
+      // Generate a unique request ID
+      const requestId = `sign_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log(tag, '🆔 Generated requestId:', requestId);
+      
+      // Create promise resolvers
+      let resolveSignature: (signedTx: string) => void;
+      let rejectSignature: (error: any) => void;
+      
+      const signingPromise = new Promise<string>((resolve, reject) => {
+        resolveSignature = resolve;
+        rejectSignature = reject;
+      });
+      
+      // Store the resolvers before making the request
+      pendingSigningRequests.set(requestId, {
+        resolve: resolveSignature!,
+        reject: rejectSignature!
+      });
+      
+      console.log(tag, `📋 Added signing request ${requestId} to pending map`);
+      
+      // Queue the signing request
+      try {
+        await DeviceQueueAPI.signTransaction(deviceId, coin, inputs, outputs, version, lockTime);
+        console.log(tag, '🟢 Transaction signing request queued');
+      } catch (error) {
+        // Clean up on request failure
+        pendingSigningRequests.delete(requestId);
+        throw error;
+      }
+      
+      // Set timeout to prevent infinite waiting
+      setTimeout(() => {
+        if (pendingSigningRequests.delete(requestId)) {
+          console.log(tag, `⏰ Signing request ${requestId} timed out`);
+          rejectSignature!(new Error('Timeout waiting for transaction signing'));
+        }
+      }, 120_000); // 2 minute timeout for signing
+      
+      return signingPromise;
+    } catch (error) {
+      console.error(tag, '❌ Failed to sign transaction:', error);
+      throw error;
+    }
+  };
+
   // Queue monitoring - check for completed xpub requests every 5 seconds
   useEffect(() => {
     const monitorQueue = async () => {
@@ -581,6 +658,32 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
             entry.reject(new Error(addressResponse.error || 'Device error'));
           }
         }
+        
+        // Handle transaction signing responses
+        if (response && 'SignedTransaction' in response) {
+          const signingResponse = response.SignedTransaction;
+          console.log(tag, `🔐 Transaction signing response:`, signingResponse);
+          
+          console.log(tag, `🔍 Looking for signing request_id: ${request_id} in pending map`);
+          console.log(tag, `📋 Current pending signing requests:`, Array.from(pendingSigningRequests.keys()));
+          
+          const entry = pendingSigningRequests.get(request_id);
+          if (!entry) {
+            console.log(tag, 'Transaction signing response for unknown request_id:', request_id);
+            return; // Response for something else
+          }
+
+          pendingSigningRequests.delete(request_id);
+
+          if (signingResponse.success) {
+            console.log(tag, `✅ Transaction signed successfully`);
+            console.log(tag, `🔐 Signed transaction hex:`, signingResponse.signed_tx.substring(0, 20) + '...');
+            entry.resolve(signingResponse.signed_tx);
+          } else {
+            console.error(tag, `❌ Transaction signing failed:`, signingResponse.error);
+            entry.reject(new Error(signingResponse.error || 'Device signing error'));
+          }
+        }
       });
     })();
 
@@ -642,12 +745,14 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     error,
     isSync,
     lastReceiveAddress,
+    fetchedXpubs,
     refreshPortfolio,
     selectAsset,
     sendAsset,
     getReceiveAddress,
     requestXpubFromDevice,
     getQueueStatus,
+    signTransaction,
   };
 
   return (
