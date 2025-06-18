@@ -56,8 +56,13 @@ function App() {
     const [, setDeviceInfo] = useState<DeviceInfoState | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isRestarting, setIsRestarting] = useState(false);
-    const { showOnboarding } = useCommonDialogs();
+    const { showOnboarding, showError } = useCommonDialogs();
     const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
+    
+    // Function to show device access error dialog
+    const showDeviceAccessError = (errorMessage: string) => {
+        showError("KeepKey Device Access Error", errorMessage);
+    };
     
     // Function to restart backend startup process
     const handleLogoClick = async () => {
@@ -106,25 +111,63 @@ function App() {
 
         const setupEventListeners = async () => {
             try {
-                // Listen for the general application state events
-                unlistenAppState = await listen('application:state', (event) => {
-                    console.log('Application state event received:', event.payload);
-                    const appState = event.payload as ApplicationState;
-                    
-                    // Update UI with status from backend
-                    setLoadingStatus(appState.status);
-                    setDeviceConnected(appState.connected);
-                    
-                    // Update device info if features are available
-                    if (appState.features) {
-                        setDeviceInfo({ 
-                            features: appState.features, 
-                            error: null 
-                        });
-                    } else if (!appState.connected) {
-                        setDeviceInfo(null);
+                // Listen for low-level device connected events
+                unlistenAppState = await listen('device:connected', async (event) => {
+                    // event.payload is FriendlyUsbDevice { unique_id, ... }
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    const device = event.payload as any;
+                    const deviceId: string = device.unique_id;
+                    console.log('Device connected event received:', deviceId);
+
+                    setLoadingStatus('Device detected – fetching features');
+
+                    try {
+                        // Fetch features via queue-based helper so we do NOT open transport twice
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        const features = await invoke('get_device_info_by_id', { device_id: deviceId, deviceId: deviceId });
+                        if (features) {
+                            setDeviceConnected(true);
+                            setDeviceInfo({ features: features as any, error: null });
+                            setLoadingStatus('Device ready');
+                        } else {
+                            setLoadingStatus('No features (device busy)');
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch features:', e);
+                        const errorMessage = e as string;
+                        
+                        // Check if this is a device access error (already claimed)
+                        if (errorMessage.includes('Device Already In Use') || 
+                            errorMessage.includes('already claimed') || 
+                            errorMessage.includes('🔒')) {
+                            
+                            console.warn('Device is already in use by another application');
+                            
+                            // Show user-friendly error message with specific instructions
+                            showDeviceAccessError(errorMessage);
+                            setLoadingStatus('Device in use by another app');
+                        } else {
+                            setLoadingStatus('Failed to communicate with device');
+                        }
                     }
                 });
+
+                // Listen for device access errors from backend
+                const unlistenAccessError = await listen('device:access-error', (event) => {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    const errorData = event.payload as any;
+                    console.log('Device access error event received:', errorData);
+                    
+                    showDeviceAccessError(errorData.error);
+                    setLoadingStatus('Device in use by another app');
+                });
+
+                // Return cleanup function that removes both listeners
+                return () => {
+                    if (unlistenAppState) unlistenAppState();
+                    if (unlistenAccessError) unlistenAccessError();
+                };
+                
             } catch (error) {
                 console.error("Failed to set up event listeners:", error);
             }

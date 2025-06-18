@@ -163,6 +163,12 @@ impl Transport for HidTransport {
         
         debug!("HID Write: Sending first packet (64 bytes), data chunk size: {}", first_chunk_size);
         
+        // Log the FULL packet for detailed debugging
+        let full_packet_hex: Vec<String> = first_packet.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        info!("🔍 VAULT V1 HID Write: FULL PACKET (64 bytes): {}", full_packet_hex.join(" "));
+        
         // Send first packet
         self.device
             .write(&first_packet)

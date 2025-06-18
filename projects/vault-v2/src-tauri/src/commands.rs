@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use keepkey_rust::{
@@ -371,6 +371,7 @@ pub async fn get_device_status(
 pub async fn get_device_info_by_id(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,
+    app: AppHandle,
 ) -> Result<Option<DeviceFeatures>, String> {
     println!("Getting device info for: {}", device_id);
     
@@ -431,6 +432,14 @@ pub async fn get_device_info_by_id(
             // Convert from raw Features message to DeviceFeatures
             let device_features = convert_features_to_device_features(raw_features);
             
+            // Emit event for frontend listeners (KeepKeyDeviceList etc.)
+            let event_payload = serde_json::json!({
+                "deviceId": device_id,
+                "features": device_features,
+                "status": "ready"
+            });
+            let _ = app.emit("device:features-updated", event_payload);
+
             // Log the successful response
             let response_data = serde_json::json!({
                 "features": device_features,
@@ -444,6 +453,61 @@ pub async fn get_device_info_by_id(
             Ok(Some(device_features))
         }
         Err(e) => {
+            let error_msg = e.to_string();
+            
+            // Check for device access errors (already claimed)
+            if error_msg.contains("Device Already In Use") || 
+               error_msg.contains("already claimed") ||
+               error_msg.contains("Device Access Failed") ||
+               error_msg.contains("🔒") {
+                
+                println!("❌ Device {} is already in use by another application: {}", device_id, e);
+                
+                // Return the detailed error message from our HID transport
+                let user_friendly_error = if error_msg.contains("🔒") {
+                    error_msg
+                } else {
+                    format!(
+                        "🔒 KeepKey Device Already In Use\n\n\
+                        Your KeepKey device is currently being used by another application.\n\n\
+                        Common causes:\n\
+                        • KeepKey Desktop app is running\n\
+                        • KeepKey Bridge is running\n\
+                        • Another wallet application is connected\n\
+                        • Previous connection wasn't properly closed\n\n\
+                        Solutions:\n\
+                        1. Close KeepKey Desktop app completely\n\
+                        2. Close any other wallet applications\n\
+                        3. Unplug and reconnect your KeepKey device\n\
+                        4. Try again\n\n\
+                        Technical details: {}", e
+                    )
+                };
+                
+                // Emit a special event for device access errors
+                let error_event_payload = serde_json::json!({
+                    "deviceId": device_id,
+                    "error": user_friendly_error,
+                    "errorType": "DEVICE_CLAIMED",
+                    "status": "error"
+                });
+                let _ = app.emit("device:access-error", error_event_payload);
+                
+                // Log the error response
+                let response_data = serde_json::json!({
+                    "error": user_friendly_error,
+                    "errorType": "DEVICE_CLAIMED",
+                    "operation": "get_device_info_by_id"
+                });
+                
+                if let Err(log_err) = log_device_response(&device_id, &request_id, false, &response_data, Some(&user_friendly_error)).await {
+                    eprintln!("Failed to log get device info error response: {}", log_err);
+                }
+                
+                return Err(user_friendly_error);
+            }
+            
+            // For other errors, use default handling
             println!("Failed to get features for device {}: {}", device_id, e);
             let error = format!("Failed to get device features: {}", e);
             

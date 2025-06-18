@@ -10,6 +10,17 @@ use crate::messages::{Message, GetFeatures, GetAddress, Features};
 use crate::transport::ProtocolAdapter;
 use crate::friendly_usb::FriendlyUsbDevice;
 
+/// Transport type detection for different KeepKey device modes
+#[derive(Debug, Clone, Copy)]
+enum TransportType {
+    /// Modern WebUSB devices (firmware 7.10.0+) with bulk endpoints
+    WebUsb,
+    /// Traditional USB devices with interrupt endpoints and HID-style protocol
+    TraditionalUsb,
+    /// Legacy devices or fallback mode that only work with HID API
+    HidOnly,
+}
+
 // Default timeouts and limits
 const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
 const QUEUE_CHANNEL_SIZE: usize = 100;
@@ -238,87 +249,29 @@ impl DeviceWorker {
         Ok(())
     }
     
-    /// Create transport with USB/HID fallback
-    fn create_transport_for_device(device_info: &FriendlyUsbDevice) -> Result<Box<dyn ProtocolAdapter + Send>> {
-        // Find physical device for transport
-        let devices = crate::features::list_devices();
-        let physical_device = Self::find_physical_device_by_info(device_info, &devices)?;
-        
-        // Try USB transport first
-        match crate::transport::UsbTransport::new(&physical_device, 0) {
-            Ok((transport, _, _)) => {
-                info!("✅ Created USB transport for device {}", device_info.unique_id);
-                Ok(Box::new(transport))
-            }
-            Err(usb_err) => {
-                warn!("⚠️ USB transport failed for device {}: {}, trying HID fallback", device_info.unique_id, usb_err);
-                
-                // Try HID fallback
-                match crate::transport::HidTransport::new_for_device(device_info.serial_number.as_deref()) {
-                    Ok(hid_transport) => {
-                        info!("✅ Created HID transport for device {}", device_info.unique_id);
-                        Ok(Box::new(hid_transport))
-                    }
-                    Err(hid_err) => {
-                        Err(anyhow!("Failed with both USB ({}) and HID ({})", usb_err, hid_err))
-                    }
-                }
-            }
-        }
-    }
-    
-    /// Find the physical device matching device info (static method)
-    fn find_physical_device_by_info(device_info: &FriendlyUsbDevice, devices: &[rusb::Device<rusb::GlobalContext>]) -> Result<rusb::Device<rusb::GlobalContext>> {
-        if let Some(serial) = &device_info.serial_number {
-            // Match by serial number
-            for device in devices {
-                if let Ok(handle) = device.open() {
-                    let timeout = std::time::Duration::from_millis(100);
-                    if let Ok(langs) = handle.read_languages(timeout) {
-                        if let Some(lang) = langs.first() {
-                            if let Ok(desc) = device.device_descriptor() {
-                                if let Ok(device_serial) = handle.read_serial_number_string(*lang, &desc, timeout) {
-                                    if device_serial == *serial {
-                                        return Ok(device.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Try to parse bus and address from unique_id
-        let parts: Vec<&str> = device_info.unique_id.split('_').collect();
-        if parts.len() >= 2 {
-            let bus_str = parts[0].strip_prefix("bus").unwrap_or("");
-            let addr_str = parts[1].strip_prefix("addr").unwrap_or("");
-            
-            if let (Ok(bus), Ok(addr)) = (bus_str.parse::<u8>(), addr_str.parse::<u8>()) {
-                for device in devices {
-                    if device.bus_number() == bus && device.address() == addr {
-                        return Ok(device.clone());
-                    }
-                }
-            }
-        }
-        
-        Err(anyhow!("Physical device not found for {}", device_info.unique_id))
-    }
+
     
     /// Ensure transport is available, creating if necessary
     async fn ensure_transport(&mut self) -> Result<&mut (dyn ProtocolAdapter + Send)> {
         loop {
             if self.transport.is_none() {
                 info!("🔗 Attempting to create transport for device {}", self.device_id);
-                match Self::create_transport_for_device(&self.device_info) {
+                match DeviceQueueFactory::create_transport_for_device(&self.device_info) {
                     Ok(transport) => {
                         self.transport = Some(transport);
                         info!("✅ Transport ready for {}", self.device_id);
                     }
                     Err(e) => {
-                        warn!("⚠️  Transport unavailable for {}: {} – waiting for reconnect", self.device_id, e);
+                        let error_msg = e.to_string();
+                        
+                        // Check if this looks like a device power cycle issue
+                        if error_msg.contains("timeout") || error_msg.contains("Communication Timeout") || 
+                           error_msg.contains("No data received") {
+                            warn!("🔄 Device {} appears to need power cycling - {}", self.device_id, e);
+                        } else {
+                            warn!("⚠️  Transport unavailable for {}: {} – waiting for reconnect", self.device_id, e);
+                        }
+                        
                         // Drop any stale transport reference just in case
                         self.transport = None;
                         // Wait a bit before retrying.  This keeps the queue worker alive
@@ -380,7 +333,7 @@ impl DeviceWorker {
         
         // Execute on device
         let transport = self.ensure_transport().await?;
-        let mut get_address = GetAddress {
+        let get_address = GetAddress {
             address_n: path,
             coin_name: Some(coin_name),
             script_type,
@@ -554,5 +507,173 @@ impl DeviceQueueFactory {
         tokio::spawn(worker.run());
         
         DeviceQueueHandle::new(device_id, cmd_tx)
+    }
+    
+    /// Create transport with WebUSB/USB/HID auto-detection
+    pub fn create_transport_for_device(device_info: &FriendlyUsbDevice) -> Result<Box<dyn ProtocolAdapter + Send>> {
+        // Find physical device for transport
+        let devices = crate::features::list_devices();
+        let physical_device = Self::find_physical_device_by_info(device_info, &devices)?;
+        
+        // Detect transport type based on device endpoints
+        let transport_type = Self::detect_transport_type(&physical_device, device_info)?;
+        
+        match transport_type {
+            TransportType::WebUsb => {
+                info!("🌐 Detected WebUSB device, using WebUSB transport for {}", device_info.unique_id);
+                info!("🔧 Attempting to create WebUSB transport...");
+                match crate::transport::WebUsbTransport::new(&physical_device, 0) {
+                    Ok((transport, _, _)) => {
+                        info!("✅ Successfully created WebUSB transport for device {}", device_info.unique_id);
+                        Ok(Box::new(transport))
+                    }
+                    Err(webusb_err) => {
+                        error!("❌ WebUSB transport creation failed for device {}: {}", device_info.unique_id, webusb_err);
+                        warn!("⚠️ WebUSB transport failed for device {}: {}, trying HID fallback", device_info.unique_id, webusb_err);
+                        Self::try_hid_fallback(device_info, webusb_err.to_string())
+                    }
+                }
+            }
+            TransportType::TraditionalUsb => {
+                info!("🔌 Detected traditional USB device, using interrupt transport for {}", device_info.unique_id);
+                match crate::transport::UsbTransport::new(&physical_device, 0) {
+                    Ok((transport, _, _)) => {
+                        info!("✅ Created USB transport for device {}", device_info.unique_id);
+                        Ok(Box::new(transport))
+                    }
+                    Err(usb_err) => {
+                        warn!("⚠️ USB transport failed for device {}: {}, trying HID fallback", device_info.unique_id, usb_err);
+                        Self::try_hid_fallback(device_info, usb_err.to_string())
+                    }
+                }
+            }
+            TransportType::HidOnly => {
+                info!("🎛️ Device requires HID transport, using HID for {}", device_info.unique_id);
+                Self::try_hid_fallback(device_info, "Device requires HID transport".to_string())
+            }
+        }
+    }
+    
+    /// Detect the appropriate transport type for a device
+    fn detect_transport_type(device: &rusb::Device<rusb::GlobalContext>, device_info: &FriendlyUsbDevice) -> Result<TransportType> {
+        info!("🔍 Detecting transport type for device {} (VID: {:04x}, PID: {:04x})", 
+              device_info.unique_id, device_info.vid, device_info.pid);
+        
+        // Legacy devices (PID 0x0001) must use HID
+        if device_info.pid == 0x0001 {
+            info!("🎛️ Legacy device (PID 0x0001) detected - using HID transport");
+            return Ok(TransportType::HidOnly);
+        }
+        
+        // Modern devices (PID 0x0002 and newer) should use USB transport, NOT HID
+        // PID 0x0002 devices have interrupt endpoints and use USB transport (not WebUSB with bulk endpoints)
+        if device_info.pid == 0x0002 {
+            info!("🔌 Modern KeepKey device (PID 0x0002) detected - using USB transport");
+            info!("   📡 Firmware 7.10.0+ devices use USB transport with interrupt endpoints");
+            return Ok(TransportType::TraditionalUsb);
+        }
+        
+        // For other newer device PIDs, inspect the endpoints
+        match device.active_config_descriptor() {
+            Ok(config_desc) => {
+                info!("📋 Successfully read device config descriptor");
+                
+                // Look at the first interface (index 0) which is what we use
+                if let Some(interface) = config_desc.interfaces().nth(0) {
+                    info!("📋 Found interface 0");
+                    if let Some(interface_desc) = interface.descriptors().next() {
+                        let endpoints: Vec<_> = interface_desc.endpoint_descriptors().collect();
+                        info!("📋 Found {} endpoints", endpoints.len());
+                        
+                        // Log all endpoints for debugging
+                        for (i, ep) in endpoints.iter().enumerate() {
+                            info!("   Endpoint {}: addr=0x{:02x}, type={:?}, dir={:?}, max_packet={}",
+                                  i, ep.address(), ep.transfer_type(), ep.direction(), ep.max_packet_size());
+                        }
+                        
+                        // Check if we have bulk endpoints (WebUSB) or interrupt endpoints (USB)
+                        let has_bulk = endpoints.iter().any(|ep| ep.transfer_type() == rusb::TransferType::Bulk);
+                        let has_interrupt = endpoints.iter().any(|ep| ep.transfer_type() == rusb::TransferType::Interrupt);
+                        
+                        info!("📋 Endpoint analysis: has_bulk={}, has_interrupt={}", has_bulk, has_interrupt);
+                        
+                        if has_bulk {
+                            info!("🌐 Device {} has bulk endpoints - using WebUSB", device_info.unique_id);
+                            return Ok(TransportType::WebUsb);
+                        } else if has_interrupt {
+                            info!("🔌 Device {} has interrupt endpoints - using USB transport", device_info.unique_id);
+                            return Ok(TransportType::TraditionalUsb);
+                        } else {
+                            warn!("⚠️ Device {} has no recognizable endpoints - defaulting to WebUSB", device_info.unique_id);
+                            return Ok(TransportType::WebUsb);
+                        }
+                    } else {
+                        warn!("⚠️ Could not get interface descriptor for device {}", device_info.unique_id);
+                    }
+                } else {
+                    warn!("⚠️ Could not find interface 0 for device {}", device_info.unique_id);
+                }
+            }
+            Err(e) => {
+                warn!("⚠️ Could not read device descriptors for {}: {}, defaulting to WebUSB", device_info.unique_id, e);
+            }
+        }
+        
+        // Default to WebUSB for modern devices, not HID
+        info!("🌐 Defaulting to WebUSB transport for device {}", device_info.unique_id);
+        Ok(TransportType::WebUsb)
+    }
+    
+    /// Try HID transport as fallback
+    fn try_hid_fallback(device_info: &FriendlyUsbDevice, previous_error: String) -> Result<Box<dyn ProtocolAdapter + Send>> {
+        match crate::transport::HidTransport::new_for_device(device_info.serial_number.as_deref()) {
+            Ok(hid_transport) => {
+                info!("✅ Created HID transport for device {}", device_info.unique_id);
+                Ok(Box::new(hid_transport))
+            }
+            Err(hid_err) => {
+                Err(anyhow!("Failed with both primary transport ({}) and HID fallback ({})", previous_error, hid_err))
+            }
+        }
+    }
+    
+    /// Find the physical device matching device info (static method)
+    fn find_physical_device_by_info(device_info: &FriendlyUsbDevice, devices: &[rusb::Device<rusb::GlobalContext>]) -> Result<rusb::Device<rusb::GlobalContext>> {
+        if let Some(serial) = &device_info.serial_number {
+            // Match by serial number
+            for device in devices {
+                if let Ok(handle) = device.open() {
+                    let timeout = std::time::Duration::from_millis(100);
+                    if let Ok(langs) = handle.read_languages(timeout) {
+                        if let Some(lang) = langs.first() {
+                            if let Ok(desc) = device.device_descriptor() {
+                                if let Ok(device_serial) = handle.read_serial_number_string(*lang, &desc, timeout) {
+                                    if device_serial == *serial {
+                                        return Ok(device.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Try to parse bus and address from unique_id
+        let parts: Vec<&str> = device_info.unique_id.split('_').collect();
+        if parts.len() >= 2 {
+            let bus_str = parts[0].strip_prefix("bus").unwrap_or("");
+            let addr_str = parts[1].strip_prefix("addr").unwrap_or("");
+            
+            if let (Ok(bus), Ok(addr)) = (bus_str.parse::<u8>(), addr_str.parse::<u8>()) {
+                for device in devices {
+                    if device.bus_number() == bus && device.address() == addr {
+                        return Ok(device.clone());
+                    }
+                }
+            }
+        }
+        
+        Err(anyhow!("Physical device not found for {}", device_info.unique_id))
     }
 } 

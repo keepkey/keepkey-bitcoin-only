@@ -64,23 +64,7 @@ impl EventController {
                                     "status": "connected"
                                 });
                                 let _ = app_handle.emit("device:state-changed", &payload);
-
-                                // Try to fetch device features and emit 'device:ready' if successful
-                                match keepkey_rust::features::get_device_features_by_id(&device.unique_id) {
-                                    Ok(features) => {
-                                        let ready_payload = serde_json::json!({
-                                            "device": device,
-                                            "features": features,
-                                            "status": "ready"
-                                        });
-                                        let _ = app_handle.emit("device:ready", &ready_payload);
-                                        // Optionally, emit another state-changed with status 'ready'
-                                        let _ = app_handle.emit("device:state-changed", &ready_payload);
-                                    },
-                                    Err(e) => {
-                                        println!("[event_controller] Could not fetch device features for {}: {}", device.unique_id, e);
-                                    }
-                                }
+                                // Feature fetching is handled by the frontend via get_device_info_by_id to avoid double-opening the USB transport.
                             }
                         }
                         

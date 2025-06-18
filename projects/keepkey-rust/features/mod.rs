@@ -200,8 +200,17 @@ pub fn get_device_features_for_device(target_device: &FriendlyUsbDevice) -> Resu
         .ok_or_else(|| anyhow!("Specific KeepKey device not found: {}", target_device.unique_id))?
         .to_owned();
 
-    let (mut transport, _, _) = UsbTransport::new(&device, 0)
-        .map_err(|e| anyhow!("Failed to initialize USB transport for device {}: {}", target_device.unique_id, e))?;
+    // Use device queue's smart transport selection (WebUSB aware)
+    let mut transport = crate::device_queue::DeviceQueueFactory::create_transport_for_device(target_device)
+        .map_err(|e| anyhow!("Failed to initialize transport for device {}: {}", target_device.unique_id, e))?;
+
+    // Reset the device to clear any stuck state
+    log::info!("{TAG} Resetting device {} before communication...", target_device.unique_id);
+    transport.reset()
+        .map_err(|e| anyhow!("Failed to reset device {}: {}", target_device.unique_id, e))?;
+    
+    // Add a small delay after reset
+    std::thread::sleep(std::time::Duration::from_millis(100));
 
     let features_msg = transport
         .handle(Initialize::default().into())
@@ -439,6 +448,12 @@ pub fn get_device_features_via_hid(target_device: &FriendlyUsbDevice) -> Result<
         match HidTransport::new_for_device(Some(serial.as_str())) {
             Ok(mut transport) => {
                 let adapter = &mut transport as &mut dyn ProtocolAdapter;
+                
+                // Reset device before communication
+                log::info!("{TAG} Resetting HID device via serial {} before communication...", serial);
+                let _ = adapter.reset(); // Ignore reset errors for HID
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                
                 let init_msg = Initialize::default().into();
                 match adapter.handle(init_msg) {
                     Ok(features_msg) => {
@@ -499,6 +514,12 @@ pub fn get_device_features_via_hid(target_device: &FriendlyUsbDevice) -> Result<
                 match HidTransport::new_for_device(device_info.serial_number()) {
                     Ok(mut transport) => {
                         let adapter = &mut transport as &mut dyn ProtocolAdapter;
+                        
+                        // Reset device before communication
+                        log::info!("{TAG} Resetting HID device (enumerate) before communication...");
+                        let _ = adapter.reset(); // Ignore reset errors for HID
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        
                         let init_msg = Initialize::default().into();
                         match adapter.handle(init_msg) {
                             Ok(features_msg) => {

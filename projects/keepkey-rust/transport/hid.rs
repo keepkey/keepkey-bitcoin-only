@@ -26,6 +26,39 @@ pub struct HidTransport {
 }
 
 impl HidTransport {
+    /// Handle specific device open errors with helpful messages
+    fn handle_device_open_error(error: &hidapi::HidError, serial: &str) -> Result<()> {
+        let error_msg = error.to_string().to_lowercase();
+        
+        if error_msg.contains("access") || error_msg.contains("permission") || 
+           error_msg.contains("in use") || error_msg.contains("busy") ||
+           error_msg.contains("claimed") || error_msg.contains("cannot open") {
+            
+            error!("❌ Device already claimed: KeepKey device with serial {} is being used by another application", serial);
+            
+            return Err(anyhow!(
+                "🔒 KeepKey Device Already In Use\n\n\
+                The KeepKey device (serial: {}) is currently being used by another application.\n\n\
+                Common causes:\n\
+                • KeepKey Desktop app is running\n\
+                • KeepKey Bridge is running\n\
+                • Another wallet application is connected\n\
+                • Previous connection wasn't properly closed\n\n\
+                Solutions:\n\
+                1. Close KeepKey Desktop app completely\n\
+                2. Close any other wallet applications\n\
+                3. Unplug and reconnect your KeepKey device\n\
+                4. Try again\n\n\
+                Technical details: {}", 
+                serial, error
+            ));
+        }
+        
+        // For other errors, just log and continue trying other devices
+        error!("Failed to open device with serial {}: {}", serial, error);
+        Ok(())
+    }
+    
     /// Create a new HID transport for a specific device
     /// 
     /// This function has been improved to handle device reconnection better,
@@ -74,23 +107,35 @@ impl HidTransport {
                 match info.open_device(&api) {
                     Ok(device) => Some(device),
                     Err(e) => {
-                        error!("Failed to open device with serial {}: {}", serial, e);
+                        Self::handle_device_open_error(&e, serial)?;
                         None
                     }
                 }
             } else {
-                // If no exact match, fall back to any KeepKey device
-                warn!("No KeepKey device with serial {} found, falling back to first available KeepKey", serial);
+                // If no exact match, provide helpful error about available devices
+                let available_serials: Vec<String> = keepkey_devices.iter()
+                    .filter_map(|info| info.serial_number())
+                    .map(|s| s.to_string())
+                    .collect();
                 
-                // Try each device until one opens successfully
-                for info in keepkey_devices.iter() {
-                    info!("Trying KeepKey device with serial: {:?}", info.serial_number());
-                    if let Ok(device) = info.open_device(&api) {
-                        info!("Successfully opened KeepKey device with serial: {:?}", info.serial_number());
-                        return Ok(Self { device });
+                return Err(anyhow!(
+                    "🔍 KeepKey Device Not Found\n\n\
+                    Could not find KeepKey device with serial: {}\n\n\
+                    Available KeepKey devices:\n{}\n\n\
+                    Solutions:\n\
+                    1. Check that your KeepKey is connected\n\
+                    2. Try reconnecting your KeepKey\n\
+                    3. Use one of the available serial numbers above",
+                    serial,
+                    if available_serials.is_empty() {
+                        "  • No KeepKey devices found".to_string()
+                    } else {
+                        available_serials.iter()
+                            .map(|s| format!("  • {}", s))
+                            .collect::<Vec<_>>()
+                            .join("\n")
                     }
-                }
-                None
+                ));
             }
         } else {
             info!("No serial number provided, trying first available KeepKey device");
@@ -98,15 +143,45 @@ impl HidTransport {
             // Try each device until one opens successfully
             for info in keepkey_devices.iter() {
                 info!("Trying KeepKey device with serial: {:?}", info.serial_number());
-                if let Ok(device) = info.open_device(&api) {
-                    info!("Successfully opened KeepKey device with serial: {:?}", info.serial_number());
-                    return Ok(Self { device });
+                match info.open_device(&api) {
+                    Ok(device) => {
+                        info!("Successfully opened KeepKey device with serial: {:?}", info.serial_number());
+                        return Ok(Self { device });
+                    }
+                    Err(e) => {
+                        debug!("Failed to open device with serial {:?}: {}", info.serial_number(), e);
+                    }
                 }
             }
             None
         };
         
-        let device = device.ok_or_else(|| anyhow!("Could not open any KeepKey device"))?;
+        let device = device.ok_or_else(|| {
+            if keepkey_devices.len() == 1 {
+                anyhow!(
+                    "🔒 KeepKey Device Access Failed\n\n\
+                    Found 1 KeepKey device but couldn't open it.\n\
+                    This usually means another application is using your KeepKey.\n\n\
+                    Solutions:\n\
+                    1. Close KeepKey Desktop app completely\n\
+                    2. Close any other wallet applications\n\
+                    3. Unplug and reconnect your KeepKey device\n\
+                    4. Try again"
+                )
+            } else {
+                anyhow!(
+                    "🔒 KeepKey Device Access Failed\n\n\
+                    Found {} KeepKey devices but couldn't open any of them.\n\
+                    This usually means other applications are using your KeepKey devices.\n\n\
+                    Solutions:\n\
+                    1. Close KeepKey Desktop app completely\n\
+                    2. Close any other wallet applications\n\
+                    3. Unplug and reconnect your KeepKey devices\n\
+                    4. Try again",
+                    keepkey_devices.len()
+                )
+            }
+        })?;
         
         Ok(Self { device })
     }
@@ -146,9 +221,9 @@ impl Transport for HidTransport {
             debug!("HID Write: First {} data bytes: {}", preview_len, preview.join(" "));
         }
         
-        // Prepare first packet with v4 format
+        // Prepare first packet with v4 format (EXACT MATCH TO WORKING VAULT V1)
         let mut first_packet = vec![0u8; HID_REPORT_SIZE];
-        first_packet[0] = REPORT_ID;
+        first_packet[0] = REPORT_ID;  // 0x00 - REQUIRED BY VAULT V1!
         first_packet[1] = 0x3f;
         first_packet[2] = 0x23;
         first_packet[3] = 0x23;
@@ -162,6 +237,18 @@ impl Transport for HidTransport {
         }
         
         debug!("HID Write: Sending first packet (64 bytes), data chunk size: {}", first_chunk_size);
+        
+        // Log the actual bytes being sent for debugging
+        let preview: Vec<String> = first_packet[..32].iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        info!("HID Write: First 32 bytes of packet: {}", preview.join(" "));
+        
+        // Log the FULL packet for detailed debugging
+        let full_packet_hex: Vec<String> = first_packet.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        info!("🔍 HID Write: FULL PACKET (64 bytes): {}", full_packet_hex.join(" "));
         
         // Send first packet
         self.device
@@ -207,7 +294,25 @@ impl Transport for HidTransport {
         
         if size == 0 {
             error!("HID Read: No data received from device after {} ms timeout", timeout_ms);
-            return Err(HidError::Other("No data received from device".to_string()));
+            
+            // Provide helpful error message suggesting device power cycle
+            let helpful_message = format!(
+                "🔄 KeepKey Device Communication Timeout\n\n\
+                Your KeepKey device is not responding to requests.\n\n\
+                This usually indicates the device needs to be power cycled:\n\
+                1. Unplug your KeepKey device from USB\n\
+                2. Wait 3-5 seconds\n\
+                3. Plug it back in\n\
+                4. Try again\n\n\
+                If the issue persists:\n\
+                • Make sure no other applications are using the device\n\
+                • Try a different USB port or cable\n\
+                • Check if the device needs a firmware update\n\n\
+                Technical details: No data received after {} ms timeout",
+                timeout_ms
+            );
+            
+            return Err(HidError::Other(helpful_message));
         }
         
         info!("HID Read: Received first packet ({} bytes)", size);
@@ -227,7 +332,7 @@ impl Transport for HidTransport {
             )));
         }
         
-        // Extract message type and length from header
+        // Extract message type and length from header  
         let msg_type = u16::from_be_bytes([packet[3], packet[4]]);
         let msg_length = u32::from_be_bytes([packet[5], packet[6], packet[7], packet[8]]) as usize;
         
@@ -288,12 +393,27 @@ impl Transport for HidTransport {
     }
     
     fn reset(&mut self) -> Result<(), Self::Error> {
+        info!("HID Reset: Flushing any pending data from device buffer...");
+        
         // HID doesn't have a direct reset like USB
         // Flush any pending data by reading with a short timeout
         let mut dummy = vec![0u8; HID_REPORT_SIZE];
-        while self.device.read_timeout(&mut dummy, 10).unwrap_or(0) > 0 {
-            // Keep reading until no more data
+        let mut packets_flushed = 0;
+        
+        while let Ok(size) = self.device.read_timeout(&mut dummy, 10) {
+            if size == 0 {
+                break;
+            }
+            packets_flushed += 1;
+            debug!("HID Reset: Flushed packet {} ({} bytes)", packets_flushed, size);
         }
+        
+        if packets_flushed > 0 {
+            info!("HID Reset: Flushed {} packets from device buffer", packets_flushed);
+        } else {
+            info!("HID Reset: Device buffer was already empty");
+        }
+        
         Ok(())
     }
 } 
