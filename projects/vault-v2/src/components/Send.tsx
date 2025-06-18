@@ -502,30 +502,26 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
   const renderComposeStep = () => {
     return (
-      <VStack gap={6}>
-        {/* Balance Display */}
-        <Box bg="gray.800" p={4} borderRadius="lg" textAlign="center">
-          <Text color="gray.400" fontSize="sm">Available Balance</Text>
-          <Text color="white" fontSize="2xl" fontWeight="bold">
+      <VStack gap={4}>
+        {/* Compact Balance Display */}
+        <Box bg="gray.800" p={3} borderRadius="md" textAlign="center">
+          <Text color="gray.400" fontSize="xs">Available</Text>
+          <Text color="white" fontSize="lg" fontWeight="bold">
             {availableBalance.toFixed(8)} BTC
           </Text>
-          <Text color="gray.400" fontSize="sm">
+          <Text color="gray.400" fontSize="xs">
             ≈ ${convertBtcToUsd(availableBalance).toFixed(2)} USD
           </Text>
           {/* Show balance warning if zero */}
           {availableBalance === 0 && (
-            <Text color="yellow.400" fontSize="xs" mt={2}>
+            <Text color="yellow.400" fontSize="xs" mt={1}>
               ⚠️ No balance available. Please ensure your wallet is synced.
             </Text>
           )}
-          {/* Show currency info */}
-          <Text color="gray.500" fontSize="xs" mt={1}>
-            Enter amount in {amountCurrency}. Click {amountCurrency} button to switch currency.
-          </Text>
         </Box>
 
-        {/* Send Form */}
-        <VStack gap={6} bg="gray.800" p={6} borderRadius="lg">
+        {/* Compact Send Form */}
+        <VStack gap={3} bg="gray.800" p={4} borderRadius="md">
           {/* Recipient Address */}
           <Box w="100%">
             <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
@@ -630,23 +626,14 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             </Text>
           </Box>
 
-          {/* Fee Selection - Now with real rates! */}
+          {/* Compact Fee Selection */}
           <Box w="100%">
-            <HStack justify="space-between" align="center" mb={2}>
-              <Text color="gray.300" fontSize="sm" fontWeight="medium">
-                Transaction Fee
+            <HStack justify="space-between" align="center" mb={1}>
+              <Text color="gray.300" fontSize="xs" fontWeight="medium">
+                Fee
               </Text>
-              {loadingFees && (
-                <HStack gap={1}>
-                  <Spinner size="xs" color="blue.400" />
-                  <Text fontSize="xs" color="gray.500">Loading rates...</Text>
-                </HStack>
-              )}
-              {feeError && (
-                <Text fontSize="xs" color="yellow.400">Using estimates</Text>
-              )}
               {!loadingFees && !feeError && (
-                <Text fontSize="xs" color="green.400">✓ Live rates</Text>
+                <Text fontSize="2xs" color="green.400">✓ Live</Text>
               )}
             </HStack>
             <HStack gap={1}>
@@ -661,28 +648,15 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
                     colorScheme={feeRate === preset ? "blue" : "gray"}
                     onClick={() => setFeeRate(preset)}
                     flex="1"
-                    textTransform="capitalize"
-                    py={3}
-                    px={2}
+                    fontSize="2xs"
+                    h="6"
                     disabled={loadingFees}
                   >
-                    <VStack gap={0} align="center">
-                      <Text fontSize="xs" fontWeight="bold">{preset}</Text>
-                      <Text fontSize="2xs" opacity={0.8}>
-                        {loadingFees ? '...' : `${Math.round(presetFeeRate)} sat/vB`}
-                      </Text>
-                    </VStack>
+                    {preset} ({loadingFees ? '...' : Math.round(presetFeeRate)})
                   </Button>
                 );
               })}
             </HStack>
-            {/* Fee estimate in BTC/USD */}
-            {amount && parseFloat(amount) > 0 && !loadingFees && (
-              <Text fontSize="xs" color="gray.500" mt={2} textAlign="center">
-                Estimated fee: ~{((250 * feeRates[feeRate]) / 100000000).toFixed(8)} BTC 
-                (≈${((250 * feeRates[feeRate]) / 100000000 * btcPrice).toFixed(2)})
-              </Text>
-            )}
           </Box>
 
           {/* Error Display */}
@@ -700,28 +674,19 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
           )}
         </VStack>
 
-        {/* Action Buttons */}
-        <VStack gap={3}>
-          <Button
-            colorScheme="blue"
-            size="lg"
-            width="100%"
-            onClick={handleBuildTransaction}
-            disabled={!addressValidation.valid || !amount || loading || btcAssets.length === 0 || availableBalance === 0}
-          >
-            <HStack gap={2}>
-              {loading ? <Spinner size="sm" /> : <FaEye />}
-              <Text>{loading ? 'Building...' : 'Review Transaction'}</Text>
-            </HStack>
-          </Button>
-          <Button
-            variant="ghost"
-            color="gray.400"
-            onClick={onBack}
-          >
-            Cancel
-          </Button>
-        </VStack>
+        {/* Single Action Button */}
+        <Button
+          colorScheme="blue"
+          size="md"
+          width="100%"
+          onClick={handleBuildTransaction}
+          disabled={!addressValidation.valid || !amount || loading || btcAssets.length === 0 || availableBalance === 0}
+        >
+          <HStack gap={2}>
+            {loading ? <Spinner size="sm" /> : <FaEye />}
+            <Text>{loading ? 'Building...' : 'Review Transaction'}</Text>
+          </HStack>
+        </Button>
       </VStack>
     );
   };
@@ -944,10 +909,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
             </Box>
           </VStack>
           
-          {/* Current Step Title */}
-          <Heading size="md" color="white" textAlign="center">
-            {getStepTitle(currentStep)}
-          </Heading>
+
         </VStack>
 
         {/* Step Content */}
