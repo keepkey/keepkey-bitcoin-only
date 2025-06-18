@@ -1,8 +1,9 @@
-import { Box, Text, HStack, Spinner } from '@chakra-ui/react';
+import { Box, Text, HStack, Spinner, Button } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
 import { SiBitcoin } from 'react-icons/si';
 import { Portfolio } from '../Portfolio';
 import { KeepKeyUILogo } from '../logo/keepkey-ui';
+import { useWallet } from '../../contexts/WalletContext';
 import { useState } from 'react';
 
 interface VaultViewProps {
@@ -36,6 +37,7 @@ const syncSpin = keyframes`
 
 export const VaultView = ({ onNavigate }: VaultViewProps) => {
   const [isSyncing, setIsSyncing] = useState(false);
+  const { portfolio, fetchedXpubs, loading } = useWallet();
 
   // Handle Bitcoin logo click to trigger sync
   const handleBitcoinLogoClick = async () => {
@@ -124,6 +126,45 @@ export const VaultView = ({ onNavigate }: VaultViewProps) => {
       >
         <KeepKeyUILogo />
       </Box>
+
+      {/* Auto-loading status - Only show when portfolio is loading */}
+      {loading && (!portfolio || !portfolio.assets || portfolio.assets.length === 0) && (
+        <Box
+          position="absolute"
+          top="50%"
+          left="50%"
+          transform="translate(-50%, -50%)"
+          zIndex={20}
+          textAlign="center"
+          bg="rgba(0, 0, 0, 0.85)"
+          backdropFilter="blur(20px)"
+          borderRadius="xl"
+          border="1px solid rgba(255, 255, 255, 0.1)"
+          p={6}
+          minW="280px"
+          boxShadow="0 25px 50px -12px rgba(0, 0, 0, 0.8)"
+        >
+          <Spinner size="lg" color="blue.400" mb={4} />
+          <Text 
+            fontSize="md" 
+            color="gray.200" 
+            mb={2}
+            fontWeight="medium"
+          >
+            Loading Portfolio...
+          </Text>
+          
+          {fetchedXpubs.length > 0 ? (
+            <Text fontSize="xs" color="green.400" opacity={0.8}>
+              ✓ {fetchedXpubs.length} device key{fetchedXpubs.length === 1 ? '' : 's'} ready
+            </Text>
+          ) : (
+            <Text fontSize="xs" color="blue.400" opacity={0.8}>
+              Fetching device keys...
+            </Text>
+          )}
+        </Box>
+      )}
 
       {/* Main Content - Portfolio with transparent background */}
       <Box height="100%" bg="transparent">

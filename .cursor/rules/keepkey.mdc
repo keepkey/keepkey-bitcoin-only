@@ -1,0 +1,15 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+
+
+use the makefile
+
+make vault
+
+
+always use bun
+

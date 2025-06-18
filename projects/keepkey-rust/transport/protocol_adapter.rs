@@ -18,7 +18,7 @@ where
     fn send(&mut self, msg: Message) -> Result<()> {
         info!("ProtocolAdapter::send: Sending message type: {:?}", msg.message_type());
         
-        println!("-> {:?}", msg);
+        println!("-> {:?}", msg.message_type());
         let mut out_buf = Vec::<u8>::with_capacity(msg.encoded_len());
         msg.encode(&mut out_buf)?;
         
@@ -48,7 +48,22 @@ where
         let out = Message::decode(&mut in_buf.as_slice()).map_err(|x| anyhow!(x))?;
         info!("ProtocolAdapter::handle: Decoded response type: {:?}", out.message_type());
         
-        println!("<- {:?}", out);
+        // Clean, concise logging with key info
+        match &out {
+            Message::Features(features) => {
+                let version = format!("{}.{}.{}", 
+                    features.major_version.unwrap_or(0),
+                    features.minor_version.unwrap_or(0), 
+                    features.patch_version.unwrap_or(0)
+                );
+                let label = features.label.as_deref().unwrap_or("Unlabeled");
+                let initialized = if features.initialized.unwrap_or(false) { "✅" } else { "⚠️" };
+                println!("<- Features: {} v{} {}", label, version, initialized);
+            },
+            _ => {
+                println!("<- {:?}", out.message_type());
+            }
+        }
         Ok(out)
     }
 }

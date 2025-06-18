@@ -111,44 +111,26 @@ function App() {
 
         const setupEventListeners = async () => {
             try {
-                // Listen for low-level device connected events
-                unlistenAppState = await listen('device:connected', async (event) => {
-                    // event.payload is FriendlyUsbDevice { unique_id, ... }
+                // Listen for device connected events (basic connection)
+                const unlistenDeviceConnected = await listen('device:connected', (event) => {
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     const device = event.payload as any;
                     const deviceId: string = device.unique_id;
                     console.log('Device connected event received:', deviceId);
+                    setLoadingStatus('Device detected – fetching features...');
+                });
 
-                    setLoadingStatus('Device detected – fetching features');
-
-                    try {
-                        // Fetch features via queue-based helper so we do NOT open transport twice
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                        const features = await invoke('get_device_info_by_id', { device_id: deviceId, deviceId: deviceId });
-                        if (features) {
-                            setDeviceConnected(true);
-                            setDeviceInfo({ features: features as any, error: null });
-                            setLoadingStatus('Device ready');
-                        } else {
-                            setLoadingStatus('No features (device busy)');
-                        }
-                    } catch (e) {
-                        console.error('Failed to fetch features:', e);
-                        const errorMessage = e as string;
-                        
-                        // Check if this is a device access error (already claimed)
-                        if (errorMessage.includes('Device Already In Use') || 
-                            errorMessage.includes('already claimed') || 
-                            errorMessage.includes('🔒')) {
-                            
-                            console.warn('Device is already in use by another application');
-                            
-                            // Show user-friendly error message with specific instructions
-                            showDeviceAccessError(errorMessage);
-                            setLoadingStatus('Device in use by another app');
-                        } else {
-                            setLoadingStatus('Failed to communicate with device');
-                        }
+                // Listen for device ready events (device with features loaded)
+                unlistenAppState = await listen('device:ready', (event) => {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    const payload = event.payload as any;
+                    console.log('Device ready event received:', payload);
+                    
+                    if (payload.device && payload.features) {
+                        setDeviceConnected(true);
+                        setDeviceInfo({ features: payload.features, error: null });
+                        setLoadingStatus('Device ready');
+                        console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
                     }
                 });
 
@@ -162,8 +144,9 @@ function App() {
                     setLoadingStatus('Device in use by another app');
                 });
 
-                // Return cleanup function that removes both listeners
+                // Return cleanup function that removes all listeners
                 return () => {
+                    if (unlistenDeviceConnected) unlistenDeviceConnected();
                     if (unlistenAppState) unlistenAppState();
                     if (unlistenAccessError) unlistenAccessError();
                 };

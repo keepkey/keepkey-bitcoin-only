@@ -54,17 +54,78 @@ impl EventController {
                                          device.manufacturer.as_deref().unwrap_or("Unknown"), 
                                          device.product.as_deref().unwrap_or("Unknown"));
                                 
-                                // Always emit device connected event, even if we can't get features
+                                // Emit basic device connected event first
                                 let _ = app_handle.emit("device:connected", device);
                                 
-                                // Emit basic device state without features to avoid crashes
-                                let payload = serde_json::json!({
-                                    "device": device,
-                                    "features": null,
-                                    "status": "connected"
+                                // Proactively fetch features and emit device:ready when successful
+                                let app_for_task = app_handle.clone();
+                                let device_for_task = device.clone();
+                                tokio::spawn(async move {
+                                    println!("📡 Fetching device features for: {}", device_for_task.unique_id);
+                                    
+                                    match try_get_device_features(&device_for_task).await {
+                                        Ok(features) => {
+                                            println!("✅ Device ready: {} v{} ({})", 
+                                                   features.label.as_deref().unwrap_or("Unlabeled"),
+                                                   features.version,
+                                                   device_for_task.unique_id);
+                                            
+                                            // Emit device:ready event with features
+                                            let ready_payload = serde_json::json!({
+                                                "device": device_for_task,
+                                                "features": features,
+                                                "status": "ready"
+                                            });
+                                            let _ = app_for_task.emit("device:ready", &ready_payload);
+                                            
+                                            // Also emit device:features-updated for compatibility
+                                            let features_payload = serde_json::json!({
+                                                "deviceId": device_for_task.unique_id,
+                                                "features": features,
+                                                "status": "ready"
+                                            });
+                                            let _ = app_for_task.emit("device:features-updated", &features_payload);
+                                        }
+                                        Err(e) => {
+                                            println!("❌ Failed to get features for {}: {}", device_for_task.unique_id, e);
+                                            
+                                            // Check if this is a device access error
+                                            if e.contains("Device Already In Use") || 
+                                               e.contains("already claimed") ||
+                                               e.contains("🔒") {
+                                                
+                                                let user_friendly_error = if e.contains("🔒") {
+                                                    e.clone()
+                                                } else {
+                                                    format!(
+                                                        "🔒 KeepKey Device Already In Use\n\n\
+                                                        Your KeepKey device is currently being used by another application.\n\n\
+                                                        Common causes:\n\
+                                                        • KeepKey Desktop app is running\n\
+                                                        • KeepKey Bridge is running\n\
+                                                        • Another wallet application is connected\n\
+                                                        • Previous connection wasn't properly closed\n\n\
+                                                        Solutions:\n\
+                                                        1. Close KeepKey Desktop app completely\n\
+                                                        2. Close any other wallet applications\n\
+                                                        3. Unplug and reconnect your KeepKey device\n\
+                                                        4. Try again\n\n\
+                                                        Technical details: {}", e
+                                                    )
+                                                };
+                                                
+                                                // Emit device access error event
+                                                let error_payload = serde_json::json!({
+                                                    "deviceId": device_for_task.unique_id,
+                                                    "error": user_friendly_error,
+                                                    "errorType": "DEVICE_CLAIMED",
+                                                    "status": "error"
+                                                });
+                                                let _ = app_for_task.emit("device:access-error", &error_payload);
+                                            }
+                                        }
+                                    }
                                 });
-                                let _ = app_handle.emit("device:state-changed", &payload);
-                                // Feature fetching is handled by the frontend via get_device_info_by_id to avoid double-opening the USB transport.
                             }
                         }
                         
@@ -116,6 +177,32 @@ impl EventController {
 impl Drop for EventController {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// Try to get device features without blocking the event loop
+/// Returns features if successful, error message if failed
+async fn try_get_device_features(device: &FriendlyUsbDevice) -> Result<keepkey_rust::features::DeviceFeatures, String> {
+    // Create a temporary device queue to fetch features
+    // This is a non-blocking operation that will fail fast if device is busy
+    let queue_handle = keepkey_rust::device_queue::DeviceQueueFactory::spawn_worker(
+        device.unique_id.clone(),
+        device.clone()
+    );
+    
+    // Try to get features with a timeout
+    match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
+        Ok(Ok(raw_features)) => {
+            // Convert features to our DeviceFeatures format
+            let device_features = crate::commands::convert_features_to_device_features(raw_features);
+            Ok(device_features)
+        }
+        Ok(Err(e)) => {
+            Err(format!("Failed to get device features: {}", e))
+        }
+        Err(_) => {
+            Err("Timeout while fetching device features".to_string())
+        }
     }
 }
 

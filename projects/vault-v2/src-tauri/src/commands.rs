@@ -1091,7 +1091,7 @@ fn evaluate_device_status(device_id: String, features: Option<&DeviceFeatures>) 
 }
 
 /// Convert raw Features message to DeviceFeatures
-fn convert_features_to_device_features(raw_features: keepkey_rust::messages::Features) -> DeviceFeatures {
+pub fn convert_features_to_device_features(raw_features: keepkey_rust::messages::Features) -> DeviceFeatures {
     DeviceFeatures {
         label: raw_features.label,
         vendor: raw_features.vendor,

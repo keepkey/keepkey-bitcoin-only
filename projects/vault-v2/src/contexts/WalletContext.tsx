@@ -88,8 +88,17 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       console.log(tag, `Refreshing portfolio with ${fetchedXpubs.length} xpubs in memory`);
       
       if (fetchedXpubs.length === 0) {
-        console.log(tag, 'No xpubs available yet, showing empty portfolio');
+        console.log(tag, 'No xpubs available yet, automatically fetching from device...');
         setPortfolio(null);
+        
+        // Automatically fetch xpubs instead of just showing empty portfolio
+        try {
+          await getXpubsFromDeviceQueue();
+          console.log(tag, '✅ Initiated xpub fetching, portfolio will update when xpubs arrive via events');
+        } catch (error) {
+          console.error(tag, '❌ Failed to fetch xpubs automatically:', error);
+          setError('Failed to fetch device information: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        }
         return;
       }
       
@@ -112,7 +121,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           id: 1,
           network_name: "Bitcoin",
           symbol: "BTC", 
-          chain_id_caip2: "bip122:000000000019d6689c085ae165831e93",
+          chain_id_caip2: "bip122:000000000019d6689c085ae165831e93/slip44:0",
           is_evm: false
         }
       ];
@@ -201,7 +210,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       console.log(tag, `Using device: ${deviceId}`);
       
       const requiredPaths = [
-        { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
+        { path: "m/44'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // Legacy P2PKH (Account level)
+        { path: "m/49'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // SegWit P2SH (Account level)
+        { path: "m/84'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" }   // Native SegWit P2WPKH (Account level)
       ];
 
       // Send all xpub requests at once (no polling needed - events will handle responses)
@@ -295,8 +306,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // After fetching, check final sync status
       const finalDevices: any[] = []; // No DB, use empty array
       const requiredPaths = [
-  { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
-]; // No DB, use static array
+        { path: "m/44'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // Legacy P2PKH (Account level)
+        { path: "m/49'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // SegWit P2SH (Account level)
+        { path: "m/84'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" }   // Native SegWit P2WPKH (Account level)
+      ]; // No DB, use static array
       let allXpubsPresent = true;
       
       for (const device of finalDevices) {
@@ -510,7 +523,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Fallback polling: if for any reason the frontend event bridge misses the
       // `device:response` emission, periodically query the backend queue status
       // and resolve the promise as soon as the SignedTransaction response is
-      // visible.  This guarantees that the UI will never be stuck in the “Sign”
+      // visible.  This guarantees that the UI will never be stuck in the "Sign"
       // step solely because of a lost event.
       const POLL_MS = 1_0000; // 1-second interval
       console.log(tag, '[FALLBACK_POLL_START] Fallback polling for SignedTransaction response is ACTIVE for request', requestId);
@@ -637,8 +650,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           if (xpubResponse.success) {
             // Find the path info to get the CAIP
             const requiredPaths = [
-  { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
-]; // No DB, use static array
+              { path: "m/44'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // Legacy P2PKH (Account level)
+              { path: "m/49'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // SegWit P2SH (Account level)
+              { path: "m/84'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" }   // Native SegWit P2WPKH (Account level)
+            ]; // No DB, use static array
             const pathInfo = requiredPaths.find(p => p.path === xpubResponse.path);
             
             if (pathInfo) {
@@ -662,8 +677,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
                 // Let useEffect handle portfolio refresh when fetchedXpubs updates
                 const requiredPaths = [
-  { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
-]; // No DB, use static array
+                  { path: "m/44'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // Legacy P2PKH (Account level)
+                  { path: "m/49'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // SegWit P2SH (Account level)
+                  { path: "m/84'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" }   // Native SegWit P2WPKH (Account level)
+                ]; // No DB, use static array
                 const expectedXpubCount = requiredPaths.length;
                 if (newXpubs.length === expectedXpubCount) {
                   console.log(tag, `All expected xpubs (${expectedXpubCount}) are present. Portfolio will refresh via useEffect.`);
@@ -743,6 +760,50 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     };
   }, [refreshPortfolio]);
 
+  // Listen for device ready events and automatically fetch xpubs
+  useEffect(() => {
+    const tag = TAG + " | device:ready useEffect | ";
+    console.log(tag, '🎧 Setting up device:ready listener...');
+    
+    let unlistenDeviceReady: Promise<() => void>;
+    (async () => {
+      try {
+        unlistenDeviceReady = listen('device:ready', async (event: any) => {
+          const listenerTag = TAG + " | device:ready listener | ";
+          console.log(listenerTag, '📡 Device ready event received in WalletContext!');
+          console.log(listenerTag, '📄 Full event object:', event);
+          console.log(listenerTag, '📄 Event payload:', event.payload);
+          
+          if (event.payload?.device && event.payload?.features) {
+            const device = event.payload.device;
+            const features = event.payload.features;
+            
+            console.log(listenerTag, `✅ Device ready: ${features.label || 'Unlabeled'} v${features.version}`);
+            console.log(listenerTag, '🔄 Automatically fetching xpubs for ready device...');
+            
+            try {
+              await getXpubsFromDeviceQueue();
+              console.log(listenerTag, '✅ Xpub fetching initiated successfully');
+            } catch (error) {
+              console.error(listenerTag, '❌ Failed to fetch xpubs on device ready:', error);
+            }
+          } else {
+            console.log(listenerTag, '⚠️ Device ready event payload missing device or features');
+            console.log(listenerTag, '⚠️ Payload structure:', Object.keys(event.payload || {}));
+          }
+        });
+        console.log(tag, '✅ Device ready listener set up successfully');
+      } catch (error) {
+        console.error(tag, '❌ Failed to set up device:ready listener:', error);
+      }
+    })();
+
+    return () => {
+      console.log(tag, '🧹 Cleaning up device:ready listener');
+      unlistenDeviceReady?.then(fn => fn());
+    };
+  }, []);
+
   // Listen for device reconnects and purge queue
   useEffect(() => {
     let unlistenConnect: Promise<() => void>;
@@ -753,7 +814,7 @@ console.debug('[WalletContext] deviceId from event payload:', deviceId);
         try {
           console.log(TAG, 'Device reconnected', deviceId, '- resetting queue');
           await DeviceQueueAPI.resetDeviceQueue(deviceId);
-          await getXpubsFromDeviceQueue();
+          // Don't call getXpubsFromDeviceQueue here - wait for device:ready instead
         } catch (e) {
           console.error(TAG, 'Failed to reset queue on reconnect:', e);
         }
@@ -775,8 +836,10 @@ console.debug('[WalletContext] deviceId from event payload:', deviceId);
     }
     
     const requiredPaths = [
-  { path: "m/84'/0'/0'/0/0", caip: "bip122:000000000019d6689c085ae165831e93" }
-]; // No DB, use static array
+      { path: "m/44'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // Legacy P2PKH (Account level)
+      { path: "m/49'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // SegWit P2SH (Account level)
+      { path: "m/84'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" }   // Native SegWit P2WPKH (Account level)
+    ]; // No DB, use static array
     const expectedXpubCount = requiredPaths.length;
     
     console.log(tag, `Current xpubs: ${fetchedXpubs.length}, expected: ${expectedXpubCount}`);
