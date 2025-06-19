@@ -50,8 +50,8 @@ export const FirmwareUpdateDialog = ({
           <DialogTitle color="white" display="flex" alignItems="center" gap={2}>
             <Icon as={FaDownload} color="blue.400" />
             Firmware Update Available
-            {firmwareCheck.securityUpdate && (
-              <Badge colorScheme="red" ml={2}>Security Update</Badge>
+            {firmwareCheck.needs_update && (
+              <Badge colorScheme="orange" ml={2}>Update Available</Badge>
             )}
           </DialogTitle>
           <DialogCloseTrigger color="gray.400" _hover={{ color: "white" }} />
@@ -81,13 +81,13 @@ export const FirmwareUpdateDialog = ({
               <HStack justify="space-between">
                 <Box>
                   <Text fontSize="sm" color="gray.400">Current Version</Text>
-                  <Text fontSize="lg" fontWeight="semibold">{firmwareCheck.currentVersion}</Text>
+                  <Text fontSize="lg" fontWeight="semibold">{firmwareCheck.current_version}</Text>
                 </Box>
                 <Icon as={FaDownload} color="gray.600" boxSize={6} />
                 <Box>
                   <Text fontSize="sm" color="gray.400">New Version</Text>
                   <Text fontSize="lg" fontWeight="semibold" color="green.400">
-                    {firmwareCheck.latestVersion}
+                    {firmwareCheck.latest_version}
                   </Text>
                 </Box>
               </HStack>
@@ -97,19 +97,6 @@ export const FirmwareUpdateDialog = ({
                 <Text>3-5 minutes</Text>
               </Box>
             </VStack>
-            
-            {firmwareCheck.releaseNotes.length > 0 && (
-              <VStack align="stretch" gap={2}>
-                <Text fontSize="sm" fontWeight="bold" color="blue.400">
-                  What's New:
-                </Text>
-                {firmwareCheck.releaseNotes.map((note, index) => (
-                  <Text key={index} fontSize="sm" color="gray.300">
-                    • {note}
-                  </Text>
-                ))}
-              </VStack>
-            )}
             
             <VStack align="stretch" gap={2} pt={2}>
               <Text fontSize="sm" fontWeight="bold" color="yellow.400">

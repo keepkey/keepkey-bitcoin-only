@@ -189,6 +189,8 @@ pub fn run() {
             commands::wipe_device,
             commands::set_device_label,
             commands::get_connected_devices_with_features,
+            // Update commands
+            device::updates::update_device_bootloader,
             // Logging commands
             commands::get_device_log_path,
             commands::get_recent_device_logs,

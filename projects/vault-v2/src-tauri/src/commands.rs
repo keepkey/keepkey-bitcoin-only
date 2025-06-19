@@ -8,6 +8,7 @@ use keepkey_rust::{
 use uuid;
 use hex;
 use std::io::Cursor;
+// Removed unused imports that were moved to device/updates.rs
 use crate::logging::{log_device_request, log_device_response, log_raw_device_message};
 
 
@@ -292,19 +293,19 @@ pub fn parse_derivation_path(path: &str) -> Result<Vec<u32>, String> {
 }
 
 /// Test command to demonstrate the unified device queue interface
-#[tauri::command] 
+#[tauri::command]
 pub async fn test_device_queue() -> Result<String, String> {
     println!("🧪 Testing unified device queue interface...");
-    
+
     // Example of how frontend would use the unified interface
     let test_request = DeviceRequestWrapper {
         device_id: "test-device-001".to_string(),
         request_id: uuid::Uuid::new_v4().to_string(),
         request: DeviceRequest::GetFeatures,
     };
-    
+
     println!("📝 Created test request: {:?}", test_request);
-    
+
     // In real usage, this would be sent to add_to_device_queue
     Ok(format!("✅ Unified device queue test completed. Request ID: {}", test_request.request_id))
 }
@@ -1056,7 +1057,7 @@ pub async fn get_connected_devices_with_features(
 }
 
 /// Evaluate device status to determine what actions are needed
-fn evaluate_device_status(device_id: String, features: Option<&DeviceFeatures>) -> DeviceStatus {
+pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeatures>) -> DeviceStatus {
     let mut status = DeviceStatus {
         device_id: device_id.clone(),
         connected: true,
@@ -1330,3 +1331,5 @@ fn read_exact(cursor: &mut Cursor<Vec<u8>>, buf: &mut [u8]) -> Result<(), String
     use std::io::Read;
     cursor.read_exact(buf).map_err(|e| format!("Failed to read data: {}", e))
 } 
+
+// Bootloader and firmware update functions have been moved to device/updates.rs for better organization

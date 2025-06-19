@@ -4,6 +4,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
+use hex;
 
 pub struct EventController {
     cancellation_token: CancellationToken,
@@ -63,14 +64,20 @@ impl EventController {
                                 tokio::spawn(async move {
                                     println!("📡 Fetching device features for: {}", device_for_task.unique_id);
                                     
-                                    match try_get_device_features(&device_for_task).await {
+                                    match try_get_device_features(&device_for_task, &app_for_task).await {
                                         Ok(features) => {
                                             println!("✅ Device ready: {} v{} ({})", 
                                                    features.label.as_deref().unwrap_or("Unlabeled"),
                                                    features.version,
                                                    device_for_task.unique_id);
                                             
-                                            // Emit device:ready event with features
+                                            // Evaluate device status to determine if updates are needed
+                                            let status = crate::commands::evaluate_device_status(
+                                                device_for_task.unique_id.clone(), 
+                                                Some(&features)
+                                            );
+                                            
+                                            // Emit device:ready event with features (for basic connectivity)
                                             let ready_payload = serde_json::json!({
                                                 "device": device_for_task,
                                                 "features": features,
@@ -78,11 +85,11 @@ impl EventController {
                                             });
                                             let _ = app_for_task.emit("device:ready", &ready_payload);
                                             
-                                            // Also emit device:features-updated for compatibility
+                                            // Emit device:features-updated event with evaluated status (for DeviceUpdateManager)
                                             let features_payload = serde_json::json!({
                                                 "deviceId": device_for_task.unique_id,
                                                 "features": features,
-                                                "status": "ready"
+                                                "status": status  // Use evaluated status instead of hardcoded "ready"
                                             });
                                             let _ = app_for_task.emit("device:features-updated", &features_payload);
                                         }
@@ -198,27 +205,153 @@ impl Drop for EventController {
 
 /// Try to get device features without blocking the event loop
 /// Returns features if successful, error message if failed
-async fn try_get_device_features(device: &FriendlyUsbDevice) -> Result<keepkey_rust::features::DeviceFeatures, String> {
-    // Create a temporary device queue to fetch features
-    // This is a non-blocking operation that will fail fast if device is busy
-    let queue_handle = keepkey_rust::device_queue::DeviceQueueFactory::spawn_worker(
-        device.unique_id.clone(),
-        device.clone()
-    );
+/// This function handles OOB bootloader detection by trying Initialize message when GetFeatures fails
+async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHandle) -> Result<keepkey_rust::features::DeviceFeatures, String> {
+    // Use the shared device queue manager to prevent race conditions
+    if let Some(queue_manager_state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {
+        let queue_manager = queue_manager_state.inner().clone();
+        
+        // Get or create a single device queue handle for this device
+        let queue_handle = {
+            let mut manager = queue_manager.lock().await;
+            
+            if let Some(handle) = manager.get(&device.unique_id) {
+                // Use existing handle to prevent multiple workers
+                handle.clone()
+            } else {
+                // Create a new worker only if one doesn't exist
+                let handle = keepkey_rust::device_queue::DeviceQueueFactory::spawn_worker(
+                    device.unique_id.clone(),
+                    device.clone()
+                );
+                manager.insert(device.unique_id.clone(), handle.clone());
+                handle
+            }
+        };
+        
+        // Try to get features with a timeout using the shared worker
+        match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
+            Ok(Ok(raw_features)) => {
+                // Convert features to our DeviceFeatures format
+                let device_features = crate::commands::convert_features_to_device_features(raw_features);
+                Ok(device_features)
+            }
+            Ok(Err(e)) => {
+                let error_str = e.to_string();
+                
+                // Check if this looks like an OOB bootloader that doesn't understand GetFeatures
+                if error_str.contains("Unknown message") || 
+                   error_str.contains("Failure: Unknown message") ||
+                   error_str.contains("Unexpected response") {
+                    
+                    println!("🔧 Device may be in OOB bootloader mode, trying Initialize message...");
+                    
+                    // Try the direct approach using keepkey-rust's proven method
+                    match try_oob_bootloader_detection(device).await {
+                        Ok(features) => {
+                            println!("✅ Successfully detected OOB bootloader mode for device {}", device.unique_id);
+                            Ok(features)
+                        }
+                        Err(oob_err) => {
+                            println!("❌ OOB bootloader detection also failed for {}: {}", device.unique_id, oob_err);
+                            Err(format!("Failed to get device features: {} (OOB attempt: {})", error_str, oob_err))
+                        }
+                    }
+                } else {
+                    Err(format!("Failed to get device features: {}", error_str))
+                }
+            }
+            Err(_) => {
+                Err("Timeout while fetching device features".to_string())
+            }
+        }
+    } else {
+        // Fallback to the old method if queue manager is not available
+        println!("⚠️ DeviceQueueManager not available, using fallback method");
+        
+        // Create a temporary device queue to fetch features
+        // This is a non-blocking operation that will fail fast if device is busy
+        let queue_handle = keepkey_rust::device_queue::DeviceQueueFactory::spawn_worker(
+            device.unique_id.clone(),
+            device.clone()
+        );
+        
+        // Try to get features with a timeout
+        match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
+            Ok(Ok(raw_features)) => {
+                // Convert features to our DeviceFeatures format
+                let device_features = crate::commands::convert_features_to_device_features(raw_features);
+                Ok(device_features)
+            }
+            Ok(Err(e)) => {
+                let error_str = e.to_string();
+                
+                // Check if this looks like an OOB bootloader that doesn't understand GetFeatures
+                if error_str.contains("Unknown message") || 
+                   error_str.contains("Failure: Unknown message") ||
+                   error_str.contains("Unexpected response") {
+                    
+                    println!("🔧 Device may be in OOB bootloader mode, trying Initialize message...");
+                    
+                    // Try the direct approach using keepkey-rust's proven method
+                    match try_oob_bootloader_detection(device).await {
+                        Ok(features) => {
+                            println!("✅ Successfully detected OOB bootloader mode for device {}", device.unique_id);
+                            Ok(features)
+                        }
+                        Err(oob_err) => {
+                            println!("❌ OOB bootloader detection also failed for {}: {}", device.unique_id, oob_err);
+                            Err(format!("Failed to get device features: {} (OOB attempt: {})", error_str, oob_err))
+                        }
+                    }
+                } else {
+                    Err(format!("Failed to get device features: {}", error_str))
+                }
+            }
+            Err(_) => {
+                Err("Timeout while fetching device features".to_string())
+            }
+        }
+    }
+}
+
+/// Try to detect OOB bootloader mode using the proven keepkey-rust methods
+/// This handles the case where older bootloaders don't understand GetFeatures messages
+/// Uses the documented OOB detection heuristics from docs/usb/oob_mode_detection.md
+async fn try_oob_bootloader_detection(device: &FriendlyUsbDevice) -> Result<keepkey_rust::features::DeviceFeatures, String> {
+    println!("🔧 Attempting OOB bootloader detection via HID for device {}", device.unique_id);
     
-    // Try to get features with a timeout
-    match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
-        Ok(Ok(raw_features)) => {
-            // Convert features to our DeviceFeatures format
-            let device_features = crate::commands::convert_features_to_device_features(raw_features);
-            Ok(device_features)
+    // Use keepkey-rust's proven fallback method that handles OOB bootloaders correctly
+    let result = tokio::task::spawn_blocking({
+        let device = device.clone();
+        move || -> Result<keepkey_rust::features::DeviceFeatures, String> {
+            // Use the HID fallback method from keepkey-rust that's specifically designed for OOB devices
+            keepkey_rust::features::get_device_features_via_hid(&device)
+                .map_err(|e| e.to_string())
         }
-        Ok(Err(e)) => {
-            Err(format!("Failed to get device features: {}", e))
+    }).await;
+    
+    match result {
+        Ok(Ok(features)) => {
+            // Apply OOB detection heuristics from docs/usb/oob_mode_detection.md
+            let likely_oob_bootloader = 
+                features.bootloader_mode ||
+                features.version == "Legacy Bootloader" ||
+                features.version.contains("0.0.0") ||
+                (!features.initialized && features.version.starts_with("1."));
+            
+            if likely_oob_bootloader {
+                println!("🔧 Device {} appears to be in OOB bootloader mode (version: {}, bootloader_mode: {}, initialized: {})", 
+                        device.unique_id, features.version, features.bootloader_mode, features.initialized);
+            } else {
+                println!("🔧 Device {} appears to be in OOB wallet mode (version: {}, initialized: {})", 
+                        device.unique_id, features.version, features.initialized);
+            }
+            
+            Ok(features)
         }
-        Err(_) => {
-            Err("Timeout while fetching device features".to_string())
-        }
+        Ok(Err(e)) => Err(e),
+        Err(e) => Err(format!("Task execution error: {}", e)),
     }
 }
 

@@ -57,6 +57,7 @@ function App() {
     const [, setDeviceInfo] = useState<DeviceInfoState | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isRestarting, setIsRestarting] = useState(false);
+    const [deviceUpdateComplete, setDeviceUpdateComplete] = useState(false);
     const { showOnboarding, showError } = useCommonDialogs();
     const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
     
@@ -134,7 +135,9 @@ function App() {
                     if (payload.device && payload.features) {
                         setDeviceConnected(true);
                         setDeviceInfo({ features: payload.features, error: null });
-                        setLoadingStatus('Device ready');
+                        setLoadingStatus('Checking for updates...');
+                        // Reset update completion state for new device connections
+                        setDeviceUpdateComplete(false);
                         console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
                     }
                 });
@@ -149,11 +152,21 @@ function App() {
                     setLoadingStatus('Device in use by another app');
                 });
 
+                // Listen for device disconnection events
+                const unlistenDeviceDisconnected = await listen('device:disconnected', (event) => {
+                    console.log('Device disconnected event received:', event.payload);
+                    setDeviceConnected(false);
+                    setDeviceInfo(null);
+                    setDeviceUpdateComplete(false);
+                    setLoadingStatus('No device connected');
+                });
+
                 // Return cleanup function that removes all listeners
                 return () => {
                     if (unlistenDeviceConnected) unlistenDeviceConnected();
                     if (unlistenAppState) unlistenAppState();
                     if (unlistenAccessError) unlistenAccessError();
+                    if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
                 };
                 
             } catch (error) {
@@ -177,8 +190,8 @@ function App() {
       setTimeout(() => setHasCopied(false), 2000);
     };
 
-    // Show the main vault interface ONLY when device is ready (fully initialized and frontloaded)
-    if (loadingStatus === "Device ready" && deviceConnected) {
+    // Show the main vault interface ONLY when device is ready AND updates are complete
+    if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
         return <VaultInterface />;
     }
 
@@ -254,6 +267,8 @@ function App() {
           <DeviceUpdateManager 
             onComplete={() => {
               console.log('Device update/initialization complete');
+              setDeviceUpdateComplete(true);
+              setLoadingStatus('Device ready');
             }}
           />
 

@@ -89,6 +89,12 @@ pub enum DeviceCmd {
         enqueued_at: Instant,
         bypass_cache: bool,
     },
+    UpdateBootloader {
+        target_version: String,
+        bootloader_bytes: Vec<u8>,
+        respond_to: oneshot::Sender<Result<bool>>,
+        enqueued_at: Instant,
+    },
     Shutdown {
         respond_to: oneshot::Sender<Result<()>>,
     },
@@ -100,6 +106,7 @@ impl DeviceCmd {
             DeviceCmd::GetFeatures { enqueued_at, .. } => *enqueued_at,
             DeviceCmd::GetAddress { enqueued_at, .. } => *enqueued_at,
             DeviceCmd::SendRaw { enqueued_at, .. } => *enqueued_at,
+            DeviceCmd::UpdateBootloader { enqueued_at, .. } => *enqueued_at,
             DeviceCmd::Shutdown { .. } => Instant::now(),
         }
     }
@@ -109,6 +116,7 @@ impl DeviceCmd {
             DeviceCmd::GetFeatures { .. } => "get_features",
             DeviceCmd::GetAddress { .. } => "get_address", 
             DeviceCmd::SendRaw { .. } => "send_raw",
+            DeviceCmd::UpdateBootloader { .. } => "update_bootloader",
             DeviceCmd::Shutdown { .. } => "shutdown",
         }
     }
@@ -118,6 +126,7 @@ impl DeviceCmd {
             DeviceCmd::GetFeatures { .. } => true,
             DeviceCmd::GetAddress { .. } => true,
             DeviceCmd::SendRaw { bypass_cache, .. } => !*bypass_cache,
+            DeviceCmd::UpdateBootloader { .. } => false,
             DeviceCmd::Shutdown { .. } => false,
         }
     }
@@ -232,6 +241,10 @@ impl DeviceWorker {
             }
             DeviceCmd::SendRaw { message, respond_to, bypass_cache, .. } => {
                 let result = self.handle_send_raw(message, bypass_cache).await;
+                let _ = respond_to.send(result);
+            }
+            DeviceCmd::UpdateBootloader { target_version, bootloader_bytes, respond_to, enqueued_at } => {
+                let result = self.handle_update_bootloader(target_version, bootloader_bytes).await;
                 let _ = respond_to.send(result);
             }
             DeviceCmd::Shutdown { respond_to } => {
@@ -374,6 +387,68 @@ impl DeviceWorker {
         Ok(response)
     }
     
+    /// Handle bootloader update command
+    async fn handle_update_bootloader(&mut self, target_version: String, bootloader_bytes: Vec<u8>) -> Result<bool> {
+        use crate::messages::{FirmwareErase, FirmwareUpload, Message};
+        use sha2::{Digest, Sha256};
+        
+        info!("🔄 Starting bootloader update to version {} ({} bytes)", target_version, bootloader_bytes.len());
+        
+        // Clear cache for this potentially disruptive operation
+        self.cache.clear();
+        info!("🧹 Cache cleared for bootloader update");
+        
+        // Get transport
+        let transport = self.ensure_transport().await?;
+        let mut handler = transport.with_standard_handler();
+        
+        // First, send FirmwareErase command for v1.0.3 bootloader compatibility
+        info!("🧹 Sending FirmwareErase command for bootloader compatibility...");
+        match handler.handle(FirmwareErase::default().into()) {
+            Ok(Message::Success(s)) => {
+                info!("✅ FirmwareErase successful: {}", s.message());
+            }
+            Ok(Message::Failure(f)) => {
+                error!("❌ FirmwareErase failed: {}", f.message());
+                return Err(anyhow!("Bootloader erase failed: {}", f.message()));
+            }
+            Ok(other) => {
+                warn!("⚠️ Unexpected response during erase: {:?}", other);
+            }
+            Err(e) => {
+                error!("❌ Error during FirmwareErase: {}", e);
+                return Err(anyhow!("Error during bootloader erase: {}", e));
+            }
+        }
+        
+        // Now send the actual bootloader upload
+        info!("📤 Sending FirmwareUpload command...");
+        let payload_hash = Sha256::digest(&bootloader_bytes).to_vec();
+        
+        match handler.handle(FirmwareUpload {
+            payload_hash,
+            payload: bootloader_bytes,
+        }.into()) {
+            Ok(Message::Success(s)) => {
+                info!("✅ Bootloader update successful: {}", s.message());
+                info!("🔄 Device may reboot. Please wait a moment.");
+                Ok(true)
+            }
+            Ok(Message::Failure(f)) => {
+                error!("❌ Bootloader update failed: {}", f.message());
+                Err(anyhow!("Bootloader update failed: {}", f.message()))
+            }  
+            Ok(other) => {
+                error!("❌ Unexpected response during bootloader upload: {:?}", other);
+                Err(anyhow!("Unexpected response: {:?}", other))
+            }
+            Err(e) => {
+                error!("❌ Error during bootloader upload: {}", e);
+                Err(anyhow!("Error during bootloader upload: {}. Check device screen for prompts.", e))
+            }
+        }
+    }
+    
     /// Check if an operation is mutable and should invalidate cache
     fn is_mutable_operation(&self, response: &Message) -> bool {
         matches!(response,
@@ -472,6 +547,26 @@ impl DeviceQueueHandle {
             
         timeout(DEVICE_OPERATION_TIMEOUT, rx).await
             .map_err(|_| anyhow!("Device operation timed out"))?
+            .map_err(|_| anyhow!("Device worker channel closed"))?
+    }
+    
+    /// Update device bootloader
+    #[instrument(level = "debug", skip(self, bootloader_bytes))]
+    pub async fn update_bootloader(&self, target_version: String, bootloader_bytes: Vec<u8>) -> Result<bool> {
+        let (tx, rx) = oneshot::channel();
+        let cmd = DeviceCmd::UpdateBootloader {
+            target_version,
+            bootloader_bytes,
+            respond_to: tx,
+            enqueued_at: Instant::now(),
+        };
+        
+        self.cmd_tx.send(cmd).await
+            .map_err(|_| anyhow!("Device worker unavailable"))?;
+            
+        // Use longer timeout for firmware operations (2 minutes)
+        timeout(Duration::from_secs(120), rx).await
+            .map_err(|_| anyhow!("Bootloader update timed out"))?
             .map_err(|_| anyhow!("Device worker channel closed"))?
     }
     
