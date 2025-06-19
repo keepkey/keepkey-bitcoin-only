@@ -8,9 +8,9 @@ import {
   DialogCloseTrigger
 } from './ui/dialog'
 import { LuSettings, LuMonitor, LuCpu, LuNetwork } from 'react-icons/lu'
-import { FaCog, FaLink, FaCopy, FaCheck } from 'react-icons/fa'
+import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
-import { VaultSetup } from './VaultSetup'
+
 import { KeepKeyDeviceList } from './KeepKeyDeviceList'
 import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
 import { FirmwareUpdateDialog } from './FirmwareUpdateDialog'
@@ -261,7 +261,9 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
         >
           <DialogHeader borderBottomWidth="1px" borderColor="gray.700" pb={4}>
             <DialogTitle color="white">Settings</DialogTitle>
-            <DialogCloseTrigger color="gray.400" _hover={{ color: "white" }} />
+            <DialogCloseTrigger color="gray.400" _hover={{ color: "white" }}>
+              <FaTimes />
+            </DialogCloseTrigger>
           </DialogHeader>
           
           <DialogBody p={6} flex="1" overflowY="auto">
@@ -304,18 +306,61 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   value="mcp"
                   flex="1"
                   gap={2}
-                  color="gray.400"
-                  _selected={{ bg: "gray.700", color: "white" }}
-                  _hover={{ color: "white" }}
+                  color="gray.600"
+                  opacity={0.5}
+                  cursor="not-allowed"
+                  _selected={{ bg: "gray.800", color: "gray.500" }}
+                  _hover={{ color: "gray.600" }}
+                  disabled
                 >
-                  <LuNetwork size={16} />
+                  <FaLock size={14} />
                   MCP
                 </Tabs.Trigger>
               </Tabs.List>
 
               <Tabs.Content value="general" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
-                  <VaultSetup />
+                  <Text color="white" fontSize="lg" fontWeight="semibold">General Settings</Text>
+                  
+                  {/* Language Settings */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
+                    <VStack align="stretch" gap={3}>
+                      <HStack gap={2}>
+                        <FaGlobe color="gray.500" />
+                        <Text color="gray.400" fontWeight="medium">Language Settings</Text>
+                        <FaLock color="gray.500" size={12} />
+                      </HStack>
+                      <HStack justify="space-between" align="center">
+                        <Text color="gray.400" fontSize="sm">Display Language</Text>
+                        <Text color="gray.500" fontSize="sm">English (Locked)</Text>
+                      </HStack>
+                      <Text color="gray.500" fontSize="xs">
+                        Language selection will be available in a future update
+                      </Text>
+                    </VStack>
+                  </Box>
+
+                  {/* Currency Settings */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
+                    <VStack align="stretch" gap={3}>
+                      <HStack gap={2}>
+                        <FaDollarSign color="gray.500" />
+                        <Text color="gray.400" fontWeight="medium">Currency & Format Settings</Text>
+                        <FaLock color="gray.500" size={12} />
+                      </HStack>
+                      <HStack justify="space-between" align="center">
+                        <Text color="gray.400" fontSize="sm">Primary Currency</Text>
+                        <Text color="gray.500" fontSize="sm">USD (Locked)</Text>
+                      </HStack>
+                      <HStack justify="space-between" align="center">
+                        <Text color="gray.400" fontSize="sm">Number Format</Text>
+                        <Text color="gray.500" fontSize="sm">1,000.00 (Locked)</Text>
+                      </HStack>
+                      <Text color="gray.500" fontSize="xs">
+                        Currency and formatting options will be available in a future update
+                      </Text>
+                    </VStack>
+                  </Box>
                 </VStack>
               </Tabs.Content>
 
@@ -365,12 +410,20 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
 
               <Tabs.Content value="mcp" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
-                  <Text color="white" fontSize="lg" fontWeight="semibold">MCP & API Access</Text>
+                  <HStack gap={2}>
+                    <FaLock color="gray.500" />
+                    <Text color="gray.500" fontSize="lg" fontWeight="semibold">MCP & API Access</Text>
+                    <Text color="red.400" fontSize="sm" fontWeight="medium">(Disabled)</Text>
+                  </HStack>
                   
                   {/* API URLs Section */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.5}>
                     <VStack align="stretch" gap={4}>
-                      <Text color="white" fontWeight="medium">API Endpoints</Text>
+                      <HStack gap={2}>
+                        <FaLock color="gray.500" size={14} />
+                        <Text color="gray.400" fontWeight="medium">API Endpoints</Text>
+                        <Text color="red.400" fontSize="xs">(Disabled)</Text>
+                      </HStack>
                       
                       {/* REST API */}
                       <Box bg="gray.900" p={3} borderRadius="md">
@@ -459,30 +512,36 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   </Box>
 
                   {/* Status Section */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
                     <VStack align="stretch" gap={3}>
-                      <Text color="white" fontWeight="medium">Service Status</Text>
+                      <HStack gap={2}>
+                        <FaLock color="gray.500" size={14} />
+                        <Text color="gray.400" fontWeight="medium">Service Status</Text>
+                      </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.300" fontSize="sm">Backend Server</Text>
+                        <Text color="gray.400" fontSize="sm">Backend Server</Text>
                         <HStack gap={2}>
-                          <Box w={2} h={2} bg="green.400" borderRadius="full" />
-                          <Text color="green.400" fontSize="sm" fontWeight="medium">Running</Text>
+                          <Box w={2} h={2} bg="gray.500" borderRadius="full" />
+                          <Text color="gray.500" fontSize="sm" fontWeight="medium">Offline</Text>
                         </HStack>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.300" fontSize="sm">API Port</Text>
-                        <Text color="gray.400" fontSize="sm" fontFamily="mono">1646</Text>
+                        <Text color="gray.400" fontSize="sm">API Access</Text>
+                        <Text color="gray.500" fontSize="sm" fontFamily="mono">Locked</Text>
                       </HStack>
                     </VStack>
                   </Box>
 
                   {/* Information Section */}
-                  <Box bg="blue.900" p={4} borderRadius="md" border="1px solid" borderColor="blue.700">
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.4}>
                     <VStack align="stretch" gap={2}>
-                      <Text color="blue.200" fontSize="sm" fontWeight="medium">About MCP</Text>
-                      <Text color="blue.100" fontSize="xs">
-                        The Model Context Protocol (MCP) enables AI assistants like Claude to securely interact with your KeepKey device. 
-                        Use the MCP endpoint to connect external AI tools for enhanced Bitcoin management capabilities.
+                      <HStack gap={2}>
+                        <FaLock color="gray.500" size={12} />
+                        <Text color="gray.400" fontSize="sm" fontWeight="medium">About MCP</Text>
+                      </HStack>
+                      <Text color="gray.500" fontSize="xs">
+                        The Model Context Protocol (MCP) would enable AI assistants like Claude to securely interact with your KeepKey device. 
+                        This feature is currently disabled and will be available in a future update.
                       </Text>
                     </VStack>
                   </Box>

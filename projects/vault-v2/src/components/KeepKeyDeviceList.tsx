@@ -241,9 +241,12 @@ export const KeepKeyDeviceList = ({
     <VStack align="stretch" gap={4}>
       {/* Header with refresh button */}
       <HStack justify="space-between" mb={2}>
-        <Text fontSize="lg" fontWeight="medium" color="gray.300">
-          Connected Devices
-        </Text>
+        <HStack gap={2}>
+          <Icon as={FaUsb} color="green.400" />
+          <Text fontSize="lg" fontWeight="medium" color="gray.300">
+            Connected Devices
+          </Text>
+        </HStack>
         <IconButton
           aria-label="Refresh devices"
           size="sm"

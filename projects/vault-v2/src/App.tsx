@@ -13,6 +13,7 @@ import { useCommonDialogs } from './hooks/useCommonDialogs';
 import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
 import { VaultInterface } from './components/VaultInterface';
+import { useWallet } from './contexts/WalletContext';
 
 // Define the expected structure of DeviceFeatures from Rust
 interface DeviceFeatures {
@@ -65,6 +66,8 @@ function App() {
     };
     
     // Function to restart backend startup process
+    const { reinitialize } = useWallet();
+
     const handleLogoClick = async () => {
         if (isRestarting) return; // Prevent multiple clicks
         
@@ -73,6 +76,8 @@ function App() {
             console.log("Logo clicked - restarting backend startup process");
             await invoke('restart_backend_startup');
             console.log("Backend restart initiated successfully");
+            // Re-run wallet initialization to resubscribe device state after backend restart
+            reinitialize();
         } catch (error) {
             console.error("Failed to restart backend startup:", error);
         } finally {

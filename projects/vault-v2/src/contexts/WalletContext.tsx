@@ -44,6 +44,11 @@ interface WalletContextType {
     version?: number,
     lockTime?: number
   ) => Promise<string>;
+  /**
+   * Explicitly rerun the wallet initialization logic. Useful when the backend
+   * restarts and the app needs to resync device/portfolio state without a full refresh.
+   */
+  reinitialize: () => void;
 }
 
 // Create Context
@@ -824,6 +829,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     onStart();
   }, []);
 
+  // Public context value ------------------------------------------------------
   const contextValue: WalletContextType = {
     portfolio,
     selectedAsset,
@@ -839,6 +845,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     requestXpubFromDevice,
     getQueueStatus,
     signTransaction,
+    reinitialize: onStart,
   };
 
   return (
