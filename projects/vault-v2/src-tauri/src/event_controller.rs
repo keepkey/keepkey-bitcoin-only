@@ -47,22 +47,22 @@ impl EventController {
             } else {
                 println!("✅ Successfully emitted scanning status");
             }
-            
+
             // Test emission after longer delay to check if frontend is listening
-            let app_for_test = app_handle.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(3000)).await;
-                println!("📡 Test: Emitting delayed test status...");
-                let test_payload = serde_json::json!({
-                    "status": "Test message after 3 seconds"
-                });
-                println!("📡 Test payload: {}", test_payload);
-                if let Err(e) = app_for_test.emit("status:update", test_payload) {
-                    println!("❌ Failed to emit delayed test status: {}", e);
-                } else {
-                    println!("✅ Successfully emitted delayed test status");
-                }
-            });
+//             let app_for_test = app_handle.clone();
+//             tokio::spawn(async move {
+//                 tokio::time::sleep(Duration::from_millis(3000)).await;
+//                 println!("📡 Test: Emitting delayed test status...");
+//                 let test_payload = serde_json::json!({
+//                     "status": "Test message after 3 seconds"
+//                 });
+//                 println!("📡 Test payload: {}", test_payload);
+//                 if let Err(e) = app_for_test.emit("status:update", test_payload) {
+//                     println!("❌ Failed to emit delayed test status: {}", e);
+//                 } else {
+//                     println!("✅ Successfully emitted delayed test status");
+//                 }
+//             });
             
             loop {
                 tokio::select! {
