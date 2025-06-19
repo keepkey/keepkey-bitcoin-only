@@ -187,6 +187,13 @@ pub fn run() {
             commands::get_connected_devices_with_features,
             // Update commands
             device::updates::update_device_bootloader,
+            // PIN creation commands
+            commands::initialize_device_pin,
+            commands::send_pin_matrix_response,
+            commands::get_pin_session_status,
+            commands::cancel_pin_creation,
+            commands::initialize_device_wallet,
+            commands::complete_wallet_creation,
             // Logging commands
             commands::get_device_log_path,
             commands::get_recent_device_logs,

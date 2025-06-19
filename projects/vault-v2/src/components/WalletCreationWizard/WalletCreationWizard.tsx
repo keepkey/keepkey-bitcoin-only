@@ -314,6 +314,19 @@ export function WalletCreationWizard({
           />
         );
 
+      case 'pin':
+        return (
+          <DevicePin
+            deviceId={deviceId}
+            deviceLabel={state.deviceLabel}
+            mode="create"
+            onComplete={handlePinComplete}
+            onBack={handleBack}
+            isLoading={state.isLoading}
+            error={state.error}
+          />
+        );
+
       case 'backup-display':
         console.debug('[WalletCreationWizard] Rendering BackupPhraseDisplay with deviceId:', deviceId);
         return (

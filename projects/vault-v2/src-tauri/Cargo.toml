@@ -35,5 +35,6 @@ hex = "0.4"  # Needed for hash encoding in application layer
 chrono = { version = "0.4", features = ["serde"] }  # For timestamp logging
 dirs = "5.0"  # For finding home directory
 semver = "1.0.26"
+log = "0.4"  # For logging support in PIN creation
 # Note: rusb removed - handled internally by keepkey-rust
 

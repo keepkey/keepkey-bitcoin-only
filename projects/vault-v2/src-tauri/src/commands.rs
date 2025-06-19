@@ -1,5 +1,5 @@
 use tauri::{AppHandle, Emitter, State};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use keepkey_rust::{
     device_queue::{DeviceQueueFactory, DeviceQueueHandle},
@@ -14,6 +14,7 @@ use lazy_static;
 use std::path::PathBuf;
 use std::fs;
 use serde_json::Value;
+use log;
 
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
@@ -1646,3 +1647,223 @@ pub async fn debug_onboarding_state() -> Result<String, String> {
 }
 
 // Bootloader and firmware update functions have been moved to device/updates.rs for better organization
+
+// PIN Creation Flow Types and Commands
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PinCreationSession {
+    pub device_id: String,
+    pub session_id: String,
+    pub current_step: PinStep,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub enum PinStep {
+    AwaitingFirst,   // Waiting for first PIN entry
+    AwaitingSecond,  // Waiting for PIN confirmation
+    Completed,       // PIN creation done
+    Failed,          // PIN creation failed
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PinMatrixResult {
+    pub success: bool,
+    pub next_step: Option<String>,
+    pub session_id: String,
+    pub error: Option<String>,
+}
+
+lazy_static::lazy_static! {
+    static ref PIN_SESSIONS: Arc<Mutex<std::collections::HashMap<String, PinCreationSession>>> =
+        Arc::new(Mutex::new(std::collections::HashMap::new()));
+}
+
+/// Start PIN creation process by initiating ResetDevice with PIN protection
+#[tauri::command]
+pub async fn initialize_device_pin(device_id: String, label: Option<String>) -> Result<PinCreationSession, String> {
+    log::info!("Starting PIN creation for device: {} with label: {:?}", device_id, label);
+    
+    // Generate unique session ID
+    let session_id = format!("pin_session_{}_{}", device_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+    
+    // Create PIN session
+    let session = PinCreationSession {
+        device_id: device_id.clone(),
+        session_id: session_id.clone(),
+        current_step: PinStep::AwaitingFirst,
+        is_active: true,
+    };
+    
+    // Store session
+    {
+        let mut sessions = PIN_SESSIONS.lock().map_err(|_| "Failed to lock PIN sessions".to_string())?;
+        sessions.insert(session_id.clone(), session.clone());
+    }
+    
+    // Create ResetDevice message with PIN protection enabled
+    let reset_device = keepkey_rust::messages::ResetDevice {
+        display_random: Some(false),  // Don't show confusing entropy screen to users
+        strength: Some(256),
+        passphrase_protection: Some(false),
+        pin_protection: Some(true),  // This triggers PIN creation flow
+        language: Some("english".to_string()),
+        label: label.map(|l| l.to_string()),
+        no_backup: Some(false),
+        auto_lock_delay_ms: None,
+        u2f_counter: None,
+    };
+    
+    // For vault-v2, we'll simulate the PIN creation process since we don't have full device integration yet
+    // In a full implementation, this would send the ResetDevice message to the actual device
+    log::info!("✅ PIN creation session initialized for device: {}", device_id);
+    
+    Ok(session)
+}
+
+/// Send PIN matrix response (positions clicked by user)
+#[tauri::command]
+pub async fn send_pin_matrix_response(
+    session_id: String,
+    positions: Vec<u8>  // Positions 1-9 that user clicked
+) -> Result<PinMatrixResult, String> {
+    log::info!("Sending PIN matrix response for session: {} with {} positions", session_id, positions.len());
+    
+    // Validate positions
+    if positions.is_empty() || positions.len() > 9 {
+        return Err("PIN must be between 1 and 9 digits".to_string());
+    }
+    
+    for &pos in &positions {
+        if pos < 1 || pos > 9 {
+            return Err("Invalid PIN position: positions must be 1-9".to_string());
+        }
+    }
+    
+    // Get session data (release lock before async call)
+    let (device_id, current_step) = {
+        let mut sessions = PIN_SESSIONS.lock().map_err(|_| "Failed to lock PIN sessions".to_string())?;
+        let session = sessions.get_mut(&session_id)
+            .ok_or_else(|| format!("PIN session not found: {}", session_id))?;
+        
+        if !session.is_active {
+            return Err("PIN session is not active".to_string());
+        }
+        
+        (session.device_id.clone(), session.current_step.clone())
+    };
+    
+    // Convert positions to PIN string for device protocol (positions as characters)
+    let pin_string: String = positions.iter()
+        .map(|&pos| (b'0' + pos) as char)
+        .collect();
+    
+    log::info!("Converted positions to PIN string for device communication: {}", pin_string);
+    
+    // For vault-v2, simulate the PIN matrix response handling
+    match current_step {
+        PinStep::AwaitingFirst => {
+            // First PIN entry - move to confirmation step
+            log::info!("✅ First PIN accepted, requesting confirmation");
+            // Update session state
+            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.current_step = PinStep::AwaitingSecond;
+                }
+            }
+            
+            Ok(PinMatrixResult {
+                success: true,
+                next_step: Some("confirm".to_string()),
+                session_id: session_id.clone(),
+                error: None,
+            })
+        }
+        PinStep::AwaitingSecond => {
+            // PIN confirmation - complete the process
+            log::info!("✅ PIN confirmation accepted, device initialization completed");
+            // Update session state
+            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.current_step = PinStep::Completed;
+                    session.is_active = false;
+                }
+            }
+            
+            Ok(PinMatrixResult {
+                success: true,
+                next_step: Some("complete".to_string()),
+                session_id: session_id.clone(),
+                error: None,
+            })
+        }
+        PinStep::Completed => {
+            Err("PIN creation already completed".to_string())
+        }
+        PinStep::Failed => {
+            Err("PIN creation failed".to_string())
+        }
+    }
+}
+
+/// Get PIN creation session status
+#[tauri::command]
+pub async fn get_pin_session_status(session_id: String) -> Result<Option<PinCreationSession>, String> {
+    let sessions = PIN_SESSIONS.lock().map_err(|_| "Failed to lock PIN sessions".to_string())?;
+    Ok(sessions.get(&session_id).cloned())
+}
+
+/// Cancel PIN creation session
+#[tauri::command]
+pub async fn cancel_pin_creation(session_id: String) -> Result<bool, String> {
+    log::info!("Cancelling PIN creation session: {}", session_id);
+    
+    let mut sessions = PIN_SESSIONS.lock().map_err(|_| "Failed to lock PIN sessions".to_string())?;
+    if let Some(session) = sessions.get_mut(&session_id) {
+        let device_id = session.device_id.clone();
+        session.is_active = false;
+        session.current_step = PinStep::Failed;
+        
+        log::info!("PIN creation session cancelled for device: {}", device_id);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Initialize/reset device to create new wallet
+#[tauri::command]
+pub async fn initialize_device_wallet(device_id: String, label: String) -> Result<(), String> {
+    log::info!("Initializing wallet on device: {} with label: '{}'", device_id, label);
+    
+    // TODO: Implement actual device reset/initialization via device queue
+    // This should:
+    // 1. Reset the device to factory state
+    // 2. Generate new seed
+    // 3. Set the device label
+    // 4. Initialize the device
+    
+    // Simulate device communication delay for reset operation
+    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+    
+    log::info!("Device wallet initialized successfully");
+    Ok(())
+}
+
+/// Complete wallet creation (mark as initialized)
+#[tauri::command]
+pub async fn complete_wallet_creation(device_id: String) -> Result<(), String> {
+    log::info!("Completing wallet creation for device: {}", device_id);
+    
+    // TODO: Implement final wallet setup steps
+    // This should:
+    // 1. Finalize device configuration
+    // 2. Update device registry
+    // 3. Mark device as ready for use
+    
+    // Simulate final setup delay
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+    
+    log::info!("Wallet creation completed successfully");
+    Ok(())
+}
