@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
 import { FirmwareUpdateDialog } from './FirmwareUpdateDialog'
-import { OnboardingWizard } from './OnboardingWizard/OnboardingWizard'
+import { WalletCreationWizard } from './WalletCreationWizard/WalletCreationWizard'
 import { EnterBootloaderModeDialog } from './EnterBootloaderModeDialog'
 import type { DeviceStatus, DeviceFeatures } from '../types/device'
 import { listen } from '@tauri-apps/api/event'
@@ -310,8 +310,9 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         />
       )}
 
-      {showWalletCreation && (
-        <OnboardingWizard
+      {showWalletCreation && deviceStatus.deviceId && (
+        <WalletCreationWizard
+          deviceId={deviceStatus.deviceId}
           onComplete={handleWalletCreationComplete}
           onClose={() => setShowWalletCreation(false)}
         />

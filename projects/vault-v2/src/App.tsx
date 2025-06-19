@@ -58,6 +58,7 @@ function App() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isRestarting, setIsRestarting] = useState(false);
     const [deviceUpdateComplete, setDeviceUpdateComplete] = useState(false);
+    const [onboardingActive, setOnboardingActive] = useState(false);
     const { showOnboarding, showError } = useCommonDialogs();
     const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
     
@@ -97,12 +98,14 @@ function App() {
         
         if (shouldShowOnboarding) {
             console.log("App.tsx: Showing onboarding wizard");
+            setOnboardingActive(true);
             // Add a small delay to ensure the dialog system is ready
             setTimeout(() => {
                 showOnboarding({
                     onComplete: () => {
                         console.log("App.tsx: Onboarding completed callback");
                         clearCache(); // Clear the cache after completion
+                        setOnboardingActive(false);
                     }
                 });
             }, 1000);
@@ -246,14 +249,17 @@ function App() {
           justifyContent="center"
         >
           {/* Clickable Logo in the center */}
-          <Logo 
+          {!onboardingActive && (
+            <Logo 
             width="100px" 
             onClick={handleLogoClick}
             style={{
               filter: isRestarting ? 'brightness(1.3)' : 'none',
               transition: 'filter 0.2s ease'
-            }}
-          />
+              }}
+            />
+          )}
+          
           
           {/* Clickable hint */}
           <Text 
