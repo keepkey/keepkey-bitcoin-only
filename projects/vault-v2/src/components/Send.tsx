@@ -64,6 +64,12 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const [isMaxSend, setIsMaxSend] = useState(false);
   const [isShowingHex, setIsShowingHex] = useState(false); // Hex collapsed by default
   
+  // Broadcast state
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [broadcastSuccess, setBroadcastSuccess] = useState(false);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
+  const [txid, setTxid] = useState<string | null>(null);
+  
   // Fee-related state
   const [feeRates, setFeeRates] = useState<FeeRates>({ slow: 1, medium: 5, fast: 10 }); // Fallback rates
   const [loadingFees, setLoadingFees] = useState(true);
@@ -462,6 +468,61 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
     setError(null);
     setSuccess(null);
     setIsMaxSend(false);
+    // Reset broadcast state
+    setIsBroadcasting(false);
+    setBroadcastSuccess(false);
+    setBroadcastError(null);
+    setTxid(null);
+  };
+
+  const handleBroadcastTransaction = async () => {
+    if (!signedTransaction) {
+      setBroadcastError('No signed transaction to broadcast');
+      return;
+    }
+
+    try {
+      setIsBroadcasting(true);
+      setBroadcastError(null);
+      
+      console.log('📡 Broadcasting signed transaction to Bitcoin network...');
+      
+      // Use the Bitcoin network ID for Pioneer API
+      const networkId = 'bip122:000000000019d6689c085ae165831e93';
+      
+      const result = await PioneerAPI.broadcastTransaction(networkId, signedTransaction);
+      
+      console.log('✅ Transaction broadcast successful!');
+      console.log('🆔 Transaction ID:', result.txid);
+      
+      setTxid(result.txid);
+      setBroadcastSuccess(true);
+      setSuccess('Transaction broadcast successfully! ✅');
+      
+    } catch (error) {
+      console.error('❌ Transaction broadcast failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown broadcast error';
+      setBroadcastError(errorMessage);
+      setError(`Broadcast failed: ${errorMessage}`);
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
+
+  const copyTxidToClipboard = async () => {
+    if (txid) {
+      try {
+        await navigator.clipboard.writeText(txid);
+        console.log('📋 TXID copied to clipboard:', txid);
+        // Temporary success feedback
+        const originalSuccess = success;
+        setSuccess('TXID copied to clipboard! 📋');
+        setTimeout(() => setSuccess(originalSuccess), 2000);
+      } catch (error) {
+        console.error('Failed to copy TXID to clipboard:', error);
+        setError('Failed to copy TXID to clipboard');
+      }
+    }
   };
 
   // Currency conversion helpers
@@ -837,24 +898,103 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
           </VStack>
         </Box>
 
-        {/* Single main action button */}
-        <Button
-          colorScheme="orange"
-          size="lg"
-          width="100%"
-          onClick={() => {
-            console.log('🚀 Broadcasting transaction (placeholder):', signedTransaction);
-            // TODO: Implement actual broadcast to Bitcoin network
-            alert('Broadcasting functionality not yet implemented');
-          }}
-        >
-          <HStack gap={2}>
-            <FaPaperPlane />
-            <Text>Broadcast Transaction</Text>
-          </HStack>
-        </Button>
+        {/* Broadcast Status */}
+        {broadcastSuccess && txid && (
+          <Box bg="green.900" p={4} borderRadius="lg" border="1px solid" borderColor="green.600" w="100%">
+            <VStack gap={3}>
+              <Text color="green.200" fontSize="sm" fontWeight="bold">
+                🎉 Transaction Broadcast Successfully!
+              </Text>
+              <VStack gap={2} w="100%">
+                <Text color="gray.300" fontSize="xs">Transaction ID:</Text>
+                <Box bg="gray.800" p={2} borderRadius="md" w="100%">
+                  <Code fontSize="xs" wordBreak="break-all" color="green.300" bg="transparent">
+                    {txid}
+                  </Code>
+                </Box>
+                <HStack gap={2} w="100%">
+                  <Button
+                    size="sm"
+                    colorScheme="green"
+                    variant="outline"
+                    onClick={copyTxidToClipboard}
+                    flex="1"
+                  >
+                    📋 Copy TXID
+                  </Button>
+                  <Button
+                    size="sm"
+                    colorScheme="blue"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const { invoke } = await import('@tauri-apps/api/core');
+                        await invoke('open_url', { url: `https://blockstream.info/tx/${txid}` });
+                      } catch (error) {
+                        console.error('Failed to open URL:', error);
+                        // Fallback to window.open if Tauri command fails
+                        window.open(`https://blockstream.info/tx/${txid}`, '_blank');
+                      }
+                    }}
+                    flex="1"
+                  >
+                    🔗 View on Blockstream
+                  </Button>
+                </HStack>
+              </VStack>
+            </VStack>
+          </Box>
+        )}
 
-        {success && (
+        {/* Broadcast Error */}
+        {broadcastError && (
+          <Box bg="red.900" p={4} borderRadius="lg" border="1px solid" borderColor="red.600" w="100%">
+            <VStack gap={2}>
+              <Text color="red.200" fontSize="sm" fontWeight="bold">
+                ❌ Broadcast Failed
+              </Text>
+              <Text color="red.300" fontSize="xs" textAlign="center">
+                {broadcastError}
+              </Text>
+            </VStack>
+          </Box>
+        )}
+
+        {/* Main action button */}
+        {!broadcastSuccess && (
+          <Button
+            colorScheme="orange"
+            size="lg"
+            width="100%"
+            onClick={handleBroadcastTransaction}
+            disabled={isBroadcasting || !signedTransaction}
+            loading={isBroadcasting}
+            loadingText="Broadcasting..."
+          >
+            <HStack gap={2}>
+              <FaPaperPlane />
+              <Text>Broadcast Transaction</Text>
+            </HStack>
+          </Button>
+        )}
+
+        {/* New Transaction Button (only after successful broadcast) */}
+        {broadcastSuccess && (
+          <Button
+            colorScheme="blue"
+            size="lg"
+            width="100%"
+            onClick={handleNewTransaction}
+          >
+            <HStack gap={2}>
+              <FaPaperPlane />
+              <Text>Send Another Transaction</Text>
+            </HStack>
+          </Button>
+        )}
+
+        {/* General success/error messages */}
+        {success && !broadcastSuccess && (
           <Box bg="green.900" p={2} borderRadius="md" border="1px solid" borderColor="green.600" w="100%">
             <Text color="green.200" fontSize="sm" textAlign="center">✅ {success}</Text>
           </Box>

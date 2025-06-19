@@ -288,49 +288,30 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Store detected devices in database for future reference
       
 
-      // Get all devices from db (now includes freshly detected ones)
-      const devices: any[] = []; // No DB, use empty array
-      console.log(tag, 'devices from db:', devices);
-
-      if (devices.length === 0) {
-        console.log(tag, 'No devices found after detection, not synced');
-        setIsSync(false);
-        return;
-      }
+      // We have connected devices from the API call above
+      // Skip the database check since we confirmed devices are connected
+      console.log(tag, 'Connected devices confirmed, proceeding with initialization');
 
       // Always try to fetch fresh xpubs on startup to ensure we have the latest
       // This ensures we detect newly connected devices and get their xpubs
       console.log(tag, '🔄 Always fetching fresh xpubs on startup...');
       await getXpubsFromDeviceQueue();
 
-      // After fetching, check final sync status
-      const finalDevices: any[] = []; // No DB, use empty array
+      // Set sync status based on whether we have in-memory xpubs
+      // Since we removed the database, we'll use in-memory xpubs to determine sync status
       const requiredPaths = [
         { path: "m/44'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // Legacy P2PKH (Account level)
         { path: "m/49'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" },  // SegWit P2SH (Account level)
         { path: "m/84'/0'/0'", caip: "bip122:000000000019d6689c085ae165831e93/slip44:0" }   // Native SegWit P2WPKH (Account level)
-      ]; // No DB, use static array
-      let allXpubsPresent = true;
+      ];
       
-      for (const device of finalDevices) {
-        console.log(tag, 'Final check - xpubs for device:', device.device_id);
+      // Check if we have all required xpubs in memory
+      const allXpubsPresent = requiredPaths.every(requiredPath => 
+        fetchedXpubs.some(x => x.path === requiredPath.path && x.caip === requiredPath.caip)
+      );
 
-        const existingXpubs: any[] = []; // No DB, use empty array
-
-        for (const requiredPath of requiredPaths) {
-          const existingXpub = existingXpubs.find(
-            x => x.path === requiredPath.path && x.caip === requiredPath.caip
-          );
-          if (!existingXpub) {
-            allXpubsPresent = false;
-            console.log(tag, `Missing xpub for ${device.device_id} ${requiredPath.path}`);
-          }
-        }
-      }
-
-      // Set final sync status
       setIsSync(allXpubsPresent);
-      console.log(tag, 'Final sync status:', allXpubsPresent);
+      console.log(tag, 'Final sync status based on in-memory xpubs:', allXpubsPresent);
       // Skip the old portfolio API call - we'll use in-memory xpubs via refreshPortfolio
       console.log(tag, 'Skipping database portfolio call - using in-memory xpubs instead');
       
@@ -401,18 +382,17 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     console.log(tag, `📥 Getting receive address for ${asset.symbol} using device queue`);
     
     try {
-      // Get the first device from database
-      const devices: any[] = []; // No DB, use empty array
-      if (!devices || devices.length === 0) {
+      // Get connected devices from the API instead of database
+      const connectedDevices = await DeviceQueueAPI.getConnectedDevices();
+      if (!connectedDevices || connectedDevices.length === 0) {
         throw new Error('No devices available');
       }
-      const device = devices[0];
-      console.log(tag, '🔑 Device object:', device);
-      console.log(tag, '🔑 device.device_id:', device.device_id);
-      if (!device.device_id || typeof device.device_id !== 'string' || device.device_id.length === 0) {
-        throw new Error('Device object missing or invalid device_id: ' + JSON.stringify(device));
+      // Derive the canonical hardware id from the device object returned by Rust
+      const deviceId = getCanonicalDeviceId(connectedDevices[0]);
+      console.log(tag, '🔑 Using deviceId:', deviceId);
+      if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+        throw new Error('Invalid device_id resolved from device object: ' + JSON.stringify(connectedDevices[0]));
       }
-      console.log(tag, '🔑 Using device:', device);
 
       // For Bitcoin, use the first available path (can be enhanced later)
       const receivePath = "m/84'/0'/0'/0/0"; // Native SegWit receive path
@@ -442,7 +422,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // (5) NOW queue the request with our pre-generated ID
       try {
         await DeviceQueueAPI.requestReceiveAddressFromDeviceWithId(
-          device.device_id,
+          deviceId,
           receivePath,
           'Bitcoin',
           'p2wpkh',
@@ -764,10 +744,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   // Listen for device reconnects and purge queue
   useEffect(() => {
     let unlistenConnect: Promise<() => void>;
+    let unlistenDisconnect: Promise<() => void>;
+    
     (async () => {
+      // Handle device connections
       unlistenConnect = listen('device:connected', async (event: any) => {
         const deviceId = event.payload?.device_id || event.payload;
-console.debug('[WalletContext] deviceId from event payload:', deviceId);
+        console.debug('[WalletContext] deviceId from connect event payload:', deviceId);
         try {
           console.log(TAG, 'Device reconnected', deviceId, '- resetting queue');
           await DeviceQueueAPI.resetDeviceQueue(deviceId);
@@ -776,10 +759,39 @@ console.debug('[WalletContext] deviceId from event payload:', deviceId);
           console.error(TAG, 'Failed to reset queue on reconnect:', e);
         }
       });
+      
+      // Handle device disconnections  
+      unlistenDisconnect = listen('device:disconnected', async (event: any) => {
+        const deviceId = event.payload;
+        console.debug('[WalletContext] deviceId from disconnect event payload:', deviceId);
+        try {
+          console.log(TAG, 'Device disconnected', deviceId, '- cleaning up queue');
+          await DeviceQueueAPI.resetDeviceQueue(deviceId);
+          
+          // Clear any pending requests for this device
+          const keysToDelete = [];
+          for (const requestKey of pendingXpubRequests) {
+            if (requestKey.startsWith(deviceId + ':')) {
+              keysToDelete.push(requestKey);
+            }
+          }
+          keysToDelete.forEach(key => pendingXpubRequests.delete(key));
+          
+          // Clear pending receive and signing requests that might be waiting for this device
+          // Note: These use request_id as keys, so we can't easily match by device_id
+          // The timeout mechanisms will handle cleanup, and errors will be thrown when device is gone
+          
+          console.log(TAG, `Cleared ${keysToDelete.length} pending xpub requests for disconnected device`);
+          
+        } catch (e) {
+          console.error(TAG, 'Failed to cleanup queue on disconnect:', e);
+        }
+      });
     })();
 
     return () => {
       unlistenConnect?.then(fn => fn());
+      unlistenDisconnect?.then(fn => fn());
     };
   }, []);
 

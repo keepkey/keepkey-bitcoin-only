@@ -175,7 +175,52 @@ export class PioneerAPI {
     }
   }
 
-      static isCacheExpired(lastUpdated: number): boolean {
+  static async broadcastTransaction(networkId: string, serializedTx: string): Promise<{ txid: string }> {
+    try {
+      console.log('📡 Broadcasting transaction to network:', networkId);
+      console.log('📡 Transaction hex length:', serializedTx.length);
+      console.log('📡 Transaction hex preview:', serializedTx.substring(0, 80) + '...');
+      
+      const response = await axios.post(
+        `${PIONEER_BASE_URL}/api/v1/broadcast`,
+        {
+          networkId,
+          serialized: serializedTx
+        },
+        { 
+          headers: { 
+            'accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      );
+
+      console.log('✅ Transaction broadcast successful!');
+      console.log('📡 Raw broadcast response:', response.data);
+      
+      if (response.data && response.data.txid) {
+        console.log('🆔 Transaction ID:', response.data.txid);
+        return { txid: response.data.txid };
+      } else {
+        throw new Error('Broadcast response missing txid: ' + JSON.stringify(response.data));
+      }
+    } catch (error) {
+      console.error('❌ Transaction broadcast failed:', error);
+      
+      // Extract meaningful error message
+      let errorMessage = 'Unknown broadcast error';
+      if (axios.isAxiosError(error)) {
+        errorMessage = error.response?.data?.message || error.response?.data?.error || error.message;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      throw new Error(`Transaction broadcast failed: ${errorMessage}`);
+    }
+  }
+
+  static isCacheExpired(lastUpdated: number): boolean {
     const now = Math.floor(Date.now() / 1000);
     const cacheAge = now - lastUpdated;
     const maxAge = CACHE_TTL_MINUTES * 60;

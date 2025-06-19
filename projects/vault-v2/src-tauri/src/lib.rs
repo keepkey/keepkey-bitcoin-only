@@ -45,6 +45,32 @@ fn vault_open_support() -> Result<(), String> {
     Ok(())
 }
 
+// Add the missing vault_open_app command to open external URLs
+#[tauri::command]
+async fn vault_open_app(app_handle: tauri::AppHandle, app_id: String, app_name: String, url: String) -> Result<(), String> {
+    println!("Opening app: {} ({}) -> {}", app_name, app_id, url);
+    
+    // Use Tauri's opener plugin to open the URL in the system browser
+    use tauri_plugin_opener::OpenerExt;
+    app_handle.opener().open_url(url, None::<&str>)
+        .map_err(|e| format!("Failed to open URL: {}", e))?;
+    
+    Ok(())
+}
+
+// Add a general command to open any URL in the system browser
+#[tauri::command]
+async fn open_url(app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
+    println!("Opening URL in system browser: {}", url);
+    
+    // Use Tauri's opener plugin to open the URL in the system browser
+    use tauri_plugin_opener::OpenerExt;
+    app_handle.opener().open_url(url, None::<&str>)
+        .map_err(|e| format!("Failed to open URL: {}", e))?;
+    
+    Ok(())
+}
+
 #[tauri::command]
 fn restart_backend_startup(app: tauri::AppHandle) -> Result<(), String> {
     println!("Restarting backend startup process");
@@ -139,6 +165,8 @@ pub fn run() {
             is_first_time_install,
             vault_change_view,
             vault_open_support,
+            vault_open_app,
+            open_url,
             restart_backend_startup,
             // Device operations - unified queue interface
             device::queue::add_to_device_queue,

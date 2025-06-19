@@ -133,6 +133,22 @@ impl EventController {
                         for device in &last_devices {
                             if !current_devices.iter().any(|d| d.unique_id == device.unique_id) {
                                 println!("🔌❌ Device disconnected: {}", device.unique_id);
+                                
+                                // Clean up device queue for disconnected device
+                                if let Some(state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {
+                                    let device_id = device.unique_id.clone();
+                                    // Clone the underlying Arc so it outlives this scope
+                                    let queue_manager_arc = state.inner().clone();
+                                    tokio::spawn(async move {
+                                        println!("♻️ Cleaning up device queue for disconnected device: {}", device_id);
+                                        let mut manager = queue_manager_arc.lock().await;
+                                        if let Some(handle) = manager.remove(&device_id) {
+                                            let _ = handle.shutdown().await;
+                                            println!("✅ Device queue cleaned up for: {}", device_id);
+                                        }
+                                    });
+                                }
+                                
                                 let _ = app_handle.emit("device:disconnected", &device.unique_id);
                             }
                         }

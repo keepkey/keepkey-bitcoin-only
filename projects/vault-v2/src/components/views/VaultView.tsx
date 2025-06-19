@@ -37,33 +37,27 @@ const syncSpin = keyframes`
 
 export const VaultView = ({ onNavigate }: VaultViewProps) => {
   const [isSyncing, setIsSyncing] = useState(false);
-  const { portfolio, fetchedXpubs, loading } = useWallet();
+  const { portfolio, fetchedXpubs, loading, refreshPortfolio } = useWallet();
 
-  // Handle Bitcoin logo click to trigger sync
+  // Handle Bitcoin logo click to refresh portfolio using in-memory xpubs
   const handleBitcoinLogoClick = async () => {
     if (isSyncing) return; // Prevent multiple clicks during sync
     
     setIsSyncing(true);
-    console.log('🔄 VaultView: Bitcoin logo clicked, triggering sync...');
+    console.log('🔄 VaultView: Bitcoin logo clicked, refreshing portfolio using in-memory xpubs...');
+    console.log(`📋 Available xpubs: ${fetchedXpubs.length}`);
     
     try {
-      // Call sync device API directly
-      const response = await fetch('http://localhost:1646/api/v2/sync-device', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      
-      if (response.ok) {
-        const syncResult = await response.json();
-        console.log('✅ VaultView: Device sync successful:', syncResult);
-        
-        // Force portfolio to reload after successful sync
-        window.location.reload();
-      } else {
-        console.error('❌ VaultView: Sync failed:', response.status);
+      if (fetchedXpubs.length === 0) {
+        console.log('⚠️ No xpubs available yet - portfolio refresh will auto-fetch from device');
       }
+      
+      // Use the WalletContext refreshPortfolio method instead of dead endpoint
+      await refreshPortfolio();
+      console.log('✅ VaultView: Portfolio refreshed successfully using Pioneer API');
+      
     } catch (error) {
-      console.error('❌ VaultView: Sync error:', error);
+      console.error('❌ VaultView: Portfolio refresh error:', error);
     } finally {
       // Reset syncing state after 2 seconds minimum
       setTimeout(() => setIsSyncing(false), 2000);

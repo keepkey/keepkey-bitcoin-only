@@ -39,7 +39,14 @@ export const VaultInterface = () => {
     } catch (error) {
       console.error('Failed to open support via backend:', error);
       // Fallback to direct open
-      window.open('https://support.keepkey.com', '_blank');
+              try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('open_url', { url: 'https://support.keepkey.com' });
+        } catch (error) {
+          console.error('Failed to open URL:', error);
+          // Fallback to window.open if Tauri command fails
+          window.open('https://support.keepkey.com', '_blank');
+        }
     }
   };
 
