@@ -11,8 +11,9 @@ import {
   Input,
   Icon,
 } from "@chakra-ui/react";
-import { FaCircle, FaBackspace } from "react-icons/fa";
+import { FaCircle, FaBackspace, FaCheckCircle, FaExclamationTriangle } from "react-icons/fa";
 import { PinPosition, PIN_MATRIX_LAYOUT } from "../../types/pin";
+import confetti from 'canvas-confetti';
 
 interface RecoveryFlowProps {
   deviceId: string;
@@ -47,6 +48,8 @@ type RecoveryState =
   | 'pin-confirm'
   | 'button-confirm'
   | 'phrase-entry'
+  | 'character-success'
+  | 'character-failure'
   | 'complete'
   | 'error';
 
@@ -72,6 +75,9 @@ export function RecoveryFlow({
   const [currentChar, setCurrentChar] = useState(0);
   const [characterInputs, setCharacterInputs] = useState(['', '', '', '']);
   const [isAutoCompleted, setIsAutoCompleted] = useState(false);
+  const [lastCharacterResult, setLastCharacterResult] = useState<'success' | 'failure' | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string>('');
+  const [isRecoveryLocked, setIsRecoveryLocked] = useState(false);
 
   // Input refs for automatic focus management
   const inputRefs = [
@@ -82,6 +88,37 @@ export function RecoveryFlow({
   ];
 
   console.log("🔄 RecoveryFlow - Current state:", state);
+
+  // Confetti animation for success
+  const triggerConfetti = () => {
+    const duration = 3000;
+    const animationEnd = Date.now() + duration;
+    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+    function randomInRange(min: number, max: number) {
+      return Math.random() * (max - min) + min;
+    }
+
+    const interval = setInterval(function() {
+      const timeLeft = animationEnd - Date.now();
+
+      if (timeLeft <= 0) {
+        return clearInterval(interval);
+      }
+
+      const particleCount = 50 * (timeLeft / duration);
+      confetti(Object.assign({}, defaults, { 
+        particleCount,
+        origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 },
+        colors: ['#4FD1C7', '#38B2AC', '#319795', '#2C7A7B']
+      }));
+      confetti(Object.assign({}, defaults, { 
+        particleCount,
+        origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 },
+        colors: ['#68D391', '#48BB78', '#38A169', '#2F855A']
+      }));
+    }, 250);
+  };
 
   // Initialize recovery
   useEffect(() => {
@@ -112,6 +149,7 @@ export function RecoveryFlow({
         console.error("❌ Failed to start recovery:", error);
         setError(`Failed to start recovery: ${error}`);
         setState('error');
+        setIsRecoveryLocked(false); // Unlock on critical error
         onError(`Failed to start recovery: ${error}`);
       }
     };
@@ -186,6 +224,7 @@ export function RecoveryFlow({
             setState('phrase-entry');
             setCurrentWord(result.word_pos);
             setCurrentChar(result.character_pos);
+            setIsRecoveryLocked(true); // Lock the UI during recovery phrase entry
           } catch (error) {
             console.error("Failed to send button ack:", error);
           }
@@ -195,6 +234,7 @@ export function RecoveryFlow({
         setState('phrase-entry');
         setCurrentWord(result.word_pos);
         setCurrentChar(result.character_pos);
+        setIsRecoveryLocked(true); // Lock the UI during recovery phrase entry
       } else if (result.is_complete) {
         console.log("🔄 Recovery completed during PIN setup");
         setState('complete');
@@ -210,6 +250,7 @@ export function RecoveryFlow({
     } catch (error) {
       console.error("❌ Recovery PIN submission failed:", error);
       setError(`PIN submission failed: ${error}`);
+      setIsRecoveryLocked(false); // Unlock on PIN error so user can retry
     } finally {
       setIsProcessing(false);
     }
@@ -230,6 +271,7 @@ export function RecoveryFlow({
     
     if (letter && session) {
       setIsProcessing(true);
+      
       try {
         const result = await invoke<RecoveryProgress>('send_recovery_character', {
           sessionId: session.session_id,
@@ -237,17 +279,56 @@ export function RecoveryFlow({
           action: null,
         });
         
-        setCurrentWord(result.word_pos);
-        setCurrentChar(result.character_pos);
-        setIsAutoCompleted(result.auto_completed);
+        console.log('🔄 Character result:', result);
         
-        if (result.is_complete) {
-          setState('complete');
-          onComplete();
+        // Check if this was successful or failed
+        if (result.error && result.error.includes('Failure')) {
+          setLastCharacterResult('failure');
+          setFeedbackMessage('Incorrect character - please try again');
+          setState('character-failure');
+          
+          // Show failure feedback for 1.5 seconds then return to input
+          setTimeout(() => {
+            setState('phrase-entry');
+            setLastCharacterResult(null);
+            setFeedbackMessage('');
+            // Keep recovery locked during failure - user needs to continue
+          }, 1500);
+        } else {
+          // Character was accepted - update state and continue
+          setCurrentWord(result.word_pos);
+          setCurrentChar(result.character_pos);
+          setIsAutoCompleted(result.auto_completed);
+          
+          if (result.is_complete) {
+            // ONLY show big success animation when ENTIRE recovery is complete
+            triggerConfetti();
+            setLastCharacterResult('success');
+            setFeedbackMessage('Recovery completed successfully!');
+            setState('character-success');
+            setIsRecoveryLocked(false); // Unlock UI on completion
+            
+            setTimeout(() => {
+              setState('complete');
+              onComplete();
+            }, 3000); // Let them enjoy the confetti longer
+          } else {
+            // Just continue normally for individual characters - no animation spam
+            setState('phrase-entry');
+          }
         }
       } catch (error) {
         console.error('Failed to send character:', error);
-        onError(`Failed to send character: ${error}`);
+        setLastCharacterResult('failure');
+        setFeedbackMessage(`Failed to send character: ${error}`);
+        setState('character-failure');
+        
+        setTimeout(() => {
+          setState('phrase-entry');
+          setLastCharacterResult(null);
+          setFeedbackMessage('');
+          // Keep recovery locked - user needs to continue or manually exit
+        }, 2000);
       } finally {
         setIsProcessing(false);
       }
@@ -262,6 +343,7 @@ export function RecoveryFlow({
     if (currentWord === 0 && currentChar === 0) return;
     
     setIsProcessing(true);
+    
     try {
       const result = await invoke<RecoveryProgress>('send_recovery_character', {
         sessionId: session.session_id,
@@ -271,6 +353,7 @@ export function RecoveryFlow({
       
       console.log('🔄 Delete result:', result);
       
+      // Delete was successful - just update state and continue
       setCurrentWord(result.word_pos);
       setCurrentChar(result.character_pos);
       setIsAutoCompleted(result.auto_completed);
@@ -287,12 +370,33 @@ export function RecoveryFlow({
       setCharacterInputs(newInputs);
       
       if (result.is_complete) {
-        setState('complete');
-        onComplete();
+        // ONLY show big success animation when ENTIRE recovery is complete
+        triggerConfetti();
+        setLastCharacterResult('success');
+        setFeedbackMessage('Recovery completed successfully!');
+        setState('character-success');
+        setIsRecoveryLocked(false); // Unlock UI on completion
+        
+        setTimeout(() => {
+          setState('complete');
+          onComplete();
+        }, 3000);
+      } else {
+        // Just continue normally for delete operations - no animation spam
+        setState('phrase-entry');
       }
     } catch (error) {
       console.error('Failed to delete character:', error);
-      onError(`Failed to delete character: ${error}`);
+      setLastCharacterResult('failure');
+      setFeedbackMessage(`Failed to delete character: ${error}`);
+      setState('character-failure');
+      
+      setTimeout(() => {
+        setState('phrase-entry');
+        setLastCharacterResult(null);
+        setFeedbackMessage('');
+        // Keep recovery locked - user needs to continue or manually exit
+      }, 1500);
     } finally {
       setIsProcessing(false);
     }
@@ -568,29 +672,114 @@ export function RecoveryFlow({
     );
   };
 
+
+
+  // Render character success feedback
+  const renderCharacterSuccess = () => (
+    <VStack gap={6}>
+      <Box
+        transform="scale(1.2)"
+        transition="transform 0.3s ease-in-out"
+        style={{
+          animation: 'bounce 0.8s ease-in-out',
+          filter: 'drop-shadow(0 0 20px rgba(72, 187, 120, 0.5))'
+        }}
+      >
+        <Icon as={FaCheckCircle} boxSize={16} color="green.400" />
+      </Box>
+      <Heading size="lg" textAlign="center" color="green.400">
+        Success!
+      </Heading>
+      <Text color="gray.300" textAlign="center">
+        {feedbackMessage}
+      </Text>
+    </VStack>
+  );
+
+  // Render character failure feedback
+  const renderCharacterFailure = () => (
+    <VStack gap={6}>
+      <Box
+        style={{
+          animation: 'shake 0.5s ease-in-out',
+          filter: 'drop-shadow(0 0 20px rgba(245, 101, 101, 0.5))'
+        }}
+      >
+        <Icon as={FaExclamationTriangle} boxSize={16} color="red.400" />
+      </Box>
+      <Heading size="lg" textAlign="center" color="red.400">
+        Try Again
+      </Heading>
+      <Text color="gray.300" textAlign="center">
+        {feedbackMessage}
+      </Text>
+    </VStack>
+  );
+
+  // Prevent escape key and other interruptions when recovery is locked
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isRecoveryLocked && event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    if (isRecoveryLocked) {
+      document.addEventListener('keydown', handleKeyDown, true);
+      return () => document.removeEventListener('keydown', handleKeyDown, true);
+    }
+  }, [isRecoveryLocked]);
+
   // Main render
   return (
-    <div style={{ 
-      position: 'fixed', 
-      top: 0, 
-      left: 0, 
-      right: 0, 
-      bottom: 0, 
-      backgroundColor: 'rgba(0, 0, 0, 0.8)', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      zIndex: 9999 
-    }}>
-      <Box
-        maxW="lg"
-        bg="gray.800"
-        color="white"
-        p={8}
-        borderRadius="lg"
-        boxShadow="xl"
-        w="90%"
+    <>
+      <style>
+        {`
+          @keyframes bounce {
+            0%, 20%, 53%, 80%, 100% { transform: translate3d(0,0,0) scale(1.2); }
+            40%, 43% { transform: translate3d(0, -15px, 0) scale(1.3); }
+            70% { transform: translate3d(0, -7px, 0) scale(1.25); }
+            90% { transform: translate3d(0, -2px, 0) scale(1.22); }
+          }
+          @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); }
+            20%, 40%, 60%, 80% { transform: translateX(8px); }
+          }
+        `}
+      </style>
+      <div 
+        style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          backgroundColor: isRecoveryLocked ? 'rgba(0, 0, 0, 0.95)' : 'rgba(0, 0, 0, 0.8)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          zIndex: 9999 
+        }}
+        onClick={(e) => {
+          // Prevent clicking outside to close when recovery is locked
+          if (isRecoveryLocked) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
       >
+        <Box
+          maxW="lg"
+          bg="gray.800"
+          color="white"
+          p={8}
+          borderRadius="lg"
+          boxShadow="xl"
+          w="90%"
+          onClick={(e) => e.stopPropagation()} // Prevent event bubbling
+        >
         {state === 'initializing' && (
           <VStack gap={4}>
             <Heading size="lg">Starting Recovery...</Heading>
@@ -609,9 +798,14 @@ export function RecoveryFlow({
         
         {state === 'phrase-entry' && renderPhraseEntry()}
         
+        {state === 'character-success' && renderCharacterSuccess()}
+        
+        {state === 'character-failure' && renderCharacterFailure()}
+        
         {state === 'complete' && (
           <VStack gap={4}>
-            <Heading size="lg">Recovery Complete!</Heading>
+            <Icon as={FaCheckCircle} boxSize={16} color="green.400" />
+            <Heading size="lg" color="green.400">Recovery Complete!</Heading>
             <Text color="gray.400">Your wallet has been successfully recovered</Text>
           </VStack>
         )}
@@ -628,7 +822,7 @@ export function RecoveryFlow({
           </VStack>
         )}
         
-        {onBack && state !== 'error' && state !== 'complete' && (
+        {onBack && state !== 'error' && state !== 'complete' && !isRecoveryLocked && (
           <Box mt={4} textAlign="center">
             <Button
               onClick={onBack}
@@ -640,7 +834,16 @@ export function RecoveryFlow({
             </Button>
           </Box>
         )}
+        
+        {isRecoveryLocked && (
+          <Box mt={4} textAlign="center">
+            <Text fontSize="xs" color="yellow.400" textAlign="center">
+              ⚠️ Recovery in progress - please do not disconnect your device
+            </Text>
+          </Box>
+        )}
       </Box>
     </div>
+    </>
   );
 } 
