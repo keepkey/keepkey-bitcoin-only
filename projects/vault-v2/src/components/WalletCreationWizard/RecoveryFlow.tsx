@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Box,
@@ -11,7 +11,7 @@ import {
   Input,
   Icon,
 } from "@chakra-ui/react";
-import { FaCircle } from "react-icons/fa";
+import { FaCircle, FaBackspace } from "react-icons/fa";
 import { PinPosition, PIN_MATRIX_LAYOUT } from "../../types/pin";
 
 interface RecoveryFlowProps {
@@ -73,6 +73,14 @@ export function RecoveryFlow({
   const [characterInputs, setCharacterInputs] = useState(['', '', '', '']);
   const [isAutoCompleted, setIsAutoCompleted] = useState(false);
 
+  // Input refs for automatic focus management
+  const inputRefs = [
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+  ];
+
   console.log("🔄 RecoveryFlow - Current state:", state);
 
   // Initialize recovery
@@ -110,6 +118,28 @@ export function RecoveryFlow({
     
     startRecovery();
   }, [deviceId, wordCount, passphraseProtection, deviceLabel, state, session, onError]);
+
+  // Focus management for phrase entry
+  useEffect(() => {
+    if (state === 'phrase-entry' && currentChar >= 0 && currentChar < inputRefs.length) {
+      // Focus the current character input
+      const currentInputRef = inputRefs[currentChar];
+      if (currentInputRef.current) {
+        // Small delay to ensure the input is enabled before focusing
+        setTimeout(() => {
+          currentInputRef.current?.focus();
+        }, 100);
+      }
+    }
+  }, [currentChar, state]);
+
+  // Clear character inputs when moving to next word or starting phrase entry
+  useEffect(() => {
+    if (state === 'phrase-entry') {
+      // Reset character inputs when starting a new word or entering phrase entry state
+      setCharacterInputs(['', '', '', '']);
+    }
+  }, [currentWord, state]);
 
   // PIN handling functions
   const handlePinPress = useCallback((position: PinPosition) => {
@@ -221,6 +251,83 @@ export function RecoveryFlow({
       } finally {
         setIsProcessing(false);
       }
+    }
+  };
+
+  // Handle delete/backspace - communicates with device to go back
+  const handleDelete = async () => {
+    if (isProcessing || !session || state !== 'phrase-entry') return;
+    
+    // Only allow delete if we're not at the very beginning
+    if (currentWord === 0 && currentChar === 0) return;
+    
+    setIsProcessing(true);
+    try {
+      const result = await invoke<RecoveryProgress>('send_recovery_character', {
+        sessionId: session.session_id,
+        character: null,
+        action: 'Delete',
+      });
+      
+      console.log('🔄 Delete result:', result);
+      
+      setCurrentWord(result.word_pos);
+      setCurrentChar(result.character_pos);
+      setIsAutoCompleted(result.auto_completed);
+      
+      // Update local input state to reflect the new position
+      const newInputs = [...characterInputs];
+      if (result.character_pos < newInputs.length) {
+        newInputs[result.character_pos] = '';
+        // Clear any inputs after the current position
+        for (let i = result.character_pos + 1; i < newInputs.length; i++) {
+          newInputs[i] = '';
+        }
+      }
+      setCharacterInputs(newInputs);
+      
+      if (result.is_complete) {
+        setState('complete');
+        onComplete();
+      }
+    } catch (error) {
+      console.error('Failed to delete character:', error);
+      onError(`Failed to delete character: ${error}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Keyboard navigation for character inputs
+  const handleKeyDown = (event: React.KeyboardEvent, index: number) => {
+    if (isProcessing || state !== 'phrase-entry') return;
+
+    switch (event.key) {
+      case 'Backspace':
+        event.preventDefault();
+        handleDelete();
+        break;
+      case 'ArrowLeft':
+        event.preventDefault();
+        if (index > 0) {
+          inputRefs[index - 1]?.current?.focus();
+        }
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        if (index < inputRefs.length - 1) {
+          inputRefs[index + 1]?.current?.focus();
+        }
+        break;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        if (currentWord < wordCount - 1) {
+          handleNextWord();
+        } else {
+          handleRecoveryComplete();
+        }
+        break;
     }
   };
 
@@ -408,8 +515,10 @@ export function RecoveryFlow({
           {characterInputs.map((value, index) => (
             <Input
               key={index}
+              ref={inputRefs[index]}
               value={value}
               onChange={(e) => handleCharacterInput(index, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(e, index)}
               maxLength={1}
               w="60px"
               h="60px"
@@ -432,10 +541,23 @@ export function RecoveryFlow({
         {/* Action buttons */}
         <HStack gap={4} w="100%">
           <Button
+            onClick={handleDelete}
+            variant="outline"
+            size="lg"
+            flex={1}
+            disabled={isProcessing || (currentWord === 0 && currentChar === 0)}
+          >
+            <HStack gap={2}>
+              <Icon as={FaBackspace} />
+              <Text>Delete</Text>
+            </HStack>
+          </Button>
+          
+          <Button
             onClick={currentWord < wordCount - 1 ? handleNextWord : handleRecoveryComplete}
             colorScheme="blue"
             size="lg"
-            flex={1}
+            flex={2}
             disabled={isProcessing || !canProceed}
           >
             {isProcessing ? "Processing..." : 
