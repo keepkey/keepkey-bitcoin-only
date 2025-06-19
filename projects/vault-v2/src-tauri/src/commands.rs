@@ -1103,14 +1103,12 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
     };
     
     if let Some(features) = features {
-        // Check if device is in bootloader mode or needs bootloader update
         let latest_bootloader_version = "2.1.5".to_string();
-        let mut needs_bootloader_update = false;
-        let current_bootloader_version;
         
+        // Only check bootloader updates when device is actually in bootloader mode
         if features.bootloader_mode {
             // Device is in bootloader mode - determine bootloader version from firmware version
-            current_bootloader_version = if features.version.starts_with("1.") {
+            let current_bootloader_version = if features.version.starts_with("1.") {
                 features.version.clone() // OOB bootloader versions like 1.0.3
             } else {
                 "Unknown bootloader".to_string()
@@ -1118,7 +1116,7 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             
             // Any device in bootloader mode needs update (except latest versions)
             // Use proper semantic version comparison instead of string comparison
-            needs_bootloader_update = match semver::Version::parse(&current_bootloader_version) {
+            let needs_bootloader_update = match semver::Version::parse(&current_bootloader_version) {
                 Ok(current_ver) => {
                     if let Ok(latest_ver) = semver::Version::parse(&latest_bootloader_version) {
                         current_ver < latest_ver
@@ -1136,23 +1134,19 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             
             println!("🔧 Device in bootloader mode: {} -> needs update: {}", 
                     current_bootloader_version, needs_bootloader_update);
-        } else if let Some(bootloader_version) = &features.bootloader_version {
-            // Device is in normal mode but we have bootloader version info
-            current_bootloader_version = bootloader_version.clone();
-            needs_bootloader_update = current_bootloader_version != latest_bootloader_version && 
-                                     current_bootloader_version != "2.1.4";
+            
+            status.bootloader_check = Some(BootloaderCheck {
+                current_version: current_bootloader_version,
+                latest_version: latest_bootloader_version,
+                needs_update: needs_bootloader_update,
+            });
+            status.needs_bootloader_update = needs_bootloader_update;
         } else {
-            // Device is in normal mode and no bootloader version info available
-            current_bootloader_version = "Unknown".to_string();
-            needs_bootloader_update = false;
+            // Device is in normal firmware mode - no bootloader check needed
+            println!("🔧 Device in normal firmware mode v{} - skipping bootloader check", features.version);
+            status.bootloader_check = None;
+            status.needs_bootloader_update = false;
         }
-        
-        status.bootloader_check = Some(BootloaderCheck {
-            current_version: current_bootloader_version,
-            latest_version: latest_bootloader_version,
-            needs_update: needs_bootloader_update,
-        });
-        status.needs_bootloader_update = needs_bootloader_update;
         
         // Check firmware version (only for devices not in bootloader mode)
         if !features.bootloader_mode {
@@ -1166,6 +1160,9 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
                 needs_update,
             });
             status.needs_firmware_update = needs_update;
+            
+            println!("🔧 Firmware check: {} vs {} -> needs update: {}", 
+                    current_version, latest_version, needs_update);
         } else {
             // Device is in bootloader mode - firmware check not applicable
             status.firmware_check = None;
@@ -1190,6 +1187,9 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
                 needs_setup,
             });
             status.needs_initialization = needs_setup;
+            
+            println!("🔧 Initialization check: initialized={}, needs_setup={}", 
+                    initialized, needs_setup);
         } else {
             // Device is in bootloader mode - initialization status unknown
             // For OOB bootloaders (version 1.x), assume they'll need initialization after bootloader update
@@ -1232,9 +1232,7 @@ pub fn convert_features_to_device_features(raw_features: keepkey_rust::messages:
         ),
         firmware_hash: raw_features.firmware_hash.map(hex::encode),
         bootloader_hash: raw_features.bootloader_hash.clone().map(hex::encode),
-        bootloader_version: raw_features.bootloader_hash
-            .map(hex::encode)
-            .and_then(|hash| Some(hash)),
+        bootloader_version: None, // TODO: Implement proper hash-to-version mapping if needed
         initialized: raw_features.initialized.unwrap_or(false),
         imported: raw_features.imported,
         no_backup: raw_features.no_backup.unwrap_or(false),
