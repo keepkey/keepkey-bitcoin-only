@@ -1,9 +1,23 @@
 use tauri::{State, AppHandle, Emitter};
 use std::sync::Arc;
+use std::collections::HashMap;
+use tokio::sync::RwLock;
 
 
 // Import types needed for DeviceRequestWrapper
 use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, DeviceQueueManager, parse_transaction_from_hex};
+
+// Create a cache for device states to remember OOB bootloader status
+lazy_static::lazy_static! {
+    static ref DEVICE_STATE_CACHE: Arc<RwLock<HashMap<String, DeviceStateCache>>> = Arc::new(RwLock::new(HashMap::new()));
+}
+
+#[derive(Debug, Clone)]
+struct DeviceStateCache {
+    is_oob_bootloader: bool,
+    last_features: Option<keepkey_rust::messages::Features>,
+    last_update: std::time::Instant,
+}
 
 #[tauri::command]
 pub async fn add_to_device_queue(
@@ -68,10 +82,32 @@ pub async fn add_to_device_queue(
     // We fetch the current features via the queue (which opens a temporary
     // transport) so that we have accurate mode/version information.
     let raw_features_opt = match keepkey_rust::device_queue::DeviceQueueHandle::get_features(&queue_handle).await {
-        Ok(f) => Some(f),
+        Ok(f) => {
+            // Successfully got features, update cache
+            let mut cache = DEVICE_STATE_CACHE.write().await;
+            cache.insert(request.device_id.clone(), DeviceStateCache {
+                is_oob_bootloader: false,
+                last_features: Some(f.clone()),
+                last_update: std::time::Instant::now(),
+            });
+            Some(f)
+        },
         Err(e) => {
             eprintln!("⚠️  Unable to fetch features for status check: {e}");
-            None
+            
+            // Check if we have cached state for this device
+            let cache = DEVICE_STATE_CACHE.read().await;
+            if let Some(cached_state) = cache.get(&request.device_id) {
+                // If we know this is an OOB bootloader from a previous successful check
+                if cached_state.is_oob_bootloader {
+                    println!("📋 Using cached OOB bootloader state for device {}", request.device_id);
+                    cached_state.last_features.clone()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         }
     };
 
@@ -80,17 +116,38 @@ pub async fn add_to_device_queue(
         let converted = crate::commands::convert_features_to_device_features(raw.clone());
         crate::commands::evaluate_device_status(request.device_id.clone(), Some(&converted))
     } else {
-        // Fallback – we couldn’t grab features, assume unknown status
+        // Fallback – we couldn't grab features, assume unknown status
         crate::commands::evaluate_device_status(request.device_id.clone(), None)
     };
 
-    // If we couldn't fetch features AND this isn't a plain GetFeatures request, fail closed
+    // Special handling for devices that might be in OOB bootloader mode
+    let is_likely_oob_bootloader = raw_features_opt.is_none() && request_type != "GetFeatures";
+    
+    // If we couldn't fetch features AND this isn't a plain GetFeatures request
     if raw_features_opt.is_none() && request_type != "GetFeatures" {
-        println!("🚫 Rejecting {request_type} request – unable to determine device state (features fetch failed)");
-        return Err("Device state unknown – cannot service request until communication succeeds.".to_string());
+        // Check if the device was successfully detected during initial connection
+        // (which would have used Initialize for OOB bootloaders)
+        let devices = keepkey_rust::features::list_connected_devices();
+        let device_exists = devices.iter().any(|d| d.unique_id == request.device_id);
+        
+        if device_exists {
+            println!("🔧 Device {} exists but GetFeatures failed - likely OOB bootloader, allowing request to proceed", request.device_id);
+            // Mark this device as OOB bootloader in cache
+            let mut cache = DEVICE_STATE_CACHE.write().await;
+            cache.insert(request.device_id.clone(), DeviceStateCache {
+                is_oob_bootloader: true,
+                last_features: None,
+                last_update: std::time::Instant::now(),
+            });
+        } else {
+            println!("🚫 Rejecting {request_type} request – unable to determine device state (features fetch failed)");
+            return Err("Device state unknown – cannot service request until communication succeeds.".to_string());
+        }
     }
 
-    if status.needs_bootloader_update || status.needs_firmware_update || status.needs_initialization {
+    // Only block requests if we have confirmed the device needs updates
+    // Don't block if we simply can't determine the state (OOB bootloader case)
+    if raw_features_opt.is_some() && (status.needs_bootloader_update || status.needs_firmware_update || status.needs_initialization) {
         let mut reasons = Vec::new();
         if status.needs_bootloader_update { reasons.push("bootloader update"); }
         if status.needs_firmware_update { reasons.push("firmware update"); }
