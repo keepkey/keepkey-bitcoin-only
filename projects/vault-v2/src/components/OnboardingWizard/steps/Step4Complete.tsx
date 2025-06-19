@@ -1,65 +1,58 @@
-import { Box, Button, Card, HStack, Text, VStack, Icon } from "@chakra-ui/react";
+import { Box, Card, HStack, Text, VStack, Icon } from "@chakra-ui/react";
 import { FaCheckCircle, FaRocket } from "react-icons/fa";
 
-interface StepProps {
-  onNext: () => void;
-  onPrevious: () => void;
-}
+// Step components no longer need props - navigation handled by main wizard
 
-export function Step4Complete({ onNext, onPrevious }: StepProps) {
+export function Step4Complete() {
   return (
-    <VStack align="center" justify="center" minH="400px" gap={6}>
-      <Icon asChild color="green.500" boxSize={20}>
-        <FaCheckCircle />
-      </Icon>
-      
-      <Card.Root width="full" maxWidth="md" bg="gray.900" borderColor="gray.700">
+    <Box width="full" maxWidth="lg">
+      <Card.Root bg="gray.900" borderColor="gray.700">
         <Card.Body>
-          <VStack gap={4} align="center" textAlign="center">
-            <Text fontSize="2xl" fontWeight="bold" color="green.400">
-              Setup Complete!
-            </Text>
-            <Text color="gray.400">
-              You're all set to start using KeepKey Desktop.
-            </Text>
-            <Text color="gray.400">
-              Your preferences have been saved and you can now connect your KeepKey device.
-            </Text>
+          <VStack gap={3} align="center" textAlign="center">
+            <Icon asChild color="green.500" boxSize={12}>
+              <FaCheckCircle />
+            </Icon>
             
-            <Box w="full" mt={4} p={4} bg="gray.800" borderRadius="md">
-              <HStack gap={3} justify="center">
-                <Icon asChild color="yellow.400">
+            <VStack gap={2}>
+              <Text fontSize="2xl" fontWeight="bold" color="green.400">
+                Setup Complete!
+              </Text>
+              <Text color="gray.400" fontSize="lg">
+                You're all set to start using KeepKey Desktop.
+              </Text>
+              <Text color="gray.300">
+                Your preferences have been saved and you can now connect your KeepKey device.
+              </Text>
+            </VStack>
+            
+            <Box w="full" mt={3} p={4} bg="gradient-to-r from-blue.900 to-green.900" borderRadius="lg" borderWidth="2px" borderColor="green.600">
+              <HStack gap={3} justify="center" mb={3}>
+                <Icon asChild color="yellow.400" boxSize={6}>
                   <FaRocket />
                 </Icon>
-                <Text color="white" fontWeight="medium">Next Steps</Text>
+                <Text color="white" fontWeight="bold" fontSize="lg">Next Steps</Text>
               </HStack>
-              <Text color="gray.400" fontSize="sm" mt={2}>
-                Connect your KeepKey device via USB to get started with managing your crypto assets securely.
+              <VStack gap={2}>
+                <Text color="green.200" fontSize="sm" fontWeight="medium">
+                  1. Connect your KeepKey device via USB
+                </Text>
+                <Text color="green.200" fontSize="sm" fontWeight="medium">
+                  2. Follow the device setup prompts
+                </Text>
+                <Text color="green.200" fontSize="sm" fontWeight="medium">
+                  3. Start managing your crypto assets securely
+                </Text>
+              </VStack>
+            </Box>
+            
+            <Box textAlign="center" p={3} bg="gray.800" borderRadius="md" borderWidth="1px" borderColor="gray.600">
+              <Text color="gray.400" fontSize="sm">
+                💡 Need help? Visit our support center or check the built-in tutorials
               </Text>
             </Box>
           </VStack>
         </Card.Body>
       </Card.Root>
-
-      <HStack gap={4}>
-        <Button 
-          variant="outline" 
-          onClick={onPrevious}
-          borderColor="gray.600"
-          color="gray.300"
-          _hover={{ bg: "gray.700" }}
-        >
-          Previous
-        </Button>
-        <Button 
-          colorScheme="green" 
-          onClick={onNext}
-          size="lg"
-          px={8}
-        >
-          Get Started
-        </Button>
-      </HStack>
-    </VStack>
+    </Box>
   );
 } 

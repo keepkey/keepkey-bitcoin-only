@@ -118,6 +118,16 @@ function App() {
         const setupEventListeners = async () => {
             try {
                 console.log('🎯 Setting up event listeners...');
+                
+                // Signal backend that frontend is ready to receive events FIRST
+                try {
+                    console.log('🎯 Signaling backend that frontend is ready...');
+                    await invoke('frontend_ready');
+                    console.log('✅ Frontend ready signal sent successfully');
+                } catch (error) {
+                    console.log('DeviceUpdateManager: frontend_ready command failed:', error);
+                }
+                
                 // Listen for status updates from backend
                 console.log('🎯 Setting up status:update listener...');
                 unlistenStatusUpdate = await listen('status:update', (event) => {

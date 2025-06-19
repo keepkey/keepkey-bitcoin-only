@@ -11,10 +11,7 @@ import { FaGlobe } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-interface StepProps {
-  onNext: () => void;
-  onPrevious: () => void;
-}
+// Step components no longer need props - navigation handled by main wizard
 
 const LANGUAGES = [
   { key: "en", label: "English" },
@@ -29,7 +26,7 @@ const LANGUAGES = [
   { key: "ko", label: "한국어" },
 ];
 
-export function Step0Language({ onNext }: StepProps) {
+export function Step0Language() {
   const [selectedLanguage, setSelectedLanguage] = useState("en");
 
   useEffect(() => {
@@ -50,21 +47,26 @@ export function Step0Language({ onNext }: StepProps) {
 
   const handleLanguageChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedLanguage(event.target.value);
+    // Auto-save language preference when changed
+    handleLanguageSave(event.target.value);
   };
 
-  const handleNext = async () => {
+  const handleLanguageSave = async (language: string) => {
     try {
-      // Save language preference
-      await invoke("set_preference", { key: "language", value: selectedLanguage });
-      onNext();
+      // Save language preference immediately
+      await invoke("set_preference", { key: "language", value: language });
+      console.log("Language preference saved:", language);
     } catch (error) {
       console.error("Failed to save language preference:", error);
     }
   };
 
+  // Language preference is automatically saved when changed
+  // Navigation is handled by the main wizard component
+
   return (
-    <VStack align="center" justify="center" minH="400px" gap={6}>
-      <Card.Root width="full" maxWidth="md" bg="gray.900" borderColor="gray.700">
+    <Box width="full" maxWidth="lg">
+      <Card.Root bg="gray.900" borderColor="gray.700">
         <Card.Header bg="gray.850">
           <HStack justify="center" gap={3}>
             <Icon asChild color="green.500">
@@ -76,47 +78,45 @@ export function Step0Language({ onNext }: StepProps) {
           </HStack>
         </Card.Header>
         <Card.Body>
-          <VStack gap={4}>
-            <Text color="gray.400">
+          <VStack gap={6}>
+            <Text color="gray.400" textAlign="center">
               Choose your preferred language for the KeepKey Desktop application.
             </Text>
-            <select
-              value={selectedLanguage}
-              onChange={handleLanguageChange}
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                fontSize: '1rem',
-                borderRadius: '0.375rem',
-                border: '1px solid #4A5568',
-                backgroundColor: '#2D3748',
-                color: '#E2E8F0'
-              }}
-            >
-              {LANGUAGES.map((lang) => (
-                <option key={lang.key} value={lang.key} style={{ backgroundColor: '#2D3748' }}>
-                  {lang.label}
-                </option>
-              ))}
-            </select>
+            
+            <Box width="full" maxWidth="md">
+              <Text color="white" fontSize="sm" mb={2} fontWeight="medium">
+                Language / Idioma / Langue / Sprache
+              </Text>
+              <select
+                value={selectedLanguage}
+                onChange={handleLanguageChange}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  fontSize: '1rem',
+                  borderRadius: '0.5rem',
+                  border: '2px solid #4A5568',
+                  backgroundColor: '#2D3748',
+                  color: '#E2E8F0',
+                  cursor: 'pointer'
+                }}
+              >
+                {LANGUAGES.map((lang) => (
+                  <option key={lang.key} value={lang.key} style={{ backgroundColor: '#2D3748' }}>
+                    {lang.label}
+                  </option>
+                ))}
+              </select>
+            </Box>
+            
+            <Box textAlign="center" mt={4}>
+              <Text color="green.400" fontSize="sm">
+                ✓ Language will be applied immediately
+              </Text>
+            </Box>
           </VStack>
         </Card.Body>
       </Card.Root>
-
-      <HStack gap={4}>
-        <Button 
-          variant="outline" 
-          disabled
-          borderColor="gray.600"
-          color="gray.500"
-          _hover={{ bg: "gray.700" }}
-        >
-          Previous
-        </Button>
-        <Button colorScheme="green" onClick={handleNext}>
-          Next
-        </Button>
-      </HStack>
-    </VStack>
+    </Box>
   );
 } 

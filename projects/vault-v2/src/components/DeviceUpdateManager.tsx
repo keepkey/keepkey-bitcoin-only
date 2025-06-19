@@ -56,7 +56,10 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
 
   // Function to handle device status and determine which dialog to show
   const handleDeviceStatus = (status: DeviceStatus) => {
-    console.log('Handling device status:', status)
+    console.log('🔧 DeviceUpdateManager: Handling device status:', status)
+    console.log('🔧 DeviceUpdateManager: Status needs_initialization:', status.needsInitialization)
+    console.log('🔧 DeviceUpdateManager: Status needs_firmware_update:', status.needsFirmwareUpdate)
+    console.log('🔧 DeviceUpdateManager: Status needs_bootloader_update:', status.needsBootloaderUpdate)
     
     // Check if device is in bootloader mode - handle both field formats from backend
     const isInBootloaderMode = status.features?.bootloader_mode || status.features?.bootloaderMode || false
@@ -92,14 +95,16 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       setShowFirmwareUpdate(true)
       setShowWalletCreation(false)
     } else if (status.needsInitialization) {
-      console.log('Device needs initialization')
+      console.log('🔧 DeviceUpdateManager: Device needs initialization - SHOULD SHOW ONBOARDING WIZARD')
+      console.log('🔧 DeviceUpdateManager: Setting showWalletCreation = true')
       setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(false)
       setShowWalletCreation(true)
     } else {
       // Device is ready
-      console.log('Device is ready, no updates needed')
+      console.log('🔧 DeviceUpdateManager: Device is ready, no updates needed')
+      console.log('🔧 DeviceUpdateManager: Calling onComplete() - this will show VaultInterface')
       setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(false)
@@ -122,8 +127,9 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         features: DeviceFeatures
         status: DeviceStatus
       }>('device:features-updated', (event) => {
-        console.log('Device features updated event received:', event.payload)
+        console.log('🔧 DeviceUpdateManager: Device features updated event received:', event.payload)
         const { status } = event.payload
+        console.log('🔧 DeviceUpdateManager: Extracted status from event:', status)
         setDeviceStatus(status)
         setConnectedDeviceId(status.deviceId)
         setRetryCount(0) // Reset retry count on successful event
@@ -185,13 +191,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         if (timeoutId) clearTimeout(timeoutId)
       })
 
-      // Signal backend that frontend is ready to receive events
-      try {
-        console.log('DeviceUpdateManager: Signaling backend that frontend is ready...')
-        await invoke('frontend_ready')
-      } catch (error) {
-        console.log('DeviceUpdateManager: frontend_ready command not implemented yet, continuing...')
-      }
+      // Frontend ready signal is now sent by App.tsx during initial setup
 
       return async () => {
         if (featuresUnsubscribe) (await featuresUnsubscribe)()
@@ -262,7 +262,18 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     // Don't call onComplete here - wait for user to actually enter bootloader mode
   }
 
-  if (!deviceStatus) return null
+  if (!deviceStatus) {
+    console.log('🔧 DeviceUpdateManager: No deviceStatus, returning null')
+    return null
+  }
+
+  console.log('🔧 DeviceUpdateManager: Rendering with state:', {
+    showWalletCreation,
+    showFirmwareUpdate,
+    showBootloaderUpdate,
+    showEnterBootloaderMode,
+    deviceStatus: deviceStatus?.needsInitialization
+  })
 
   return (
     <>

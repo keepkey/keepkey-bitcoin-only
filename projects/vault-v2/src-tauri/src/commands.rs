@@ -11,6 +11,9 @@ use std::io::Cursor;
 // Removed unused imports that were moved to device/updates.rs
 use crate::logging::{log_device_request, log_device_response, log_raw_device_message};
 use lazy_static;
+use std::path::PathBuf;
+use std::fs;
+use serde_json::Value;
 
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
@@ -1178,7 +1181,10 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             let initialized = features.initialized;
             let has_backup = !features.no_backup;
             let imported = features.imported.unwrap_or(false);
-            let needs_setup = !initialized;
+            // Device needs setup if it has never been initialized OR if the user never created a recovery backup
+            // "no_backup" is true when the device has no backup. We require BOTH `initialized` and `has_backup` to be
+            // true before we say that the device is fully ready for use in the Vault.
+            let needs_setup = !initialized || !has_backup;
             
             status.initialization_check = Some(InitializationCheck {
                 initialized,
@@ -1499,6 +1505,144 @@ pub async fn emit_or_queue_event(app: &AppHandle, event_name: &str, payload: ser
     }
     
     Ok(())
+}
+
+/// Get the config directory path
+fn get_config_dir() -> Result<PathBuf, String> {
+    let home_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not find home directory")?;
+    
+    let config_dir = PathBuf::from(home_dir).join(".keepkey");
+    
+    // Create directory if it doesn't exist
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir)
+            .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    }
+    
+    Ok(config_dir)
+}
+
+/// Get the config file path
+fn get_config_file_path() -> Result<PathBuf, String> {
+    let config_dir = get_config_dir()?;
+    Ok(config_dir.join("keepkey.json"))
+}
+
+/// Load configuration from file
+fn load_config() -> Result<serde_json::Value, String> {
+    let config_path = get_config_file_path()?;
+    
+    if !config_path.exists() {
+        // Return default config if file doesn't exist
+        return Ok(serde_json::json!({
+            "language": "en",
+            "isOnboarded": false,
+            "theme": "dark",
+            "notifications": true
+        }));
+    }
+    
+    let config_str = fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config file: {}", e))?;
+    
+    serde_json::from_str(&config_str)
+        .map_err(|e| format!("Failed to parse config file: {}", e))
+}
+
+/// Save configuration to file
+fn save_config(config: &serde_json::Value) -> Result<(), String> {
+    let config_path = get_config_file_path()?;
+    
+    let config_str = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    
+    fs::write(&config_path, config_str)
+        .map_err(|e| format!("Failed to write config file: {}", e))?;
+    
+    Ok(())
+}
+
+/// Check if this is the first time install
+#[tauri::command]
+pub async fn is_first_time_install() -> Result<bool, String> {
+    let config = load_config()?;
+    let is_onboarded = config.get("isOnboarded")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    
+    Ok(!is_onboarded)
+}
+
+/// Check if user is onboarded
+#[tauri::command]
+pub async fn is_onboarded() -> Result<bool, String> {
+    let config = load_config()?;
+    let is_onboarded = config.get("isOnboarded")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    
+    Ok(is_onboarded)
+}
+
+/// Mark onboarding as completed
+#[tauri::command]
+pub async fn set_onboarding_completed() -> Result<(), String> {
+    let mut config = load_config()?;
+    
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("isOnboarded".to_string(), serde_json::Value::Bool(true));
+    }
+    
+    save_config(&config)?;
+    println!("Onboarding marked as completed");
+    Ok(())
+}
+
+/// Get a preference value
+#[tauri::command]
+pub async fn get_preference(key: String) -> Result<Option<String>, String> {
+    let config = load_config()?;
+    
+    let value = config.get(&key)
+        .and_then(|v| match v {
+            Value::String(s) => Some(s.clone()),
+            Value::Bool(b) => Some(b.to_string()),
+            Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        });
+    
+    Ok(value)
+}
+
+/// Set a preference value
+#[tauri::command]
+pub async fn set_preference(key: String, value: String) -> Result<(), String> {
+    let mut config = load_config()?;
+    
+    if let Some(obj) = config.as_object_mut() {
+        // Try to parse as different types
+        let parsed_value = if value == "true" || value == "false" {
+            serde_json::Value::Bool(value == "true")
+        } else if let Ok(num) = value.parse::<i64>() {
+            serde_json::Value::Number(serde_json::Number::from(num))
+        } else {
+            serde_json::Value::String(value)
+        };
+        
+        obj.insert(key, parsed_value);
+    }
+    
+    save_config(&config)?;
+    Ok(())
+}
+
+/// Debug onboarding state
+#[tauri::command]
+pub async fn debug_onboarding_state() -> Result<String, String> {
+    let config = load_config()?;
+    Ok(format!("Config: {}", serde_json::to_string_pretty(&config).unwrap_or_else(|_| "Unable to serialize".to_string())))
 }
 
 // Bootloader and firmware update functions have been moved to device/updates.rs for better organization

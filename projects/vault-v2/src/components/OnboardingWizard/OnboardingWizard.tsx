@@ -28,12 +28,7 @@ interface Step {
   id: string;
   label: string;
   description: string;
-  component: React.ComponentType<StepProps>;
-}
-
-interface StepProps {
-  onNext: () => void;
-  onPrevious: () => void;
+  component: React.ComponentType;
 }
 
 const STEPS: Step[] = [
@@ -217,8 +212,16 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
         </HStack>
 
         {/* Content */}
-        <Box p={6} minH="350px" bg="gray.800">
-          <StepComponent onNext={handleNext} onPrevious={handlePrevious} />
+        <Box
+          p={4}
+          maxH="60vh"
+          overflowY="auto"
+          bg="gray.800"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <StepComponent />
         </Box>
 
         {/* Footer */}
@@ -241,8 +244,9 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
               <Button
                 colorScheme="green"
                 onClick={handleNext}
+                size="lg"
               >
-                {currentStep === STEPS.length - 1 ? "Complete" : "Next"}
+                {currentStep === STEPS.length - 1 ? "Complete Setup" : "Next"}
               </Button>
             </HStack>
           </HStack>

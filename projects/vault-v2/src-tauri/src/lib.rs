@@ -18,12 +18,7 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-// Onboarding related commands
-#[tauri::command]
-fn is_first_time_install() -> Result<bool, String> {
-    // For now, return false - can be enhanced to check actual installation state
-    Ok(false)
-}
+// Onboarding related commands moved to commands.rs
 
 
 
@@ -171,7 +166,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
-            is_first_time_install,
             vault_change_view,
             vault_open_support,
             vault_open_app,
@@ -197,6 +191,13 @@ pub fn run() {
             commands::get_device_log_path,
             commands::get_recent_device_logs,
             commands::cleanup_device_logs,
+            // Configuration and onboarding commands
+            commands::is_first_time_install,
+            commands::is_onboarded,
+            commands::set_onboarding_completed,
+            commands::get_preference,
+            commands::set_preference,
+            commands::debug_onboarding_state,
             // Test commands
             commands::test_device_queue,
             commands::test_status_emission
