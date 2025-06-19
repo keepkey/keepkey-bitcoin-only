@@ -642,6 +642,8 @@ export function RecoveryFlow({
     if (isProcessing || !session) return;
     
     setIsProcessing(true);
+    console.log("🔄 Attempting recovery completion...");
+    
     try {
       const result = await safeDeviceInvoke<RecoveryProgress>('send_recovery_character', {
         sessionId: session.session_id,
@@ -650,13 +652,18 @@ export function RecoveryFlow({
       });
       
       if (!result) {
-        // safeDeviceInvoke returned null due to error during recovery
-        console.warn("🛡️ Recovery complete failed but recovery is locked - staying in current state");
+        // safeDeviceInvoke returned null due to error during recovery - show error to user
+        console.error("🔄 Recovery completion failed - showing error to user");
+        setLastCharacterResult('failure');
+        setFeedbackMessage('Recovery completion failed. Please verify your recovery phrase is correct and try again.');
+        setState('character-failure');
+        setIsRecoveryLocked(false); // Unlock so user can retry or exit
         return;
       }
       
       if (result.is_complete) {
         // Recovery completed successfully
+        console.log("🎉 Recovery completed successfully!");
         triggerConfetti();
         setLastCharacterResult('success');
         setFeedbackMessage('Recovery completed successfully!');
@@ -670,6 +677,10 @@ export function RecoveryFlow({
       } else {
         // Recovery not complete yet - this shouldn't happen when user clicks "Complete"
         console.warn("🔄 Recovery completion returned but not marked as complete");
+        setLastCharacterResult('failure');
+        setFeedbackMessage('Recovery completion unsuccessful. Please continue entering your recovery phrase.');
+        setState('character-failure');
+        setIsRecoveryLocked(false);
       }
     } catch (error) {
       console.error('Failed to complete recovery:', error);
