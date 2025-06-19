@@ -1071,45 +1071,80 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
     };
     
     if let Some(features) = features {
-        // Check bootloader version
-        if let Some(bootloader_version) = &features.bootloader_version {
-            let current_version = bootloader_version.clone();
-            let latest_version = "2.1.5".to_string(); // Latest bootloader version
-            let needs_update = current_version != latest_version && current_version != "2.1.4";
+        // Check if device is in bootloader mode or needs bootloader update
+        let latest_bootloader_version = "2.1.5".to_string();
+        let mut needs_bootloader_update = false;
+        let current_bootloader_version;
+        
+        if features.bootloader_mode {
+            // Device is in bootloader mode - determine bootloader version from firmware version
+            current_bootloader_version = if features.version.starts_with("1.") {
+                features.version.clone() // OOB bootloader versions like 1.0.3
+            } else {
+                "Unknown bootloader".to_string()
+            };
             
-            status.bootloader_check = Some(BootloaderCheck {
+            // Any device in bootloader mode needs update (except latest versions)
+            needs_bootloader_update = current_bootloader_version != latest_bootloader_version && 
+                                     current_bootloader_version != "2.1.4";
+            
+            println!("🔧 Device in bootloader mode: {} -> needs update: {}", 
+                    current_bootloader_version, needs_bootloader_update);
+        } else if let Some(bootloader_version) = &features.bootloader_version {
+            // Device is in normal mode but we have bootloader version info
+            current_bootloader_version = bootloader_version.clone();
+            needs_bootloader_update = current_bootloader_version != latest_bootloader_version && 
+                                     current_bootloader_version != "2.1.4";
+        } else {
+            // Device is in normal mode and no bootloader version info available
+            current_bootloader_version = "Unknown".to_string();
+            needs_bootloader_update = false;
+        }
+        
+        status.bootloader_check = Some(BootloaderCheck {
+            current_version: current_bootloader_version,
+            latest_version: latest_bootloader_version,
+            needs_update: needs_bootloader_update,
+        });
+        status.needs_bootloader_update = needs_bootloader_update;
+        
+        // Check firmware version (only for devices not in bootloader mode)
+        if !features.bootloader_mode {
+            let current_version = features.version.clone();
+            let latest_version = "7.10.0".to_string(); // Latest firmware version
+            let needs_update = !current_version.starts_with("7.10.");
+            
+            status.firmware_check = Some(FirmwareCheck {
                 current_version: current_version.clone(),
                 latest_version: latest_version.clone(),
                 needs_update,
             });
-            status.needs_bootloader_update = needs_update;
+            status.needs_firmware_update = needs_update;
+        } else {
+            // Device is in bootloader mode - firmware check not applicable
+            status.firmware_check = None;
+            status.needs_firmware_update = false;
         }
         
-        // Check firmware version
-        let current_version = features.version.clone();
-        let latest_version = "7.10.0".to_string(); // Latest firmware version
-        let needs_update = !current_version.starts_with("7.10.") && !features.bootloader_mode;
-        
-        status.firmware_check = Some(FirmwareCheck {
-            current_version: current_version.clone(),
-            latest_version: latest_version.clone(),
-            needs_update,
-        });
-        status.needs_firmware_update = needs_update;
-        
-        // Check initialization status
-        let initialized = features.initialized;
-        let has_backup = !features.no_backup;
-        let imported = features.imported.unwrap_or(false);
-        let needs_setup = !initialized && !features.bootloader_mode;
-        
-        status.initialization_check = Some(InitializationCheck {
-            initialized,
-            has_backup,
-            imported,
-            needs_setup,
-        });
-        status.needs_initialization = needs_setup;
+        // Check initialization status (only for devices not in bootloader mode)
+        if !features.bootloader_mode {
+            let initialized = features.initialized;
+            let has_backup = !features.no_backup;
+            let imported = features.imported.unwrap_or(false);
+            let needs_setup = !initialized;
+            
+            status.initialization_check = Some(InitializationCheck {
+                initialized,
+                has_backup,
+                imported,
+                needs_setup,
+            });
+            status.needs_initialization = needs_setup;
+        } else {
+            // Device is in bootloader mode - initialization check not applicable
+            status.initialization_check = None;
+            status.needs_initialization = false;
+        }
     } else {
         // No features available - device not communicating
         status.connected = false;

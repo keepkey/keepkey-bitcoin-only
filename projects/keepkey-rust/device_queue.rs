@@ -309,17 +309,52 @@ impl DeviceWorker {
     
     /// Handle GetFeatures command with caching
     async fn handle_get_features(&mut self) -> Result<Features> {
-        // Skip caching for Features due to serde compatibility issues
-        // Features are lightweight and we want fresh data anyway
+        // NOTE: We purposely skip normal caching for GetFeatures because features are
+        // lightweight and the user generally expects fresh information about the
+        // device. We still record a miss so that cache-hit ratio maths stay sane.
         self.metrics.record_cache_miss();
-        
-        // Execute on device
+
+        // First attempt the standard GetFeatures call.
         let transport = self.ensure_transport().await?;
-        let response = transport.with_standard_handler().handle(GetFeatures {}.into())?;
-        
+        let response = transport
+            .with_standard_handler()
+            .handle(GetFeatures {}.into())?;
+
         match response {
-            Message::Features(features) => Ok(features),
-            _ => Err(anyhow!("Unexpected response to GetFeatures")),
+            Message::Features(features) => {
+                return Ok(features);
+            }
+            // Some very old bootloaders (so-called "OOB bootloader" devices) do not
+            // recognise the GetFeatures message and will reply with a Failure/Unknown
+            // message instead.  In that scenario the proven workaround is to send an
+            // Initialize message which these legacy bootloaders *do* understand and
+            // which returns a Features structure on success.
+            Message::Failure(_) | _ => {
+                tracing::info!(
+                    "GetFeatures failed, attempting legacy Initialize fallback for {}",
+                    self.device_id
+                );
+
+                // Re-establish transport just in case previous attempt left it in an
+                // undefined state.
+                self.transport = None;
+                let transport = self.ensure_transport().await?;
+
+                use crate::messages::Initialize;
+                let fallback_resp = transport
+                    .with_standard_handler()
+                    .handle(Initialize {}.into())?;
+
+                if let Message::Features(features) = fallback_resp {
+                    tracing::info!(
+                        "Initialize fallback succeeded for device {} (OOB bootloader mode)",
+                        self.device_id
+                    );
+                    return Ok(features);
+                } else {
+                    return Err(anyhow!("Unexpected response to Initialize fallback"));
+                }
+            }
         }
     }
     

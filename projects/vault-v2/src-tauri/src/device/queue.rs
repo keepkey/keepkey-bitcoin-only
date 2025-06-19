@@ -37,11 +37,13 @@ pub async fn add_to_device_queue(
     ).await {
         eprintln!("Failed to log device request: {}", e);
     }
-    
-    // Get or create device queue handle
+
+    // --------------------------------------------------------------
+    // Get or create (and cache) the per-device queue handle
+    // --------------------------------------------------------------
     let queue_handle = {
         let mut manager = queue_manager.lock().await;
-        
+
         if let Some(handle) = manager.get(&request.device_id) {
             handle.clone()
         } else {
@@ -51,14 +53,54 @@ pub async fn add_to_device_queue(
                 .iter()
                 .find(|d| d.unique_id == request.device_id)
                 .ok_or_else(|| format!("Device {} not found", request.device_id))?;
-                
+
             // Spawn a new device worker using the real keepkey_rust implementation
             let handle = keepkey_rust::device_queue::DeviceQueueFactory::spawn_worker(request.device_id.clone(), device_info.clone());
             manager.insert(request.device_id.clone(), handle.clone());
             handle
         }
     };
-    
+
+    // ------------------------------------------------------------------
+    // --------------------------------------------------------------
+    // Pre-flight status check – ensure the device can service this request
+    // ------------------------------------------------------------------
+    // We fetch the current features via the queue (which opens a temporary
+    // transport) so that we have accurate mode/version information.
+    let raw_features_opt = match keepkey_rust::device_queue::DeviceQueueHandle::get_features(&queue_handle).await {
+        Ok(f) => Some(f),
+        Err(e) => {
+            eprintln!("⚠️  Unable to fetch features for status check: {e}");
+            None
+        }
+    };
+
+    let status = if let Some(raw) = &raw_features_opt {
+        // Convert to the simplified struct used by the evaluator
+        let converted = crate::commands::convert_features_to_device_features(raw.clone());
+        crate::commands::evaluate_device_status(request.device_id.clone(), Some(&converted))
+    } else {
+        // Fallback – we couldn’t grab features, assume unknown status
+        crate::commands::evaluate_device_status(request.device_id.clone(), None)
+    };
+
+    // If we couldn't fetch features AND this isn't a plain GetFeatures request, fail closed
+    if raw_features_opt.is_none() && request_type != "GetFeatures" {
+        println!("🚫 Rejecting {request_type} request – unable to determine device state (features fetch failed)");
+        return Err("Device state unknown – cannot service request until communication succeeds.".to_string());
+    }
+
+    if status.needs_bootloader_update || status.needs_firmware_update || status.needs_initialization {
+        let mut reasons = Vec::new();
+        if status.needs_bootloader_update { reasons.push("bootloader update"); }
+        if status.needs_firmware_update { reasons.push("firmware update"); }
+        if status.needs_initialization   { reasons.push("initialization"); }
+        let reason_str = reasons.join(", ");
+        println!("🚫 Rejecting {request_type} request – device requires {reason_str}");
+        return Err(format!("Device cannot process requests until {} is completed.", reason_str));
+    }
+
+
     // Process the request based on type
     let result = match request.request {
         DeviceRequest::GetXpub { ref path } => {

@@ -721,7 +721,19 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
             const features = event.payload.features;
             
             console.log(listenerTag, `✅ Device ready: ${features.label || 'Unlabeled'} v${features.version}`);
-            console.log(listenerTag, '🔄 Automatically fetching xpubs for ready device...');
+            
+            // Double-check that device is truly ready before fetching xpubs
+            if (features.bootloader_mode || features.bootloaderMode) {
+              console.log(listenerTag, '⚠️ Device in bootloader mode, skipping xpub fetch');
+              return;
+            }
+            
+            if (!features.initialized) {
+              console.log(listenerTag, '⚠️ Device not initialized, skipping xpub fetch');
+              return;
+            }
+            
+            console.log(listenerTag, '🔄 Device is properly ready, fetching xpubs...');
             
             try {
               await getXpubsFromDeviceQueue();

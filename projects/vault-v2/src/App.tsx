@@ -69,6 +69,29 @@ function App() {
     // Function to restart backend startup process
     const { reinitialize } = useWallet();
 
+    // Function to check device status and trigger appropriate dialogs
+    const checkDeviceStatus = async (deviceId: string) => {
+        try {
+            console.log('Checking device status for:', deviceId);
+            const status = await invoke<any>('get_device_status', { deviceId });
+            if (status) {
+                console.log('Device status retrieved:', status);
+                // The DeviceUpdateManager should pick this up via its event listeners
+                // If it doesn't, we might need to emit an event or handle it differently
+            } else {
+                console.log('No device status returned, device may be ready');
+                // Device is ready, no updates needed
+                setDeviceUpdateComplete(true);
+                setLoadingStatus('Device ready');
+            }
+        } catch (error) {
+            console.error('Failed to check device status:', error);
+            // Assume device is ready if status check fails
+            setDeviceUpdateComplete(true);
+            setLoadingStatus('Device ready');
+        }
+    };
+
     const handleLogoClick = async () => {
         if (isRestarting) return; // Prevent multiple clicks
         
@@ -139,6 +162,22 @@ function App() {
                         // Reset update completion state for new device connections
                         setDeviceUpdateComplete(false);
                         console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
+                        
+                        // Check if device is in bootloader mode or needs updates
+                        if (payload.features.bootloader_mode || payload.features.bootloaderMode) {
+                            console.log('🔄 Device in bootloader mode detected, triggering status check...');
+                            setLoadingStatus('Device in bootloader mode - checking updates...');
+                            // Trigger device status check to determine if bootloader update is needed
+                            checkDeviceStatus(payload.device.unique_id);
+                        } else if (!payload.features.initialized) {
+                            console.log('🔄 Device not initialized, triggering status check...');
+                            setLoadingStatus('Device not initialized - checking setup...');
+                            // Device needs initialization, trigger status check
+                            checkDeviceStatus(payload.device.unique_id);
+                        } else {
+                            // Device appears ready, but still check for firmware updates
+                            checkDeviceStatus(payload.device.unique_id);
+                        }
                     }
                 });
 

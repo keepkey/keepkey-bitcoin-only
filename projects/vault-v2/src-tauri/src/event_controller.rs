@@ -77,13 +77,25 @@ impl EventController {
                                                 Some(&features)
                                             );
                                             
-                                            // Emit device:ready event with features (for basic connectivity)
-                                            let ready_payload = serde_json::json!({
-                                                "device": device_for_task,
-                                                "features": features,
-                                                "status": "ready"
-                                            });
-                                            let _ = app_for_task.emit("device:ready", &ready_payload);
+                                            // Only emit device:ready if device is actually ready (not in bootloader mode, no updates needed)
+                                            let is_actually_ready = !status.needs_bootloader_update && 
+                                                                   !status.needs_firmware_update && 
+                                                                   !status.needs_initialization;
+                                            
+                                            if is_actually_ready {
+                                                println!("✅ Device is fully ready, emitting device:ready event");
+                                                let ready_payload = serde_json::json!({
+                                                    "device": device_for_task,
+                                                    "features": features,
+                                                    "status": "ready"
+                                                });
+                                                let _ = app_for_task.emit("device:ready", &ready_payload);
+                                            } else {
+                                                println!("⚠️ Device connected but needs updates (bootloader: {}, firmware: {}, init: {})", 
+                                                        status.needs_bootloader_update, 
+                                                        status.needs_firmware_update, 
+                                                        status.needs_initialization);
+                                            }
                                             
                                             // Emit device:features-updated event with evaluated status (for DeviceUpdateManager)
                                             let features_payload = serde_json::json!({
