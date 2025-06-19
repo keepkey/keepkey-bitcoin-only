@@ -1675,10 +1675,10 @@ pub struct PinMatrixResult {
 }
 
 lazy_static::lazy_static! {
-    static ref PIN_SESSIONS: Arc<Mutex<std::collections::HashMap<String, PinCreationSession>>> =
-        Arc::new(Mutex::new(std::collections::HashMap::new()));
-    static ref DEVICE_PIN_FLOWS: Arc<Mutex<std::collections::HashSet<String>>> =
-        Arc::new(Mutex::new(std::collections::HashSet::new()));
+    static ref PIN_SESSIONS: Arc<std::sync::Mutex<std::collections::HashMap<String, PinCreationSession>>> =
+        Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    static ref DEVICE_PIN_FLOWS: Arc<std::sync::Mutex<std::collections::HashSet<String>>> =
+        Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
 }
 
 /// Start PIN creation process by initiating ResetDevice with PIN protection
@@ -2201,6 +2201,8 @@ lazy_static::lazy_static! {
         Mutex::new(HashMap::new());
     static ref RECOVERY_DEVICE_FLOWS: Mutex<std::collections::HashSet<String>> =
         Mutex::new(std::collections::HashSet::new());
+    static ref RECOVERY_DEVICE_ALIASES: Mutex<HashMap<String, String>> = 
+        Mutex::new(HashMap::new());
 }
 
 /// Start device recovery process
@@ -2386,11 +2388,18 @@ pub async fn send_recovery_character(
         (session.device_id.clone(), session.current_word, session.current_character)
     };
     
+    // Resolve canonical device ID in case the device reconnected with a different ID
+    let canonical_device_id = get_canonical_device_id(&device_id);
+    log::info!("Using canonical device ID: {} (original: {})", canonical_device_id, device_id);
+    
     // Get device queue handle
     let queue_handle = {
         let manager = queue_manager.lock().await;
-        manager.get(&device_id)
-            .ok_or_else(|| format!("Device queue not found for device: {}", device_id))?
+        
+        // Try canonical ID first, then original ID
+        manager.get(&canonical_device_id)
+            .or_else(|| manager.get(&device_id))
+            .ok_or_else(|| format!("Device queue not found for device: {} (canonical: {})", device_id, canonical_device_id))?
             .clone()
     };
     
@@ -2534,11 +2543,18 @@ pub async fn send_recovery_pin_response(
         (session.device_id.clone(), session.current_word, session.current_character)
     };
     
+    // Resolve canonical device ID in case the device reconnected with a different ID
+    let canonical_device_id = get_canonical_device_id(&device_id);
+    log::info!("Using canonical device ID: {} (original: {})", canonical_device_id, device_id);
+    
     // Get device queue handle
     let queue_handle = {
         let manager = queue_manager.lock().await;
-        manager.get(&device_id)
-            .ok_or_else(|| format!("Device queue not found for device: {}", device_id))?
+        
+        // Try canonical ID first, then original ID
+        manager.get(&canonical_device_id)
+            .or_else(|| manager.get(&device_id))
+            .ok_or_else(|| format!("Device queue not found for device: {} (canonical: {})", device_id, canonical_device_id))?
             .clone()
     };
     
@@ -2930,5 +2946,65 @@ pub fn unmark_device_in_recovery_flow(device_id: &str) -> Result<(), String> {
     let mut flows = RECOVERY_DEVICE_FLOWS.lock().map_err(|_| "Failed to lock recovery device flows".to_string())?;
     flows.remove(device_id);
     log::info!("Device {} removed from recovery flow", device_id);
+    
+    // Also clean up any aliases
+    if let Ok(mut aliases) = RECOVERY_DEVICE_ALIASES.lock() {
+        aliases.retain(|_, v| v != device_id);
+    }
+    
     Ok(())
+}
+
+/// Add device ID alias for recovery flow
+pub fn add_recovery_device_alias(alias_id: &str, canonical_id: &str) -> Result<(), String> {
+    let mut aliases = RECOVERY_DEVICE_ALIASES.lock()
+        .map_err(|_| "Failed to lock recovery device aliases".to_string())?;
+    aliases.insert(alias_id.to_string(), canonical_id.to_string());
+    log::info!("Added recovery device alias: {} -> {}", alias_id, canonical_id);
+    Ok(())
+}
+
+/// Get canonical device ID from alias
+pub fn get_canonical_device_id(device_id: &str) -> String {
+    if let Ok(aliases) = RECOVERY_DEVICE_ALIASES.lock() {
+        if let Some(canonical) = aliases.get(device_id) {
+            log::info!("Resolved device alias {} to canonical ID {}", device_id, canonical);
+            return canonical.clone();
+        }
+    }
+    device_id.to_string()
+}
+
+/// Check if two device IDs might be the same device
+pub fn are_devices_potentially_same(id1: &str, id2: &str) -> bool {
+    // Check if they're already the same
+    if id1 == id2 {
+        return true;
+    }
+    
+    // Check if one is an alias of the other
+    let canonical1 = get_canonical_device_id(id1);
+    let canonical2 = get_canonical_device_id(id2);
+    if canonical1 == canonical2 {
+        return true;
+    }
+    
+    // Check if they're both KeepKey devices (same VID/PID)
+    let keepkey_pattern = "keepkey_2b24_0002_";
+    if id1.contains(keepkey_pattern) && id2.contains(keepkey_pattern) {
+        log::info!("Both {} and {} appear to be KeepKey devices", id1, id2);
+        return true;
+    }
+    
+    // Check if one has a serial and the other is a bus/address format
+    let is_serial_format = |id: &str| id.len() == 24 && id.chars().all(|c| c.is_alphanumeric());
+    let is_bus_addr_format = |id: &str| id.contains("bus") && id.contains("addr");
+    
+    if (is_serial_format(id1) && is_bus_addr_format(id2)) ||
+       (is_bus_addr_format(id1) && is_serial_format(id2)) {
+        log::info!("Device IDs {} and {} might be the same device (serial vs bus/addr)", id1, id2);
+        return true;
+    }
+    
+    false
 }

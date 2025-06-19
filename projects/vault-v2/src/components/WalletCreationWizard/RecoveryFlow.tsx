@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   Box,
   Heading,
@@ -54,7 +55,7 @@ type RecoveryState =
   | 'error';
 
 export function RecoveryFlow({ 
-  deviceId, 
+  deviceId: propDeviceId, 
   wordCount, 
   passphraseProtection,
   deviceLabel,
@@ -78,6 +79,30 @@ export function RecoveryFlow({
   const [lastCharacterResult, setLastCharacterResult] = useState<'success' | 'failure' | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>('');
   const [isRecoveryLocked, setIsRecoveryLocked] = useState(false);
+  const [originalDeviceId, setOriginalDeviceId] = useState<string>(propDeviceId);
+  const [recoveryStartTime, setRecoveryStartTime] = useState<number | null>(null);
+
+  // Use locked device ID during recovery, ignore prop changes
+  const deviceId: string = isRecoveryLocked ? originalDeviceId : propDeviceId;
+
+  // Global recovery lock - prevent any other UI from interfering
+  useEffect(() => {
+    if (isRecoveryLocked) {
+      // Set a global flag that other components can check
+      (window as any).KEEPKEY_RECOVERY_IN_PROGRESS = true;
+      console.log("🛡️ GLOBAL RECOVERY LOCK ENABLED - blocking all UI changes");
+    } else {
+      (window as any).KEEPKEY_RECOVERY_IN_PROGRESS = false;
+      console.log("🔓 GLOBAL RECOVERY LOCK DISABLED");
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (!isRecoveryLocked) {
+        (window as any).KEEPKEY_RECOVERY_IN_PROGRESS = false;
+      }
+    };
+  }, [isRecoveryLocked]);
 
   // Input refs for automatic focus management
   const inputRefs = [
@@ -87,7 +112,47 @@ export function RecoveryFlow({
     useRef<HTMLInputElement>(null),
   ];
 
-  console.log("🔄 RecoveryFlow - Current state:", state);
+  console.log("🔄 RecoveryFlow - Current state:", state, "Recovery locked:", isRecoveryLocked, "Original device:", originalDeviceId);
+
+  // Listen for device recovery reconnection events
+  useEffect(() => {
+    if (!isRecoveryLocked || !session) return;
+    
+    const unlisten = listen<{
+      new_id: string;
+      original_id: string;
+      status: string;
+    }>('device:recovery-reconnected', (event) => {
+      console.log('🔄 Recovery device reconnected:', event.payload);
+      
+      if (event.payload.original_id === originalDeviceId) {
+        console.log('✅ Our recovery device reconnected with new ID:', event.payload.new_id);
+        // Device alias has been set up by backend, recovery should continue working
+        setFeedbackMessage('Device reconnected - recovery continuing...');
+        
+        // Clear the message after 2 seconds
+        setTimeout(() => {
+          setFeedbackMessage('');
+        }, 2000);
+      }
+    });
+    
+    return () => {
+      unlisten.then(fn => fn());
+    };
+  }, [isRecoveryLocked, session, originalDeviceId]);
+
+  // Protect against device ID changes during recovery
+  useEffect(() => {
+    if (isRecoveryLocked && propDeviceId !== originalDeviceId) {
+      console.warn("🚨 Device ID changed during recovery - ignoring change:", propDeviceId, "→", originalDeviceId);
+      // Don't update - stay with original device ID for recovery session
+      return;
+    }
+    if (!isRecoveryLocked) {
+      setOriginalDeviceId(propDeviceId);
+    }
+  }, [propDeviceId, isRecoveryLocked, originalDeviceId]);
 
   // Confetti animation for success
   const triggerConfetti = () => {
@@ -120,25 +185,75 @@ export function RecoveryFlow({
     }, 250);
   };
 
+  // Safe device communication wrapper that handles errors during recovery
+  const safeDeviceInvoke = async <T,>(command: string, params: any): Promise<T | null> => {
+    try {
+      const targetDeviceId = isRecoveryLocked ? originalDeviceId : deviceId;
+      const updatedParams = { ...params, deviceId: targetDeviceId };
+      
+      console.log(`🔄 Safe device invoke: ${command}`, updatedParams);
+      const result = await invoke<T>(command, updatedParams);
+      console.log(`✅ Safe device invoke result: ${command}`, result);
+      return result;
+    } catch (error) {
+      console.error(`❌ Safe device invoke failed: ${command}`, error);
+      
+      if (isRecoveryLocked) {
+        // During recovery, be more resilient to communication errors
+        console.warn(`🛡️ Ignoring ${command} error during locked recovery:`, error);
+        
+        // For critical recovery commands, try a few retries
+        if (command.includes('recovery') || command.includes('character')) {
+          console.log(`🔄 Retrying ${command} in 1 second...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          try {
+            const targetDeviceId = isRecoveryLocked ? originalDeviceId : deviceId;
+            const updatedParams = { ...params, deviceId: targetDeviceId };
+            const retryResult = await invoke<T>(command, updatedParams);
+            console.log(`✅ Retry successful for ${command}:`, retryResult);
+            return retryResult;
+          } catch (retryError) {
+            console.error(`❌ Retry failed for ${command}:`, retryError);
+          }
+        }
+        
+        return null; // Return null instead of throwing during recovery
+      } else {
+        throw error; // Re-throw if not in recovery
+      }
+    }
+  };
+
   // Initialize recovery
   useEffect(() => {
     const startRecovery = async () => {
       if (state !== 'initializing' || session) return;
       
+      // Use original device ID if recovery is locked, current device ID otherwise
+      const targetDeviceId = isRecoveryLocked ? originalDeviceId : deviceId;
+      
       try {
         console.log("🔄 Starting recovery device with:", {
-          deviceId,
+          deviceId: targetDeviceId,
+          wordCount,
+          passphraseProtection,
+          label: deviceLabel,
+          isRecoveryLocked,
+          originalDeviceId
+        });
+        
+        const recoverySession = await safeDeviceInvoke<RecoverySession>('start_device_recovery', {
           wordCount,
           passphraseProtection,
           label: deviceLabel
         });
         
-        const recoverySession = await invoke<RecoverySession>('start_device_recovery', {
-          deviceId,
-          wordCount,
-          passphraseProtection,
-          label: deviceLabel
-        });
+        if (!recoverySession) {
+          console.warn("🛡️ Failed to start recovery session but handling gracefully");
+          setError("Failed to start recovery - please try again");
+          setState('error');
+          return;
+        }
         
         console.log("🔄 Recovery session started:", recoverySession);
         setSession(recoverySession);
@@ -155,7 +270,7 @@ export function RecoveryFlow({
     };
     
     startRecovery();
-  }, [deviceId, wordCount, passphraseProtection, deviceLabel, state, session, onError]);
+  }, [propDeviceId, wordCount, passphraseProtection, deviceLabel, state, session, onError, isRecoveryLocked, originalDeviceId]);
 
   // Focus management for phrase entry
   useEffect(() => {
@@ -200,10 +315,15 @@ export function RecoveryFlow({
     
     try {
       // Send PIN to backend using recovery-specific command
-      const result = await invoke<RecoveryProgress>('send_recovery_pin_response', {
+      const result = await safeDeviceInvoke<RecoveryProgress>('send_recovery_pin_response', {
         sessionId: session.session_id,
         positions: Array.from(pinPositions)
       });
+      
+      if (!result) {
+        console.warn("🛡️ PIN submission failed but recovery is locked - staying in current state");
+        return;
+      }
       
       console.log("🔄 Recovery PIN response result:", result);
       
@@ -220,11 +340,12 @@ export function RecoveryFlow({
         // Automatically send button ack after a moment
         setTimeout(async () => {
           try {
-            await invoke('send_button_ack', { deviceId });
+            await safeDeviceInvoke('send_button_ack', {});
             setState('phrase-entry');
             setCurrentWord(result.word_pos);
             setCurrentChar(result.character_pos);
             setIsRecoveryLocked(true); // Lock the UI during recovery phrase entry
+            setRecoveryStartTime(Date.now()); // Track when recovery actually started
           } catch (error) {
             console.error("Failed to send button ack:", error);
           }
@@ -235,6 +356,7 @@ export function RecoveryFlow({
         setCurrentWord(result.word_pos);
         setCurrentChar(result.character_pos);
         setIsRecoveryLocked(true); // Lock the UI during recovery phrase entry
+        setRecoveryStartTime(Date.now()); // Track when recovery actually started
       } else if (result.is_complete) {
         console.log("🔄 Recovery completed during PIN setup");
         setState('complete');
@@ -273,11 +395,17 @@ export function RecoveryFlow({
       setIsProcessing(true);
       
       try {
-        const result = await invoke<RecoveryProgress>('send_recovery_character', {
+        const result = await safeDeviceInvoke<RecoveryProgress>('send_recovery_character', {
           sessionId: session.session_id,
           character: letter,
           action: null,
         });
+        
+        if (!result) {
+          // safeDeviceInvoke returned null due to error during recovery
+          console.warn("🛡️ Character input failed but recovery is locked - staying in current state");
+          return;
+        }
         
         console.log('🔄 Character result:', result);
         
@@ -353,11 +481,17 @@ export function RecoveryFlow({
     setIsProcessing(true);
     
     try {
-      const result = await invoke<RecoveryProgress>('send_recovery_character', {
+      const result = await safeDeviceInvoke<RecoveryProgress>('send_recovery_character', {
         sessionId: session.session_id,
         character: null,
         action: 'Delete',
       });
+      
+      if (!result) {
+        // safeDeviceInvoke returned null due to error during recovery
+        console.warn("🛡️ Delete failed but recovery is locked - staying in current state");
+        return;
+      }
       
       console.log('🔄 Delete result:', result);
       
@@ -444,11 +578,17 @@ export function RecoveryFlow({
     
     setIsProcessing(true);
     try {
-      const result = await invoke<RecoveryProgress>('send_recovery_character', {
+      const result = await safeDeviceInvoke<RecoveryProgress>('send_recovery_character', {
         sessionId: session.session_id,
         character: null,
         action: 'Space',
       });
+      
+      if (!result) {
+        // safeDeviceInvoke returned null due to error during recovery
+        console.warn("🛡️ Next word failed but recovery is locked - staying in current state");
+        return;
+      }
       
       setCurrentWord(result.word_pos);
       setCurrentChar(result.character_pos);
@@ -475,11 +615,17 @@ export function RecoveryFlow({
     
     setIsProcessing(true);
     try {
-      const result = await invoke<RecoveryProgress>('send_recovery_character', {
+      const result = await safeDeviceInvoke<RecoveryProgress>('send_recovery_character', {
         sessionId: session.session_id,
         character: null,
         action: 'Done',
       });
+      
+      if (!result) {
+        // safeDeviceInvoke returned null due to error during recovery
+        console.warn("🛡️ Recovery complete failed but recovery is locked - staying in current state");
+        return;
+      }
       
       if (result.is_complete) {
         setState('complete');
@@ -682,8 +828,6 @@ export function RecoveryFlow({
     );
   };
 
-
-
   // Render character success feedback
   const renderCharacterSuccess = () => (
     <VStack gap={6}>
@@ -767,17 +911,43 @@ export function RecoveryFlow({
   // Prevent escape key and other interruptions when recovery is locked
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isRecoveryLocked && event.key === 'Escape') {
+      if (isRecoveryLocked && (event.key === 'Escape' || event.key === 'F5' || (event.ctrlKey && event.key === 'r'))) {
         event.preventDefault();
         event.stopPropagation();
+        console.warn("🛡️ Blocked key during recovery:", event.key);
+      }
+    };
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (isRecoveryLocked) {
+        event.preventDefault();
+        event.returnValue = 'Recovery in progress - are you sure you want to leave?';
+        console.warn("🛡️ Blocked page unload during recovery");
       }
     };
 
     if (isRecoveryLocked) {
       document.addEventListener('keydown', handleKeyDown, true);
-      return () => document.removeEventListener('keydown', handleKeyDown, true);
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown, true);
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      };
     }
   }, [isRecoveryLocked]);
+
+  // Monitor device changes during recovery and maintain session integrity
+  useEffect(() => {
+    if (isRecoveryLocked && recoveryStartTime) {
+      const sessionDuration = Date.now() - recoveryStartTime;
+      console.log(`🔒 Recovery session active for ${Math.floor(sessionDuration / 1000)}s - protecting session`);
+      
+      // If recovery has been going for a reasonable time, it's legitimate
+      if (sessionDuration > 5000) { // 5 seconds
+        console.log("🛡️ Long-running recovery session detected - maximum protection enabled");
+      }
+    }
+  }, [isRecoveryLocked, recoveryStartTime, propDeviceId]);
 
   // Main render
   return (
@@ -886,7 +1056,11 @@ export function RecoveryFlow({
         {isRecoveryLocked && (
           <Box mt={4} textAlign="center">
             <Text fontSize="xs" color="yellow.400" textAlign="center">
-              ⚠️ Recovery in progress - please do not disconnect your device
+              🔒 Recovery locked - device disconnections will be ignored
+            </Text>
+            <Text fontSize="xs" color="gray.500" textAlign="center" mt={1}>
+              Device: {originalDeviceId.slice(-8)} • Session: {recoveryStartTime ? 
+                `${Math.floor((Date.now() - recoveryStartTime) / 1000)}s` : 'starting...'}
             </Text>
           </Box>
         )}

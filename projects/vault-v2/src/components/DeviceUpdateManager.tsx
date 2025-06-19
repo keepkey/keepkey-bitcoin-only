@@ -95,6 +95,13 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       setShowFirmwareUpdate(true)
       setShowWalletCreation(false)
     } else if (status.needsInitialization) {
+      // Check if recovery is in progress - if so, don't interfere
+      if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
+        console.log('🛡️ DeviceUpdateManager: Recovery in progress - IGNORING initialization request')
+        console.log('🛡️ DeviceUpdateManager: Keeping current state to protect recovery')
+        return; // Don't change any state during recovery
+      }
+      
       console.log('🔧 DeviceUpdateManager: Device needs initialization - SHOULD SHOW ONBOARDING WIZARD')
       console.log('🔧 DeviceUpdateManager: Setting showWalletCreation = true')
       setShowEnterBootloaderMode(false)
@@ -130,6 +137,18 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         console.log('🔧 DeviceUpdateManager: Device features updated event received:', event.payload)
         const { status } = event.payload
         console.log('🔧 DeviceUpdateManager: Extracted status from event:', status)
+        
+        // Check if recovery is in progress - if so, be very careful about state changes
+        if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
+          console.log('🛡️ DeviceUpdateManager: Recovery in progress - handling features event carefully')
+          // Still update device status (for recovery to work) but don't trigger UI changes
+          setDeviceStatus(status)
+          setConnectedDeviceId(status.deviceId)
+          setRetryCount(0)
+          // DO NOT call handleDeviceStatus during recovery to prevent UI conflicts
+          return;
+        }
+        
         setDeviceStatus(status)
         setConnectedDeviceId(status.deviceId)
         setRetryCount(0) // Reset retry count on successful event
@@ -181,7 +200,15 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       // Listen for device disconnection
       const disconnectedUnsubscribe = listen<string>('device:disconnected', (event) => {
         console.log('Device disconnected:', event.payload)
-        // Clear all state when device disconnects
+        
+        // Check if recovery is in progress - if so, ignore disconnection events
+        if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
+          console.log('🛡️ DeviceUpdateManager: Recovery in progress - IGNORING disconnection event')
+          console.log('🛡️ DeviceUpdateManager: Keeping current state to protect recovery')
+          return; // Don't change state during recovery
+        }
+        
+        // Clear all state when device disconnects (only if not in recovery)
         setDeviceStatus(null)
         setConnectedDeviceId(null)
         setShowBootloaderUpdate(false)

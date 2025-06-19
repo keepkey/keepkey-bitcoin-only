@@ -83,6 +83,29 @@ impl EventController {
                                          device.manufacturer.as_deref().unwrap_or("Unknown"), 
                                          device.product.as_deref().unwrap_or("Unknown"));
                                 
+                                // Check if this might be a recovery device reconnecting with a different ID
+                                if let Some(state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {
+                                    let queue_manager_arc = state.inner().clone();
+                                    let manager = queue_manager_arc.lock().await;
+                                    
+                                    // Check if any existing device might be the same physical device
+                                    for (existing_id, _) in manager.iter() {
+                                        if crate::commands::are_devices_potentially_same(&device.unique_id, existing_id) &&
+                                           crate::commands::is_device_in_recovery_flow(existing_id) {
+                                            println!("🔄 Device {} appears to be recovery device {} reconnecting", 
+                                                    device.unique_id, existing_id);
+                                            let _ = crate::commands::add_recovery_device_alias(&device.unique_id, existing_id);
+                                            
+                                            // Emit special reconnection event
+                                            let _ = app_handle.emit("device:recovery-reconnected", serde_json::json!({
+                                                "new_id": &device.unique_id,
+                                                "original_id": existing_id,
+                                                "status": "reconnected"
+                                            }));
+                                        }
+                                    }
+                                }
+                                
                                 // Emit device found status
                                 let device_short = &device.unique_id[device.unique_id.len().saturating_sub(8)..];
                                 println!("📡 Emitting status: Device found {}", device_short);
@@ -250,6 +273,15 @@ impl EventController {
                         for device in &last_devices {
                             if !current_devices.iter().any(|d| d.unique_id == device.unique_id) {
                                 println!("🔌❌ Device disconnected: {}", device.unique_id);
+                                
+                                // Check if device is in recovery flow before cleaning up
+                                let is_in_recovery = crate::commands::is_device_in_recovery_flow(&device.unique_id);
+                                
+                                if is_in_recovery {
+                                    println!("🛡️ Device {} is in recovery flow - preserving queue and state", device.unique_id);
+                                    // Don't emit disconnection or clean up queue - just wait for reconnection
+                                    continue;
+                                }
                                 
                                 // Emit device disconnected status
                                 println!("📡 Emitting status: Device disconnected");
