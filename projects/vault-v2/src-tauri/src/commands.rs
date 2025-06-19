@@ -1677,12 +1677,26 @@ pub struct PinMatrixResult {
 lazy_static::lazy_static! {
     static ref PIN_SESSIONS: Arc<Mutex<std::collections::HashMap<String, PinCreationSession>>> =
         Arc::new(Mutex::new(std::collections::HashMap::new()));
+    static ref DEVICE_PIN_FLOWS: Arc<Mutex<std::collections::HashSet<String>>> =
+        Arc::new(Mutex::new(std::collections::HashSet::new()));
 }
 
 /// Start PIN creation process by initiating ResetDevice with PIN protection
 #[tauri::command]
-pub async fn initialize_device_pin(device_id: String, label: Option<String>) -> Result<PinCreationSession, String> {
+pub async fn initialize_device_pin(
+    device_id: String, 
+    label: Option<String>,
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+) -> Result<PinCreationSession, String> {
     log::info!("Starting PIN creation for device: {} with label: {:?}", device_id, label);
+    
+    // Check if device is already in PIN flow
+    if is_device_in_pin_flow(&device_id) {
+        return Err("Device is already in PIN creation flow".to_string());
+    }
+    
+    // Mark device as in PIN flow BEFORE starting any operations
+    mark_device_in_pin_flow(&device_id)?;
     
     // Generate unique session ID
     let session_id = format!("pin_session_{}_{}", device_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
@@ -1701,6 +1715,32 @@ pub async fn initialize_device_pin(device_id: String, label: Option<String>) -> 
         sessions.insert(session_id.clone(), session.clone());
     }
     
+    // Get or create device queue handle
+    let queue_handle = {
+        let mut manager = queue_manager.lock().await;
+        
+        if let Some(handle) = manager.get(&device_id) {
+            handle.clone()
+        } else {
+            // Find the device by ID
+            let devices = keepkey_rust::features::list_connected_devices();
+            let device_info = devices
+                .iter()
+                .find(|d| d.unique_id == device_id)
+                .ok_or_else(|| {
+                    // Clean up session on device not found
+                    let mut sessions = PIN_SESSIONS.lock().unwrap_or_else(|_| panic!("Failed to lock PIN sessions"));
+                    sessions.remove(&session_id);
+                    format!("Device {} not found", device_id)
+                })?;
+            
+            // Spawn a new device worker
+            let handle = keepkey_rust::device_queue::DeviceQueueFactory::spawn_worker(device_id.clone(), device_info.clone());
+            manager.insert(device_id.clone(), handle.clone());
+            handle
+        }
+    };
+    
     // Create ResetDevice message with PIN protection enabled
     let reset_device = keepkey_rust::messages::ResetDevice {
         display_random: Some(false),  // Don't show confusing entropy screen to users
@@ -1714,31 +1754,71 @@ pub async fn initialize_device_pin(device_id: String, label: Option<String>) -> 
         u2f_counter: None,
     };
     
-    // For vault-v2, we'll simulate the PIN creation process since we don't have full device integration yet
-    // In a full implementation, this would send the ResetDevice message to the actual device
-    log::info!("✅ PIN creation session initialized for device: {}", device_id);
-    
-    Ok(session)
+    // Send ResetDevice message to actual device - THIS SHOULD TRIGGER PIN MATRIX ON DEVICE SCREEN
+    match queue_handle.send_raw(keepkey_rust::messages::Message::ResetDevice(reset_device), false).await {
+        Ok(response) => {
+            log::info!("✅ ResetDevice sent successfully, device responded with: {:?}", response);
+            
+            // Handle the response - should be PinMatrixRequest
+            match response {
+                keepkey_rust::messages::Message::PinMatrixRequest(pmr) => {
+                    log::info!("🎯 Device requesting PIN matrix input, type: {:?}", pmr.r#type);
+                    // Device is ready for PIN input - return session to frontend
+                    Ok(session)
+                }
+                keepkey_rust::messages::Message::Success(_) => {
+                    log::info!("Device reset completed without PIN request");
+                    // Mark as completed
+                    if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                        if let Some(session) = sessions.get_mut(&session_id) {
+                            session.current_step = PinStep::Completed;
+                            session.is_active = false;
+                        }
+                    }
+                    Ok(session)
+                }
+                other => {
+                    log::warn!("Unexpected response from ResetDevice: {:?}", other);
+                    // Return session anyway - device might be ready for PIN
+                    Ok(session)
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to send ResetDevice message: {}", e);
+            // Remove PIN session on failure
+            let mut sessions = PIN_SESSIONS.lock().map_err(|_| "Failed to lock PIN sessions".to_string())?;
+            sessions.remove(&session_id);
+            // Unmark device from PIN flow on failure
+            let _ = unmark_device_in_pin_flow(&device_id);
+            Err(format!("Failed to start PIN creation: {}", e))
+        }
+    }
 }
 
 /// Send PIN matrix response (positions clicked by user)
 #[tauri::command]
 pub async fn send_pin_matrix_response(
     session_id: String,
-    positions: Vec<u8>  // Positions 1-9 that user clicked
+    positions: Vec<u8>,  // Positions 1-9 that user clicked
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
 ) -> Result<PinMatrixResult, String> {
     log::info!("Sending PIN matrix response for session: {} with {} positions", session_id, positions.len());
     
     // Validate positions
     if positions.is_empty() || positions.len() > 9 {
+        log::error!("Invalid PIN length: {} positions", positions.len());
         return Err("PIN must be between 1 and 9 digits".to_string());
     }
     
     for &pos in &positions {
         if pos < 1 || pos > 9 {
+            log::error!("Invalid PIN position: {}", pos);
             return Err("Invalid PIN position: positions must be 1-9".to_string());
         }
     }
+    
+    log::info!("✅ PIN positions validated: {:?}", positions);
     
     // Get session data (release lock before async call)
     let (device_id, current_step) = {
@@ -1753,55 +1833,220 @@ pub async fn send_pin_matrix_response(
         (session.device_id.clone(), session.current_step.clone())
     };
     
+    // Get device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id)
+            .ok_or_else(|| format!("Device queue not found for device: {}", device_id))?
+            .clone()
+    };
+    
     // Convert positions to PIN string for device protocol (positions as characters)
     let pin_string: String = positions.iter()
         .map(|&pos| (b'0' + pos) as char)
         .collect();
     
-    log::info!("Converted positions to PIN string for device communication: {}", pin_string);
+    log::info!("🔢 Converted {} positions {:?} to PIN string: '{}'", positions.len(), positions, pin_string);
     
-    // For vault-v2, simulate the PIN matrix response handling
-    match current_step {
-        PinStep::AwaitingFirst => {
-            // First PIN entry - move to confirmation step
-            log::info!("✅ First PIN accepted, requesting confirmation");
-            // Update session state
-            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
-                if let Some(session) = sessions.get_mut(&session_id) {
-                    session.current_step = PinStep::AwaitingSecond;
+    // Additional validation - ensure PIN string is not empty
+    if pin_string.is_empty() {
+        log::error!("❌ PIN string is empty after conversion!");
+        return Err("PIN string conversion failed - empty result".to_string());
+    }
+    
+    // Create PinMatrixAck message
+    let pin_matrix_ack = keepkey_rust::messages::PinMatrixAck {
+        pin: pin_string.clone(),
+    };
+    
+    // Send message to device
+    match queue_handle.send_raw(keepkey_rust::messages::Message::PinMatrixAck(pin_matrix_ack), false).await {
+        Ok(response) => {
+            log::info!("✅ PinMatrixAck sent successfully: {:?}", response);
+            
+            // Analyze response to determine next step
+            match current_step {
+                PinStep::AwaitingFirst => {
+                    // First PIN entry - check what device wants next
+                    match response {
+                        keepkey_rust::messages::Message::PinMatrixRequest(pmr) => {
+                            match pmr.r#type {
+                                Some(3) => {  // NewSecond = 3 (PIN confirmation)
+                                    log::info!("✅ First PIN accepted, device requesting confirmation");
+                                    // Update session state
+                                    if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                        if let Some(session) = sessions.get_mut(&session_id) {
+                                            session.current_step = PinStep::AwaitingSecond;
+                                        }
+                                    }
+                                    
+                                    Ok(PinMatrixResult {
+                                        success: true,
+                                        next_step: Some("confirm".to_string()),
+                                        session_id: session_id.clone(),
+                                        error: None,
+                                    })
+                                }
+                                _ => {
+                                    log::warn!("Unexpected PIN matrix request type: {:?}", pmr.r#type);
+                                    // Update session state
+                                    if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                        if let Some(session) = sessions.get_mut(&session_id) {
+                                            session.current_step = PinStep::AwaitingSecond;
+                                        }
+                                    }
+                                    Ok(PinMatrixResult {
+                                        success: true,
+                                        next_step: Some("confirm".to_string()),
+                                        session_id: session_id.clone(),
+                                        error: None,
+                                    })
+                                }
+                            }
+                        }
+                        keepkey_rust::messages::Message::EntropyRequest(_) | 
+                        keepkey_rust::messages::Message::Success(_) => {
+                            log::info!("✅ PIN creation completed in single step");
+                            // Update session state
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Completed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow - PIN creation completed
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            
+                            Ok(PinMatrixResult {
+                                success: true,
+                                next_step: Some("complete".to_string()),
+                                session_id: session_id.clone(),
+                                error: None,
+                            })
+                        }
+                        keepkey_rust::messages::Message::Failure(f) => {
+                            // Update session state
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Failed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow on failure
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            Err(format!("PIN creation failed: {}", f.message.unwrap_or_default()))
+                        }
+                        _ => {
+                            log::warn!("Unexpected response to first PIN: {:?}", response);
+                            // Update session state
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::AwaitingSecond;
+                                }
+                            }
+                            Ok(PinMatrixResult {
+                                success: true,
+                                next_step: Some("confirm".to_string()),
+                                session_id: session_id.clone(),
+                                error: None,
+                            })
+                        }
+                    }
+                }
+                PinStep::AwaitingSecond => {
+                    // PIN confirmation - expect completion or error
+                    match response {
+                        keepkey_rust::messages::Message::EntropyRequest(_) => {
+                            log::info!("✅ PIN confirmation accepted, device requesting entropy (handled automatically)");
+                            // Update session state to completed
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Completed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow - PIN creation completed
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            
+                            Ok(PinMatrixResult {
+                                success: true,
+                                next_step: Some("complete".to_string()),
+                                session_id: session_id.clone(),
+                                error: None,
+                            })
+                        }
+                        keepkey_rust::messages::Message::Success(_) => {
+                            log::info!("✅ PIN confirmation accepted, device initialization completed");
+                            // Update session state
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Completed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow - PIN creation completed
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            
+                            Ok(PinMatrixResult {
+                                success: true,
+                                next_step: Some("complete".to_string()),
+                                session_id: session_id.clone(),
+                                error: None,
+                            })
+                        }
+                        keepkey_rust::messages::Message::Failure(f) => {
+                            // Update session state
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Failed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow on failure
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            Err(format!("PIN confirmation failed: {}", f.message.unwrap_or_default()))
+                        }
+                        _ => {
+                            log::warn!("Unexpected response during PIN confirmation: {:?}", response);
+                            // Update session state
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Completed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow - assuming completion
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            
+                            Ok(PinMatrixResult {
+                                success: true,
+                                next_step: Some("complete".to_string()),
+                                session_id: session_id.clone(),
+                                error: None,
+                            })
+                        }
+                    }
+                }
+                PinStep::Completed => {
+                    Err("PIN creation already completed".to_string())
+                }
+                PinStep::Failed => {
+                    Err("PIN creation failed".to_string())
                 }
             }
-            
-            Ok(PinMatrixResult {
-                success: true,
-                next_step: Some("confirm".to_string()),
-                session_id: session_id.clone(),
-                error: None,
-            })
         }
-        PinStep::AwaitingSecond => {
-            // PIN confirmation - complete the process
-            log::info!("✅ PIN confirmation accepted, device initialization completed");
+        Err(e) => {
+            log::error!("Failed to send PIN matrix response: {}", e);
             // Update session state
             if let Ok(mut sessions) = PIN_SESSIONS.lock() {
                 if let Some(session) = sessions.get_mut(&session_id) {
-                    session.current_step = PinStep::Completed;
+                    session.current_step = PinStep::Failed;
                     session.is_active = false;
                 }
             }
-            
-            Ok(PinMatrixResult {
-                success: true,
-                next_step: Some("complete".to_string()),
-                session_id: session_id.clone(),
-                error: None,
-            })
-        }
-        PinStep::Completed => {
-            Err("PIN creation already completed".to_string())
-        }
-        PinStep::Failed => {
-            Err("PIN creation failed".to_string())
+            // Unmark device from PIN flow on communication error
+            let _ = unmark_device_in_pin_flow(&device_id);
+            Err(format!("Failed to send PIN to device: {}", e))
         }
     }
 }
@@ -1823,6 +2068,9 @@ pub async fn cancel_pin_creation(session_id: String) -> Result<bool, String> {
         let device_id = session.device_id.clone();
         session.is_active = false;
         session.current_step = PinStep::Failed;
+        
+        // Unmark device from PIN flow when cancelled
+        let _ = unmark_device_in_pin_flow(&device_id);
         
         log::info!("PIN creation session cancelled for device: {}", device_id);
         Ok(true)
@@ -1865,5 +2113,32 @@ pub async fn complete_wallet_creation(device_id: String) -> Result<(), String> {
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
     
     log::info!("Wallet creation completed successfully");
+    Ok(())
+}
+
+// ========== Device Flow State Management ==========
+
+/// Mark device as being in PIN flow to prevent duplicate operations
+pub fn mark_device_in_pin_flow(device_id: &str) -> Result<(), String> {
+    let mut flows = DEVICE_PIN_FLOWS.lock().map_err(|_| "Failed to lock device PIN flows".to_string())?;
+    flows.insert(device_id.to_string());
+    log::info!("Device {} marked as in PIN flow", device_id);
+    Ok(())
+}
+
+/// Check if device is currently in PIN flow
+pub fn is_device_in_pin_flow(device_id: &str) -> bool {
+    if let Ok(flows) = DEVICE_PIN_FLOWS.lock() {
+        flows.contains(device_id)
+    } else {
+        false
+    }
+}
+
+/// Remove device from PIN flow state
+pub fn unmark_device_in_pin_flow(device_id: &str) -> Result<(), String> {
+    let mut flows = DEVICE_PIN_FLOWS.lock().map_err(|_| "Failed to lock device PIN flows".to_string())?;
+    flows.remove(device_id);
+    log::info!("Device {} removed from PIN flow", device_id);
     Ok(())
 }

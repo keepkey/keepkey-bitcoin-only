@@ -145,6 +145,12 @@ pub async fn add_to_device_queue(
         }
     }
 
+    // Check if device is in interactive PIN flow and block other operations
+    if crate::commands::is_device_in_pin_flow(&request.device_id) {
+        println!("🚫 Rejecting {request_type} request – device is in PIN creation flow");
+        return Err("Device is currently in PIN creation flow. Please complete PIN setup before making other requests.".to_string());
+    }
+
     // Only block requests if we have confirmed the device needs updates
     // Don't block if we simply can't determine the state (OOB bootloader case)
     if raw_features_opt.is_some() && (status.needs_bootloader_update || status.needs_firmware_update || status.needs_initialization) {
