@@ -29,76 +29,62 @@ export const EnterBootloaderModeDialog = ({
   return (
     <DialogRoot open={isOpen} onOpenChange={({ open }) => !open && onClose()}>
       <DialogContent 
-        maxW="md" 
+        maxW="sm" 
         bg="gray.900" 
         color="white" 
-        borderColor="orange.600" 
+        borderColor="yellow.500" 
         borderWidth="2px"
-        borderRadius="xl"
+        borderRadius="md"
       >
-        <DialogHeader borderBottomWidth="1px" borderColor="gray.700" pb={4}>
+        <DialogHeader borderBottomWidth="1px" borderColor="gray.700" pb={3}>
           <HStack gap={2}>
-            <FaExclamationTriangle color="orange" />
-            <DialogTitle color="white">Enter Bootloader Mode Required</DialogTitle>
+            <FaExclamationTriangle color="yellow" />
+            <DialogTitle color="white" fontSize="lg">Enter Bootloader Mode</DialogTitle>
           </HStack>
           <DialogCloseTrigger color="gray.400" _hover={{ color: "white" }}>
             <FaTimes />
           </DialogCloseTrigger>
         </DialogHeader>
         
-        <DialogBody py={6}>
-          <VStack align="stretch" gap={4}>
-            <VStack gap={2}>
-              <Text fontWeight="bold" textAlign="center">
-                Bootloader Update Available
-              </Text>
-              <Text fontSize="sm" color="gray.300" textAlign="center">
-                Current: v{bootloaderCheck.currentVersion} → Latest: v{bootloaderCheck.latestVersion}
-              </Text>
-            </VStack>
-            
-            <Text color="gray.300">
-              Your KeepKey needs to be in <Text as="span" fontWeight="bold" color="orange.300">Bootloader Mode</Text> to update the bootloader.
+        <DialogBody py={4}>
+          <VStack align="stretch" gap={3}>
+            <Text fontSize="sm" color="gray.300" textAlign="center">
+              Bootloader update available: v{bootloaderCheck.currentVersion} → v{bootloaderCheck.latestVersion}
             </Text>
             
+            <Text fontSize="sm" color="gray.300" textAlign="center">
+              To update, your device must be in <Text as="span" fontWeight="bold" color="yellow.300">Bootloader Mode</Text>
+            </Text>
+
             <Box display="flex" justifyContent="center" py={4}>
-              <img 
-                src={holdAndConnectSvg} 
-                alt="Hold button while connecting device" 
-                style={{ maxWidth: '240px', height: 'auto' }} 
+              <img
+                  src={holdAndConnectSvg}
+                  alt="Hold button while connecting device"
+                  style={{ maxWidth: '240px', height: 'auto' }}
               />
             </Box>
-            
-            <VStack align="stretch" gap={2} bg="gray.800" p={4} borderRadius="md">
-              <Text fontWeight="semibold" color="orange.300">How to enter Bootloader Mode:</Text>
-              <Text fontSize="sm">1. Unplug your KeepKey</Text>
-              <Text fontSize="sm">2. Hold down the button on your device</Text>
-              <Text fontSize="sm">3. While holding the button, plug in your KeepKey</Text>
-              <Text fontSize="sm">4. Continue holding until you see "BOOTLOADER MODE" on the screen</Text>
-              <Text fontSize="sm">5. Release the button</Text>
+
+            <VStack align="stretch" gap={1} bg="gray.800" p={3} borderRadius="md" fontSize="sm">
+              <Text fontWeight="semibold" color="yellow.300">Quick Steps:</Text>
+              <Text>1. Unplug device</Text>
+              <Text>2. Hold button + plug in</Text>
+              <Text>3. Keep holding until "BOOTLOADER MODE" appears</Text>
             </VStack>
             
-            <Box bg="blue.900" p={3} borderRadius="md" borderLeft="4px solid" borderLeftColor="blue.400">
-              <Text fontSize="sm" color="blue.200">
-                <Text as="span" fontWeight="bold">💡 Tip:</Text> Once your device shows "BOOTLOADER MODE" on screen, 
-                the bootloader update dialog will automatically appear.
-              </Text>
-            </Box>
-            
-            <Text fontSize="xs" color="gray.500" textAlign="center">
-              Device ID: {deviceId}
+            <Text fontSize="xs" color="blue.300" textAlign="center">
+              Update dialog will appear automatically once in bootloader mode
             </Text>
           </VStack>
         </DialogBody>
         
-        <Box borderTopWidth="1px" borderColor="gray.700" pt={4} mt={4}>
+        <Box borderTopWidth="1px" borderColor="gray.700" pt={3}>
           <Button 
-            colorScheme="orange" 
+            colorScheme="yellow" 
             onClick={onClose} 
             width="full"
-            variant="outline"
+            size="sm"
           >
-            I'll Enter Bootloader Mode
+            Got It
           </Button>
         </Box>
       </DialogContent>

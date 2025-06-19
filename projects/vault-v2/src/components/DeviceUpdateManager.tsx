@@ -107,6 +107,8 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     let timeoutId: NodeJS.Timeout | null = null
 
     const setupListeners = async () => {
+      console.log('DeviceUpdateManager: Setting up event listeners...')
+      
       // Listen for device features updates which include status (primary method)
       featuresUnsubscribe = listen<{
         deviceId: string
@@ -175,6 +177,14 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         setRetryCount(0)
         if (timeoutId) clearTimeout(timeoutId)
       })
+
+      // Signal backend that frontend is ready to receive events
+      try {
+        console.log('DeviceUpdateManager: Signaling backend that frontend is ready...')
+        await invoke('frontend_ready')
+      } catch (error) {
+        console.log('DeviceUpdateManager: frontend_ready command not implemented yet, continuing...')
+      }
 
       return async () => {
         if (featuresUnsubscribe) (await featuresUnsubscribe)()
