@@ -258,8 +258,15 @@ impl DeviceWorker {
         let queue_wait = device_start.duration_since(enqueued_at);
         
         self.metrics.record_operation(queue_wait, device_rtt, total_time);
-        
-        Ok(())
+    
+    // Always drop transport after each command to avoid exclusive handle issues,
+    // it will be recreated lazily on the next command.
+    if self.transport.is_some() {
+        info!("🔌 Releasing transport handle for device {} after operation", self.device_id);
+    }
+    self.transport = None;
+    
+    Ok(())
     }
     
 

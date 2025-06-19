@@ -107,7 +107,11 @@ impl HidTransport {
                 match info.open_device(&api) {
                     Ok(device) => Some(device),
                     Err(e) => {
-                        Self::handle_device_open_error(&e, serial)?;
+                        // Log detailed reason, but do NOT abort creation – continue trying
+                        // other devices or fallback strategies. This matches Vault v1 behavior
+                        // and avoids terminating early on "already claimed" / exclusive-access
+                        // errors that can be transient or OS-specific.
+                        let _ = Self::handle_device_open_error(&e, serial);
                         None
                     }
                 }

@@ -325,8 +325,8 @@ async fn try_oob_bootloader_detection(device: &FriendlyUsbDevice) -> Result<keep
     let result = tokio::task::spawn_blocking({
         let device = device.clone();
         move || -> Result<keepkey_rust::features::DeviceFeatures, String> {
-            // Use the HID fallback method from keepkey-rust that's specifically designed for OOB devices
-            keepkey_rust::features::get_device_features_via_hid(&device)
+            // Use the robust USB/HID fallback helper which includes retries and OOB heuristics
+            keepkey_rust::features::get_device_features_with_fallback(&device)
                 .map_err(|e| e.to_string())
         }
     }).await;
