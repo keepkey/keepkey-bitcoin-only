@@ -41,6 +41,7 @@ export interface DeviceFeatures {
   deviceId?: string
   language?: string
   bootloaderMode: boolean
+  bootloader_mode?: boolean  // Backend sends this format
   version: string
   firmwareHash?: string
   bootloaderHash?: string

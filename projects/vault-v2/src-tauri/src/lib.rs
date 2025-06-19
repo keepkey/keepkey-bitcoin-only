@@ -177,6 +177,8 @@ pub fn run() {
             vault_open_app,
             open_url,
             restart_backend_startup,
+            // Frontend readiness
+            commands::frontend_ready,
             // Device operations - unified queue interface
             device::queue::add_to_device_queue,
             commands::get_queue_status,

@@ -58,8 +58,15 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
   const handleDeviceStatus = (status: DeviceStatus) => {
     console.log('Handling device status:', status)
     
-    // Check if device is in bootloader mode
-    const isInBootloaderMode = status.features?.bootloaderMode || false
+    // Check if device is in bootloader mode - handle both field formats from backend
+    const isInBootloaderMode = status.features?.bootloader_mode || status.features?.bootloaderMode || false
+    console.log('🔧 Bootloader mode check:', {
+      bootloader_mode: status.features?.bootloader_mode,
+      bootloaderMode: status.features?.bootloaderMode,
+      isInBootloaderMode,
+      needsBootloaderUpdate: status.needsBootloaderUpdate,
+      hasBootloaderCheck: !!status.bootloaderCheck
+    })
     
     // Determine which dialog to show based on priority
     if (status.needsBootloaderUpdate && status.bootloaderCheck) {

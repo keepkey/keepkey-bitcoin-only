@@ -150,12 +150,18 @@ impl EventController {
                                                 })) {
                                                     println!("❌ Failed to emit device ready status: {}", e);
                                                 }
-                                                let ready_payload = serde_json::json!({
-                                                    "device": device_for_task,
-                                                    "features": features,
-                                                    "status": "ready"
-                                                });
-                                                let _ = app_for_task.emit("device:ready", &ready_payload);
+                                                                                let ready_payload = serde_json::json!({
+                                    "device": device_for_task,
+                                    "features": features,
+                                    "status": "ready"
+                                });
+                                
+                                // Queue device:ready event as it's important for wallet initialization
+                                if let Err(e) = crate::commands::emit_or_queue_event(&app_for_task, "device:ready", ready_payload).await {
+                                    println!("❌ Failed to emit/queue device:ready event: {}", e);
+                                } else {
+                                    println!("📡 Successfully emitted/queued device:ready for {}", device_for_task.unique_id);
+                                }
                                             } else {
                                                 println!("⚠️ Device connected but needs updates (bootloader: {}, firmware: {}, init: {})", 
                                                         status.needs_bootloader_update, 
@@ -183,13 +189,19 @@ impl EventController {
                                                 }
                                             }
                                             
-                                            // Emit device:features-updated event with evaluated status (for DeviceUpdateManager)
-                                            let features_payload = serde_json::json!({
-                                                "deviceId": device_for_task.unique_id,
-                                                "features": features,
-                                                "status": status  // Use evaluated status instead of hardcoded "ready"
-                                            });
-                                            let _ = app_for_task.emit("device:features-updated", &features_payload);
+                                                                        // Emit device:features-updated event with evaluated status (for DeviceUpdateManager)
+                            // This is a critical event that should be queued if frontend isn't ready
+                            let features_payload = serde_json::json!({
+                                "deviceId": device_for_task.unique_id,
+                                "features": features,
+                                "status": status  // Use evaluated status instead of hardcoded "ready"
+                            });
+                            
+                            if let Err(e) = crate::commands::emit_or_queue_event(&app_for_task, "device:features-updated", features_payload).await {
+                                println!("❌ Failed to emit/queue device:features-updated event: {}", e);
+                            } else {
+                                println!("📡 Successfully emitted/queued device:features-updated for {}", device_for_task.unique_id);
+                            }
                                         }
                                         Err(e) => {
                                             println!("❌ Failed to get features for {}: {}", device_for_task.unique_id, e);

@@ -10,12 +10,40 @@ use hex;
 use std::io::Cursor;
 // Removed unused imports that were moved to device/updates.rs
 use crate::logging::{log_device_request, log_device_response, log_raw_device_message};
+use lazy_static;
 
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
 
 // Change the response storage to use request_id as key instead of device_id
 type LastResponsesMap = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>;
+
+// Add frontend readiness state and queued events
+lazy_static::lazy_static! {
+    static ref FRONTEND_READY_STATE: Arc<tokio::sync::RwLock<FrontendReadyState>> = Arc::new(tokio::sync::RwLock::new(FrontendReadyState::default()));
+}
+
+#[derive(Debug, Clone)]
+struct FrontendReadyState {
+    is_ready: bool,
+    queued_events: Vec<QueuedEvent>,
+}
+
+impl Default for FrontendReadyState {
+    fn default() -> Self {
+        Self {
+            is_ready: false,
+            queued_events: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct QueuedEvent {
+    event_name: String,
+    payload: serde_json::Value,
+    timestamp: u64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitcoinUtxoInput {
@@ -1416,6 +1444,63 @@ pub async fn test_status_emission(app: tauri::AppHandle) -> Result<String, Strin
         println!("✅ Successfully emitted test status");
         Ok("Test status emitted successfully".to_string())
     }
-} 
+}
+
+/// Signal that the frontend is ready to receive events
+#[tauri::command]
+pub async fn frontend_ready(app: AppHandle) -> Result<(), String> {
+    println!("🎯 Frontend ready signal received - enabling event emission");
+    
+    let mut state = FRONTEND_READY_STATE.write().await;
+    state.is_ready = true;
+    
+    // Flush any queued events
+    if !state.queued_events.is_empty() {
+        println!("📦 Flushing {} queued events to frontend", state.queued_events.len());
+        
+        for event in state.queued_events.drain(..) {
+            println!("📡 Sending queued event: {} (queued at: {})", event.event_name, event.timestamp);
+            if let Err(e) = app.emit(&event.event_name, &event.payload) {
+                println!("❌ Failed to emit queued event {}: {}", event.event_name, e);
+            }
+        }
+        
+        println!("✅ All queued events have been sent to frontend");
+    } else {
+        println!("✅ No queued events to flush");
+    }
+    
+    Ok(())
+}
+
+/// Helper function to emit events (either immediately or queue them)
+pub async fn emit_or_queue_event(app: &AppHandle, event_name: &str, payload: serde_json::Value) -> Result<(), String> {
+    let state = FRONTEND_READY_STATE.read().await;
+    
+    if state.is_ready {
+        // Frontend is ready, emit immediately
+        app.emit(event_name, &payload)
+            .map_err(|e| format!("Failed to emit event {}: {}", event_name, e))?;
+        println!("📡 Emitted event: {}", event_name);
+    } else {
+        // Frontend not ready, queue the event
+        drop(state); // Release read lock
+        let mut state = FRONTEND_READY_STATE.write().await;
+        
+        let queued_event = QueuedEvent {
+            event_name: event_name.to_string(),
+            payload,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        };
+        
+        state.queued_events.push(queued_event);
+        println!("📋 Queued event: {} (total queued: {})", event_name, state.queued_events.len());
+    }
+    
+    Ok(())
+}
 
 // Bootloader and firmware update functions have been moved to device/updates.rs for better organization
