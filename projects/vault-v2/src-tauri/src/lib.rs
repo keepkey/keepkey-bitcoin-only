@@ -39,9 +39,18 @@ fn vault_change_view(app: tauri::AppHandle, view: String) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn vault_open_support() -> Result<(), String> {
+fn vault_open_support(app: tauri::AppHandle) -> Result<(), String> {
     println!("Opening support");
-    // Could open browser or perform other support actions
+    
+    // Switch to browser view and navigate to support
+    app.emit("vault:change_view", serde_json::json!({
+        "view": "browser"
+    })).map_err(|e| format!("Failed to emit view change event: {}", e))?;
+    
+    app.emit("browser:navigate", serde_json::json!({
+        "url": "https://support.keepkey.com"
+    })).map_err(|e| format!("Failed to emit navigation event: {}", e))?;
+    
     Ok(())
 }
 

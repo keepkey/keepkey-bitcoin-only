@@ -62,18 +62,12 @@ export const VaultInterface = () => {
       icon: <FaWallet />,
       onClick: () => handleViewChange('vault'),
     },
-    // {
-    //   id: 'apps',
-    //   label: 'Apps',
-    //   icon: <FaTh />,
-    //   onClick: () => handleViewChange('apps'),
-    // },
-    // {
-    //   id: 'browser',
-    //   label: 'Browser',
-    //   icon: <FaGlobe />,
-    //   onClick: () => handleViewChange('browser'),
-    // },
+    {
+      id: 'browser',
+      label: 'Browser',
+      icon: <FaGlobe />,
+      onClick: () => handleViewChange('browser'),
+    },
     {
       id: 'settings',
       label: 'Settings',
