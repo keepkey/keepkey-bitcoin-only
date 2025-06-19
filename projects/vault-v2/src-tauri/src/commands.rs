@@ -122,6 +122,7 @@ pub struct QueueStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceStatus {
     pub device_id: String,
     pub connected: bool,
@@ -135,6 +136,7 @@ pub struct DeviceStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BootloaderCheck {
     pub current_version: String,
     pub latest_version: String,
@@ -142,6 +144,7 @@ pub struct BootloaderCheck {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FirmwareCheck {
     pub current_version: String,
     pub latest_version: String,
@@ -149,6 +152,7 @@ pub struct FirmwareCheck {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializationCheck {
     pub initialized: bool,
     pub has_backup: bool,
@@ -1085,8 +1089,22 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             };
             
             // Any device in bootloader mode needs update (except latest versions)
-            needs_bootloader_update = current_bootloader_version != latest_bootloader_version && 
-                                     current_bootloader_version != "2.1.4";
+            // Use proper semantic version comparison instead of string comparison
+            needs_bootloader_update = match semver::Version::parse(&current_bootloader_version) {
+                Ok(current_ver) => {
+                    if let Ok(latest_ver) = semver::Version::parse(&latest_bootloader_version) {
+                        current_ver < latest_ver
+                    } else {
+                        // Fallback to string comparison if parsing fails
+                        current_bootloader_version != latest_bootloader_version && 
+                        current_bootloader_version != "2.1.4"
+                    }
+                }
+                Err(_) => {
+                    // For versions like "1.0.3", definitely needs update
+                    !current_bootloader_version.starts_with("2.1.")
+                }
+            };
             
             println!("🔧 Device in bootloader mode: {} -> needs update: {}", 
                     current_bootloader_version, needs_bootloader_update);
@@ -1126,8 +1144,12 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             status.needs_firmware_update = false;
         }
         
-        // Check initialization status (only for devices not in bootloader mode)
+        // Check initialization status
+        // For devices in bootloader mode, we can't determine initialization status
+        // But we know that OOB devices (like version 1.0.3) will need initialization
+        // after bootloader update, so we should plan for that
         if !features.bootloader_mode {
+            // Normal mode - can check initialization status directly
             let initialized = features.initialized;
             let has_backup = !features.no_backup;
             let imported = features.imported.unwrap_or(false);
@@ -1141,8 +1163,19 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             });
             status.needs_initialization = needs_setup;
         } else {
-            // Device is in bootloader mode - initialization check not applicable
-            status.initialization_check = None;
+            // Device is in bootloader mode - initialization status unknown
+            // For OOB bootloaders (version 1.x), assume they'll need initialization after bootloader update
+            let is_oob_bootloader = features.version.starts_with("1.");
+            
+            status.initialization_check = Some(InitializationCheck {
+                initialized: false, // Unknown, but assume not for OOB
+                has_backup: false,  // Unknown
+                imported: false,    // Unknown
+                needs_setup: is_oob_bootloader, // OOB devices will likely need setup after update
+            });
+            
+            // Don't set needs_initialization=true during bootloader mode
+            // The bootloader update takes priority, then we'll re-evaluate after device reboots
             status.needs_initialization = false;
         }
     } else {

@@ -50,7 +50,7 @@ export const FirmwareUpdateDialog = ({
           <DialogTitle color="white" display="flex" alignItems="center" gap={2}>
             <Icon as={FaDownload} color="blue.400" />
             Firmware Update Available
-            {firmwareCheck.needs_update && (
+            {firmwareCheck.needsUpdate && (
               <Badge colorScheme="orange" ml={2}>Update Available</Badge>
             )}
           </DialogTitle>
@@ -81,13 +81,13 @@ export const FirmwareUpdateDialog = ({
               <HStack justify="space-between">
                 <Box>
                   <Text fontSize="sm" color="gray.400">Current Version</Text>
-                  <Text fontSize="lg" fontWeight="semibold">{firmwareCheck.current_version}</Text>
+                  <Text fontSize="lg" fontWeight="semibold">{firmwareCheck.currentVersion}</Text>
                 </Box>
                 <Icon as={FaDownload} color="gray.600" boxSize={6} />
                 <Box>
                   <Text fontSize="sm" color="gray.400">New Version</Text>
                   <Text fontSize="lg" fontWeight="semibold" color="green.400">
-                    {firmwareCheck.latest_version}
+                    {firmwareCheck.latestVersion}
                   </Text>
                 </Box>
               </HStack>

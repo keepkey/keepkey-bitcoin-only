@@ -3,34 +3,34 @@
 export type VersionComparison = 'current' | 'patchBehind' | 'minorBehind' | 'majorBehind'
 
 export interface BootloaderCheck {
-  current_version: string
-  latest_version: string
-  needs_update: boolean
+  currentVersion: string
+  latestVersion: string
+  needsUpdate: boolean
 }
 
 export interface FirmwareCheck {
-  current_version: string
-  latest_version: string
-  needs_update: boolean
+  currentVersion: string
+  latestVersion: string
+  needsUpdate: boolean
 }
 
 export interface InitializationCheck {
   initialized: boolean
-  has_backup: boolean
+  hasBackup: boolean
   imported: boolean
-  needs_setup: boolean
+  needsSetup: boolean
 }
 
 export interface DeviceStatus {
-  device_id: string
+  deviceId: string
   connected: boolean
   features?: DeviceFeatures
-  needs_bootloader_update: boolean
-  needs_firmware_update: boolean
-  needs_initialization: boolean
-  bootloader_check?: BootloaderCheck
-  firmware_check?: FirmwareCheck
-  initialization_check?: InitializationCheck
+  needsBootloaderUpdate: boolean
+  needsFirmwareUpdate: boolean
+  needsInitialization: boolean
+  bootloaderCheck?: BootloaderCheck
+  firmwareCheck?: FirmwareCheck
+  initializationCheck?: InitializationCheck
 }
 
 export interface DeviceFeatures {

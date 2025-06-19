@@ -57,17 +57,17 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     console.log('Handling device status:', status)
     
     // Determine which dialog to show based on priority
-    if (status.needs_bootloader_update && status.bootloader_check) {
+    if (status.needsBootloaderUpdate && status.bootloaderCheck) {
       console.log('Device needs bootloader update')
       setShowBootloaderUpdate(true)
       setShowFirmwareUpdate(false)
       setShowWalletCreation(false)
-    } else if (status.needs_firmware_update && status.firmware_check) {
+    } else if (status.needsFirmwareUpdate && status.firmwareCheck) {
       console.log('Device needs firmware update')
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(true)
       setShowWalletCreation(false)
-    } else if (status.needs_initialization) {
+    } else if (status.needsInitialization) {
       console.log('Device needs initialization')
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(false)
@@ -97,7 +97,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         console.log('Device features updated event received:', event.payload)
         const { status } = event.payload
         setDeviceStatus(status)
-        setConnectedDeviceId(status.device_id)
+        setConnectedDeviceId(status.deviceId)
         setRetryCount(0) // Reset retry count on successful event
         handleDeviceStatus(status)
       })
@@ -179,8 +179,8 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     try {
       // Update firmware using our implemented Tauri command
       await invoke('update_device_firmware', { 
-        deviceId: deviceStatus?.device_id,
-        targetVersion: deviceStatus?.firmware_check?.latest_version || ''
+        deviceId: deviceStatus?.deviceId,
+        targetVersion: deviceStatus?.firmwareCheck?.latestVersion || ''
       })
       
       // After successful update, check if initialization is needed
@@ -197,7 +197,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     setShowFirmwareUpdate(false)
     
     // Check if we need to show wallet creation
-    if (deviceStatus?.needs_initialization) {
+    if (deviceStatus?.needsInitialization) {
       setShowWalletCreation(true)
     } else {
       onComplete?.()
@@ -209,7 +209,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     setShowFirmwareUpdate(false)
     
     // Continue to next step
-    if (deviceStatus?.needs_initialization) {
+    if (deviceStatus?.needsInitialization) {
       setShowWalletCreation(true)
     } else {
       onComplete?.()
@@ -225,11 +225,11 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
 
   return (
     <>
-      {showBootloaderUpdate && deviceStatus.bootloader_check && deviceStatus.device_id && (
+      {showBootloaderUpdate && deviceStatus.bootloaderCheck && deviceStatus.deviceId && (
         <BootloaderUpdateDialog
           isOpen={showBootloaderUpdate}
-          bootloaderCheck={deviceStatus.bootloader_check}
-          deviceId={deviceStatus.device_id}
+          bootloaderCheck={deviceStatus.bootloaderCheck}
+          deviceId={deviceStatus.deviceId}
           onUpdateComplete={() => {
             setShowBootloaderUpdate(false)
             // The device will restart and emit new features
@@ -237,10 +237,10 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         />
       )}
 
-      {showFirmwareUpdate && deviceStatus.firmware_check && (
+      {showFirmwareUpdate && deviceStatus.firmwareCheck && (
         <FirmwareUpdateDialog
           isOpen={showFirmwareUpdate}
-          firmwareCheck={deviceStatus.firmware_check}
+          firmwareCheck={deviceStatus.firmwareCheck}
           onUpdateStart={handleFirmwareUpdate}
           onSkip={handleFirmwareSkip}
           onRemindLater={handleFirmwareRemindLater}
