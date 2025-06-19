@@ -315,10 +315,10 @@ impl DeviceWorker {
         self.metrics.record_cache_miss();
 
         // First attempt the standard GetFeatures call.
+        // For OOB bootloaders, we need to handle raw responses directly since
+        // the standard handler throws an error on Failure messages
         let transport = self.ensure_transport().await?;
-        let response = transport
-            .with_standard_handler()
-            .handle(GetFeatures {}.into())?;
+        let response = transport.handle(GetFeatures {}.into())?;
 
         match response {
             Message::Features(features) => {
@@ -329,11 +329,13 @@ impl DeviceWorker {
             // message instead.  In that scenario the proven workaround is to send an
             // Initialize message which these legacy bootloaders *do* understand and
             // which returns a Features structure on success.
-            Message::Failure(_) | _ => {
+            Message::Failure(f) => {
                 tracing::info!(
-                    "GetFeatures failed, attempting legacy Initialize fallback for {}",
+                    "GetFeatures returned Failure ({}), attempting legacy Initialize fallback for {}",
+                    f.message(),
                     self.device_id
                 );
+                println!("🔧 GetFeatures returned Failure: {}, attempting OOB bootloader fallback with Initialize message", f.message());
 
                 // Re-establish transport just in case previous attempt left it in an
                 // undefined state.
@@ -350,10 +352,19 @@ impl DeviceWorker {
                         "Initialize fallback succeeded for device {} (OOB bootloader mode)",
                         self.device_id
                     );
+                    println!("✅ OOB bootloader Initialize fallback successful for device {}", self.device_id);
                     return Ok(features);
                 } else {
                     return Err(anyhow!("Unexpected response to Initialize fallback"));
                 }
+            }
+            other => {
+                tracing::warn!(
+                    "GetFeatures returned unexpected response: {:?}, treating as failure",
+                    other
+                );
+                println!("⚠️ GetFeatures returned unexpected response: {:?}", other);
+                return Err(anyhow!("Unexpected response to GetFeatures: {:?}", other));
             }
         }
     }
