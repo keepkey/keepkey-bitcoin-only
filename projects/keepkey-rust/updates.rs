@@ -47,7 +47,31 @@ pub async fn update_device_bootloader(
 ) -> Result<bool, String> {
     
     log::info!("Starting bootloader update for device {}: target version {}", device_id, target_version);
-    log::info!("Current working directory: {:?}", std::env::current_dir().unwrap_or_default());
+    
+    // Debug: Log current working directory and environment
+    let cwd = std::env::current_dir().unwrap_or_default();
+    log::info!("Current working directory: {:?}", cwd);
+    
+    // Debug: List contents of current directory
+    if let Ok(entries) = fs::read_dir(&cwd) {
+        let contents: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        log::info!("Current directory contents: {:?}", contents);
+    }
+    
+    // Debug: Check for parent directories
+    if let Some(parent) = cwd.parent() {
+        log::info!("Parent directory: {:?}", parent);
+        if let Ok(entries) = fs::read_dir(parent) {
+            let contents: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect();
+            log::info!("Parent directory contents: {:?}", contents);
+        }
+    }
     
     // Validate target version
     let _target_semver = Version::parse(&target_version)
@@ -63,36 +87,88 @@ pub async fn update_device_bootloader(
     log::info!("Found device: {:?}", device.device.product);
     
     // Load the bootloader binary from the firmware directory
-    // When running in dev mode, we're in src-tauri directory
     let bootloader_filename = format!("bl_v{}", target_version);
-    let firmware_path = PathBuf::from("../firmware").join(&bootloader_filename).join("blupdater.bin");
     
-    let bootloader_bytes = if firmware_path.exists() {
-        log::info!("Loading bootloader from: {}", firmware_path.display());
-        fs::read(&firmware_path)
-            .map_err(|e| format!("Failed to read bootloader file {}: {}", firmware_path.display(), e))?
-    } else {
-        // Check available bootloader versions
-        let firmware_dir = PathBuf::from("../firmware");
-        let available_versions = if firmware_dir.exists() {
-            match fs::read_dir(&firmware_dir) {
-                Ok(entries) => {
-                    let versions: Vec<String> = entries
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.file_name().to_string_lossy().to_string())
-                        .filter(|name| name.starts_with("bl_v"))
-                        .collect();
-                    format!("Available bootloader versions: {}", versions.join(", "))
-                }
-                Err(_) => "Could not list firmware directory".to_string()
+    // Get executable location for bundled app paths
+    let exe_path = std::env::current_exe().ok();
+    let exe_dir = exe_path.as_ref().and_then(|p| p.parent());
+    
+    if let Some(exe_dir) = &exe_dir {
+        log::info!("Executable directory: {:?}", exe_dir);
+    }
+    
+    // Build a comprehensive list of possible paths
+    let mut possible_firmware_paths = vec![
+        // Development paths
+        PathBuf::from("../../keepkey-rust/firmware").join(&bootloader_filename).join("blupdater.bin"), // From vault-v2/src-tauri
+        PathBuf::from("../firmware").join(&bootloader_filename).join("blupdater.bin"), // From vault/src-tauri
+        PathBuf::from("firmware").join(&bootloader_filename).join("blupdater.bin"), // From keepkey-rust root
+        PathBuf::from("./firmware").join(&bootloader_filename).join("blupdater.bin"), // Explicit current dir
+        cwd.join("firmware").join(&bootloader_filename).join("blupdater.bin"), // Absolute from cwd
+    ];
+    
+    // Add executable-relative paths for bundled apps
+    if let Some(exe_dir) = exe_dir {
+        // Common bundled app locations
+        possible_firmware_paths.push(exe_dir.join("firmware").join(&bootloader_filename).join("blupdater.bin"));
+        possible_firmware_paths.push(exe_dir.join("../Resources/firmware").join(&bootloader_filename).join("blupdater.bin")); // macOS
+        possible_firmware_paths.push(exe_dir.join("../firmware").join(&bootloader_filename).join("blupdater.bin"));
+        possible_firmware_paths.push(exe_dir.join("../../firmware").join(&bootloader_filename).join("blupdater.bin"));
+        
+        // Try to find keepkey-rust relative to executable
+        possible_firmware_paths.push(exe_dir.join("../../keepkey-rust/firmware").join(&bootloader_filename).join("blupdater.bin"));
+        possible_firmware_paths.push(exe_dir.join("../../../keepkey-rust/firmware").join(&bootloader_filename).join("blupdater.bin"));
+    }
+    
+    // Debug: Log all paths being tried
+    log::info!("Trying to find bootloader file. Checking paths:");
+    for (i, path) in possible_firmware_paths.iter().enumerate() {
+        log::info!("  Path {}: {:?} - exists: {}", i + 1, path, path.exists());
+        
+        // Also check if the parent firmware directory exists
+        if let Some(firmware_dir) = path.parent() {
+            if let Some(parent) = firmware_dir.parent() {
+                log::info!("    Parent dir: {:?} - exists: {}", parent, parent.exists());
             }
-        } else {
-            "Firmware directory not found".to_string()
-        };
+        }
+    }
+    
+    let firmware_path = possible_firmware_paths.iter().find(|path| path.exists()).cloned();
+    
+    let bootloader_bytes = if let Some(path) = firmware_path {
+        log::info!("Loading bootloader from: {}", path.display());
+        fs::read(&path)
+            .map_err(|e| format!("Failed to read bootloader file {}: {}", path.display(), e))?
+    } else {
+        // Check available bootloader versions from all possible firmware directories
+        let possible_firmware_dirs = [
+            PathBuf::from("../../keepkey-rust/firmware"), // From vault-v2/src-tauri
+            PathBuf::from("../firmware"), // From vault/src-tauri  
+            PathBuf::from("firmware"), // From keepkey-rust root
+        ];
+        
+        let mut available_versions = String::from("No firmware directory found");
+        for firmware_dir in &possible_firmware_dirs {
+            if firmware_dir.exists() {
+                match fs::read_dir(firmware_dir) {
+                    Ok(entries) => {
+                        let versions: Vec<String> = entries
+                            .filter_map(|e| e.ok())
+                            .map(|e| e.file_name().to_string_lossy().to_string())
+                            .filter(|name| name.starts_with("bl_v"))
+                            .collect();
+                        available_versions = format!("Available bootloader versions in {}: {}", 
+                            firmware_dir.display(), versions.join(", "));
+                        break;
+                    }
+                    Err(_) => continue,
+                }
+            }
+        }
         
         return Err(format!(
-            "Bootloader file not found: {}. {}. Target version was: {}",
-            firmware_path.display(),
+            "Bootloader file not found: bl_v{}/blupdater.bin in any firmware directory. {}. Target version was: {}",
+            target_version,
             available_versions,
             target_version
         ));
@@ -319,14 +395,22 @@ pub async fn update_device_firmware(
     
     // Load the firmware binary from the firmware directory
     let firmware_filename = format!("v{}", target_version);
-    let firmware_path = PathBuf::from("../firmware").join(&firmware_filename).join("firmware.keepkey.bin");
     
-    let firmware_bytes = if firmware_path.exists() {
-        log::info!("Loading firmware from: {}", firmware_path.display());
-        fs::read(&firmware_path)
-            .map_err(|e| format!("Failed to read firmware file {}: {}", firmware_path.display(), e))?
+    // Try multiple possible paths for the firmware directory
+    let possible_firmware_paths = [
+        PathBuf::from("../../keepkey-rust/firmware").join(&firmware_filename).join("firmware.keepkey.bin"), // From vault-v2/src-tauri
+        PathBuf::from("../firmware").join(&firmware_filename).join("firmware.keepkey.bin"), // From vault/src-tauri
+        PathBuf::from("firmware").join(&firmware_filename).join("firmware.keepkey.bin"), // From keepkey-rust root
+    ];
+    
+    let firmware_path = possible_firmware_paths.iter().find(|path| path.exists()).cloned();
+    
+    let firmware_bytes = if let Some(path) = firmware_path {
+        log::info!("Loading firmware from: {}", path.display());
+        fs::read(&path)
+            .map_err(|e| format!("Failed to read firmware file {}: {}", path.display(), e))?
     } else {
-        return Err(format!("Firmware file not found: {}", firmware_path.display()));
+        return Err(format!("Firmware file not found: v{}/firmware.keepkey.bin in any firmware directory", target_version));
     };
     
     log::info!("Loaded firmware binary: {} bytes", firmware_bytes.len());

@@ -36,25 +36,64 @@ pub struct HashMappings {
 
 /// Load firmware releases from JSON file
 pub fn load_firmware_releases() -> Result<FirmwareReleases> {
-    // Try multiple possible paths for releases.json
-    let possible_paths = [
-        "../firmware/releases.json",  // This should work from src-tauri
-        "firmware/releases.json",
+    // Debug: Log current working directory
+    let cwd = std::env::current_dir().unwrap_or_default();
+    log::info!("{TAG} Current working directory: {:?}", cwd);
+    
+    // Get executable location for bundled app paths
+    let exe_path = std::env::current_exe().ok();
+    let exe_dir = exe_path.as_ref().and_then(|p| p.parent());
+    
+    if let Some(exe_dir) = &exe_dir {
+        log::info!("{TAG} Executable directory: {:?}", exe_dir);
+    }
+    
+    // Build comprehensive list of possible paths
+    let mut possible_paths = vec![
+        // Development paths
+        "../../keepkey-rust/firmware/releases.json",  // From vault-v2/src-tauri
+        "../firmware/releases.json",  // From vault/src-tauri
+        "firmware/releases.json",  // From keepkey-rust root
         "./firmware/releases.json",
         "../../firmware/releases.json",
         "projects/keepkey-desktop-v5/firmware/releases.json",
     ];
     
-    for releases_path in &possible_paths {
-        if let Ok(content) = std::fs::read_to_string(releases_path) {
-            log::info!("{TAG} Successfully loaded releases.json from: {}", releases_path);
-            let releases: FirmwareReleases = serde_json::from_str(&content)?;
-            return Ok(releases);
+    // Add executable-relative paths for bundled apps
+    if let Some(exe_dir) = exe_dir {
+        possible_paths.push(exe_dir.join("firmware/releases.json").to_string_lossy().to_string());
+        possible_paths.push(exe_dir.join("../Resources/firmware/releases.json").to_string_lossy().to_string()); // macOS
+        possible_paths.push(exe_dir.join("../firmware/releases.json").to_string_lossy().to_string());
+        possible_paths.push(exe_dir.join("../../firmware/releases.json").to_string_lossy().to_string());
+        possible_paths.push(exe_dir.join("../../keepkey-rust/firmware/releases.json").to_string_lossy().to_string());
+        possible_paths.push(exe_dir.join("../../../keepkey-rust/firmware/releases.json").to_string_lossy().to_string());
+    }
+    
+    // Add absolute path from cwd
+    possible_paths.push(cwd.join("firmware/releases.json").to_string_lossy().to_string());
+    
+    log::info!("{TAG} Trying to find releases.json. Checking paths:");
+    for (i, releases_path) in possible_paths.iter().enumerate() {
+        let path = std::path::Path::new(releases_path);
+        let exists = path.exists();
+        log::info!("{TAG}   Path {}: {:?} - exists: {}", i + 1, releases_path, exists);
+        
+        if exists {
+            match std::fs::read_to_string(releases_path) {
+                Ok(content) => {
+                    log::info!("{TAG} Successfully loaded releases.json from: {}", releases_path);
+                    let releases: FirmwareReleases = serde_json::from_str(&content)?;
+                    return Ok(releases);
+                }
+                Err(e) => {
+                    log::error!("{TAG} Failed to read releases.json from {}: {}", releases_path, e);
+                }
+            }
         }
     }
     
     // Log which paths were tried
-    log::error!("{TAG} Could not find releases.json. Tried paths: {:?}", possible_paths);
+    log::error!("{TAG} Could not find releases.json. Tried {} paths", possible_paths.len());
     
     Err(anyhow!("Could not find releases.json in any expected location"))
 }
@@ -75,23 +114,16 @@ pub fn get_latest_firmware_version() -> Result<String> {
 }
 
 pub fn get_releases_data() -> Result<serde_json::Value> {
-    // Try multiple possible paths for releases.json
-    let possible_paths = [
-        "../firmware/releases.json",  // This should work from src-tauri
-        "firmware/releases.json",
-        "./firmware/releases.json",
-        "../../firmware/releases.json",
-        "projects/keepkey-desktop-v5/firmware/releases.json",
-    ];
-    
-    for releases_path in &possible_paths {
-        if let Ok(content) = std::fs::read_to_string(releases_path) {
-            let json_data: serde_json::Value = serde_json::from_str(&content)?;
-            return Ok(json_data);
+    // Use the same logic as load_firmware_releases for consistency
+    match load_firmware_releases() {
+        Ok(releases) => {
+            // Convert back to serde_json::Value
+            let json_str = serde_json::to_string(&releases)?;
+            let json_data: serde_json::Value = serde_json::from_str(&json_str)?;
+            Ok(json_data)
         }
+        Err(e) => Err(e)
     }
-    
-    Err(anyhow!("Could not find releases.json in any expected location"))
 }
 
 pub fn get_latest_bootloader_version() -> Result<String> {

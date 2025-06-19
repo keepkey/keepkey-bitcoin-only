@@ -32,36 +32,111 @@ pub async fn update_device_bootloader(
     let _target_semver = Version::parse(&target_version)
         .map_err(|e| format!("Invalid target bootloader version: {}", e))?;
     
-    // Load the bootloader binary from the firmware directory
+    // Load the bootloader binary from the firmware directory (bundled with app)
     let bootloader_filename = format!("bl_v{}", target_version);
-    let firmware_path = PathBuf::from("../firmware").join(&bootloader_filename).join("blupdater.bin");
     
-    let bootloader_bytes = if firmware_path.exists() {
-        println!("📂 Loading bootloader from: {}", firmware_path.display());
-        fs::read(&firmware_path)
-            .map_err(|e| format!("Failed to read bootloader file {}: {}", firmware_path.display(), e))?
+    // Debug: Log current working directory and environment
+    let cwd = std::env::current_dir().unwrap_or_default();
+    println!("🔍 Current working directory: {:?}", cwd);
+    
+    // Get executable location for bundled app paths
+    let exe_path = std::env::current_exe().ok();
+    let exe_dir = exe_path.as_ref().and_then(|p| p.parent());
+    
+    if let Some(exe_dir) = &exe_dir {
+        println!("🔍 Executable directory: {:?}", exe_dir);
+    }
+    
+    // Try multiple possible paths for the firmware directory
+    let mut possible_firmware_paths = vec![
+        // Development paths
+        PathBuf::from("firmware").join(&bootloader_filename).join("blupdater.bin"), // Bundled with app (dev)
+        PathBuf::from("./firmware").join(&bootloader_filename).join("blupdater.bin"), // Explicit current dir
+        cwd.join("firmware").join(&bootloader_filename).join("blupdater.bin"), // Absolute from cwd
+    ];
+    
+    // Add executable-relative paths for bundled apps
+    if let Some(exe_dir) = exe_dir {
+        // Common Tauri bundled app locations
+        possible_firmware_paths.push(exe_dir.join("firmware").join(&bootloader_filename).join("blupdater.bin"));
+        possible_firmware_paths.push(exe_dir.join("../Resources/firmware").join(&bootloader_filename).join("blupdater.bin")); // macOS
+        possible_firmware_paths.push(exe_dir.join("../firmware").join(&bootloader_filename).join("blupdater.bin"));
+        
+        // Windows specific paths
+        #[cfg(target_os = "windows")]
+        {
+            possible_firmware_paths.push(exe_dir.join("resources/firmware").join(&bootloader_filename).join("blupdater.bin"));
+        }
+        
+        // Linux specific paths  
+        #[cfg(target_os = "linux")]
+        {
+            possible_firmware_paths.push(exe_dir.join("resources/firmware").join(&bootloader_filename).join("blupdater.bin"));
+            possible_firmware_paths.push(exe_dir.join("../share/vault-v2/firmware").join(&bootloader_filename).join("blupdater.bin"));
+        }
+    }
+    
+    // Debug: Log all paths being tried
+    println!("🔍 Trying to find bootloader file. Checking paths:");
+    for (i, path) in possible_firmware_paths.iter().enumerate() {
+        println!("  Path {}: {:?} - exists: {}", i + 1, path, path.exists());
+    }
+    
+    let firmware_path = possible_firmware_paths.iter().find(|path| path.exists()).cloned();
+    
+    let bootloader_bytes = if let Some(path) = firmware_path {
+        println!("📂 Loading bootloader from: {}", path.display());
+        fs::read(&path)
+            .map_err(|e| format!("Failed to read bootloader file {}: {}", path.display(), e))?
     } else {
-        // Check available bootloader versions
-        let firmware_dir = PathBuf::from("../firmware");
-        let available_versions = if firmware_dir.exists() {
-            match fs::read_dir(&firmware_dir) {
-                Ok(entries) => {
-                    let versions: Vec<String> = entries
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.file_name().to_string_lossy().to_string())
-                        .filter(|name| name.starts_with("bl_v"))
-                        .collect();
-                    format!("Available bootloader versions: {}", versions.join(", "))
-                }
-                Err(_) => "Could not list firmware directory".to_string()
+        // Check available bootloader versions from all possible firmware directories
+        let mut possible_firmware_dirs = vec![
+            PathBuf::from("firmware"),
+            PathBuf::from("./firmware"),
+            cwd.join("firmware"),
+        ];
+        
+        // Add executable-relative directories for bundled apps
+        if let Some(exe_dir) = exe_dir {
+            possible_firmware_dirs.push(exe_dir.join("firmware"));
+            possible_firmware_dirs.push(exe_dir.join("../Resources/firmware")); // macOS
+            possible_firmware_dirs.push(exe_dir.join("../firmware"));
+            
+            #[cfg(target_os = "windows")]
+            {
+                possible_firmware_dirs.push(exe_dir.join("resources/firmware"));
             }
-        } else {
-            "Firmware directory not found".to_string()
-        };
+            
+            #[cfg(target_os = "linux")]
+            {
+                possible_firmware_dirs.push(exe_dir.join("resources/firmware"));
+                possible_firmware_dirs.push(exe_dir.join("../share/vault-v2/firmware"));
+            }
+        }
+        
+        let mut available_versions = String::from("No firmware directory found");
+        for firmware_dir in &possible_firmware_dirs {
+            println!("🔍 Checking firmware directory: {:?} - exists: {}", firmware_dir, firmware_dir.exists());
+            if firmware_dir.exists() {
+                match fs::read_dir(firmware_dir) {
+                    Ok(entries) => {
+                        let versions: Vec<String> = entries
+                            .filter_map(|e| e.ok())
+                            .map(|e| e.file_name().to_string_lossy().to_string())
+                            .filter(|name| name.starts_with("bl_v"))
+                            .collect();
+                        available_versions = format!("Available bootloader versions in {}: {}", 
+                            firmware_dir.display(), versions.join(", "));
+                        break;
+                    }
+                    Err(_) => continue,
+                }
+            }
+        }
         
         let error_msg = format!(
-            "Bootloader file not found: {}. {}. Target version was: {}",
-            firmware_path.display(),
+            "Bootloader file not found: bl_v{}/blupdater.bin in any firmware directory. {}. Target version was: {}",
+            target_version,
             available_versions,
             target_version
         );
