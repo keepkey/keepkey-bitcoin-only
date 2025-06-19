@@ -2294,21 +2294,18 @@ pub async fn start_device_recovery(
         }
     };
     
-    // Create RecoveryDevice message
+    // Create RecoveryDevice message - minimal essential parameters only
     let recovery_device = keepkey_rust::messages::RecoveryDevice {
         word_count: Some(word_count),
         passphrase_protection: Some(passphrase_protection),
         pin_protection: Some(true),  // Always use PIN
         language: Some("english".to_string()),
         label: Some(label),
-        enforce_wordlist: Some(true),
-        use_character_cipher: Some(true),  // Use scrambled keyboard
-        auto_lock_delay_ms: Some(600000),  // 10 minutes
-        u2f_counter: Some((std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() / 1000) as u32),
-        dry_run: Some(false),
+        enforce_wordlist: None,      // Don't set - might not be supported
+        use_character_cipher: None,  // Don't set - might not be supported  
+        auto_lock_delay_ms: None,    // Don't set - might not be supported
+        u2f_counter: None,           // Don't set - not needed for recovery
+        dry_run: Some(false),        // Essential - distinguishes from verification
     };
     
     // Send RecoveryDevice message through device queue
@@ -2664,26 +2661,64 @@ pub async fn get_recovery_status(session_id: String) -> Result<Option<RecoverySt
 
 /// Cancel recovery session
 #[tauri::command]
-pub async fn cancel_recovery_session(session_id: String) -> Result<bool, String> {
+pub async fn cancel_recovery_session(
+    session_id: String,
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+) -> Result<bool, String> {
     log::info!("Cancelling recovery session: {}", session_id);
     
-    let mut sessions = RECOVERY_SESSIONS.lock()
-        .map_err(|_| "Failed to lock recovery sessions".to_string())?;
+    // Get device_id and remove session (drop lock immediately)
+    let device_id_opt = {
+        let mut sessions = RECOVERY_SESSIONS.lock()
+            .map_err(|_| "Failed to lock recovery sessions".to_string())?;
+        
+        if let Some(mut session) = sessions.remove(&session_id) {
+            session.is_active = false;
+            Some(session.device_id.clone())
+        } else {
+            None
+        }
+    }; // Recovery sessions lock is dropped here
     
-    if let Some(mut session) = sessions.remove(&session_id) {
-        let device_id = session.device_id.clone();
-        session.is_active = false;
-        
-        // Remove from recovery flow
-        let _ = unmark_device_in_recovery_flow(&device_id);
-        
-        // Send cancel message to device if needed
-        // Note: The device might need a Cancel message to exit recovery mode
-        
-        Ok(true)
+    let device_id = match device_id_opt {
+        Some(id) => id,
+        None => {
+            log::warn!("Recovery session {} not found for cancellation", session_id);
+            return Ok(false);
+        }
+    };
+    
+    // Get canonical device ID and queue handle (drop lock immediately)
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        let canonical_device_id = get_canonical_device_id(&device_id);
+        manager.get(&canonical_device_id)
+            .or_else(|| manager.get(&device_id))
+            .cloned()
+    }; // Queue manager lock is dropped here
+    
+    // Send Cancel message to device to exit recovery mode
+    if let Some(handle) = queue_handle {
+        log::info!("Sending Cancel message to device {} to exit recovery mode", device_id);
+        let cancel_msg = keepkey_rust::messages::Cancel {};
+        match handle.send_raw(keepkey_rust::messages::Message::Cancel(cancel_msg), false).await {
+            Ok(response) => {
+                log::info!("Cancel message sent successfully: {:?}", response);
+            }
+            Err(e) => {
+                log::warn!("Failed to send Cancel message (device may already be out of recovery): {}", e);
+                // Don't return error - cancellation should still succeed even if device communication fails
+            }
+        }
     } else {
-        Ok(false)
+        log::warn!("Device queue not found for {}, cannot send Cancel message", device_id);
     }
+    
+    // Remove from recovery flow
+    let _ = unmark_device_in_recovery_flow(&device_id);
+    
+    log::info!("Recovery session {} cancelled successfully for device: {}", session_id, device_id);
+    Ok(true)
 }
 
 // ========== Seed Verification Commands (Dry Run Recovery) ==========

@@ -12,9 +12,10 @@ import {
   Input,
   Icon,
 } from "@chakra-ui/react";
-import { FaCircle, FaBackspace, FaCheckCircle, FaExclamationTriangle } from "react-icons/fa";
+import { FaCircle, FaBackspace, FaCheckCircle, FaExclamationTriangle, FaInfoCircle, FaChevronDown, FaChevronRight } from "react-icons/fa";
 import { PinPosition, PIN_MATRIX_LAYOUT } from "../../types/pin";
 import confetti from 'canvas-confetti';
+import cipherImage from '../../assets/onboarding/cipher.png';
 
 interface RecoveryFlowProps {
   deviceId: string;
@@ -47,6 +48,7 @@ type RecoveryState =
   | 'initializing'
   | 'pin-first'
   | 'pin-confirm'
+  | 'pin-error'
   | 'button-confirm'
   | 'phrase-entry'
   | 'character-success'
@@ -81,6 +83,8 @@ export function RecoveryFlow({
   const [isRecoveryLocked, setIsRecoveryLocked] = useState(false);
   const [originalDeviceId, setOriginalDeviceId] = useState<string>(propDeviceId);
   const [recoveryStartTime, setRecoveryStartTime] = useState<number | null>(null);
+  const [pinFailureCount, setPinFailureCount] = useState(0);
+  const [showPinHelp, setShowPinHelp] = useState(false);
 
   // Use locked device ID during recovery, ignore prop changes
   const deviceId: string = isRecoveryLocked ? originalDeviceId : propDeviceId;
@@ -371,8 +375,20 @@ export function RecoveryFlow({
       }
     } catch (error) {
       console.error("❌ Recovery PIN submission failed:", error);
-      setError(`PIN submission failed: ${error}`);
-      setIsRecoveryLocked(false); // Unlock on PIN error so user can retry
+      
+      // Check if this is a PIN failure vs other errors
+      const errorString = String(error);
+      if (errorString.includes('Recovery PIN failed') || errorString.includes('PIN failed') || errorString.includes('Failure')) {
+        console.error("❌ PIN incorrect - showing PIN error state");
+        setPinFailureCount(prev => prev + 1);
+        setState('pin-error');
+        // Clear PIN for retry
+        setPinPositions([]);
+      } else {
+        // Other types of errors
+        setError(`PIN submission failed: ${error}`);
+        setIsRecoveryLocked(false); // Unlock on PIN error so user can retry
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -894,7 +910,37 @@ export function RecoveryFlow({
             
             {onBack && (
               <Button
-                onClick={onBack}
+                onClick={async () => {
+                  // Properly cancel the recovery session on the device
+                  console.log("🔄 Cancelling recovery session from character failure");
+                  if (session) {
+                    try {
+                      await safeDeviceInvoke('cancel_recovery_session', {
+                        sessionId: session.session_id
+                      });
+                      console.log("✅ Recovery session cancelled successfully");
+                    } catch (error) {
+                      console.error("⚠️ Failed to cancel recovery session:", error);
+                      // Continue with cancellation even if device communication fails
+                    }
+                  }
+                  // Reset all recovery state
+                  setState('initializing');
+                  setSession(null);
+                  setPinPositions([]);
+                  setShowPinHelp(false);
+                  setError(null);
+                  setCurrentWord(0);
+                  setCurrentChar(0);
+                  setCharacterInputs(['', '', '', '']);
+                  setIsAutoCompleted(false);
+                  setLastCharacterResult(null);
+                  setFeedbackMessage('');
+                  setIsRecoveryLocked(false);
+                  setPinFailureCount(0);
+                  // Call onBack to navigate away
+                  onBack();
+                }}
                 variant="outline"
                 size="lg"
                 w="100%"
@@ -907,6 +953,195 @@ export function RecoveryFlow({
       </VStack>
     );
   };
+
+  // Render PIN error feedback
+  const renderPinError = () => (
+    <VStack gap={6} maxW="600px">
+      <Box
+        style={{
+          animation: 'shake 0.5s ease-in-out',
+          filter: 'drop-shadow(0 0 20px rgba(245, 101, 101, 0.5))'
+        }}
+      >
+        <Icon as={FaExclamationTriangle} boxSize={20} color="red.400" />
+      </Box>
+      
+      <VStack gap={3} textAlign="center">
+        <Heading size="xl" color="red.400">
+          Incorrect PIN
+        </Heading>
+        <Text color="gray.300" fontSize="lg">
+          The PIN you entered was incorrect. Please try again.
+        </Text>
+        <Text color="red.300" fontSize="sm">
+          Attempt #{pinFailureCount} • Make sure to use the positions shown on your KeepKey device
+        </Text>
+      </VStack>
+
+      {/* PIN Help Toggle */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setShowPinHelp(!showPinHelp)}
+        color="blue.400"
+        _hover={{ color: "blue.300", bg: "gray.700" }}
+      >
+        <HStack gap={2}>
+          <Icon as={FaInfoCircle} />
+          <Text>How to Enter Your PIN Correctly</Text>
+          <Icon as={showPinHelp ? FaChevronDown : FaChevronRight} />
+        </HStack>
+      </Button>
+
+      {/* Expandable PIN Help */}
+      {showPinHelp && (
+        <Box
+          w="100%"
+          bg="gray.800"
+          borderRadius="xl"
+          borderWidth="1px"
+          borderColor="gray.600"
+          p={6}
+        >
+          <HStack gap={6} align="start">
+            {/* Cipher Image */}
+            <Box flexShrink={0}>
+              <img 
+                src={cipherImage} 
+                alt="KeepKey PIN Cipher Explanation"
+                style={{
+                  width: '300px',
+                  height: 'auto',
+                  borderRadius: '8px',
+                  border: '2px solid #4A5568'
+                }}
+              />
+            </Box>
+            
+            {/* Instructions Text */}
+            <VStack gap={3} align="start" flex={1}>
+              <Text color="gray.300" fontSize="sm" lineHeight="1.5">
+                <strong style={{color: '#F56565'}}>🔑 PIN Entry Instructions:</strong> Your KeepKey displays numbers 1-9 in 
+                scrambled positions. You must click the positions on this screen that match the numbers 
+                shown on your device screen.
+              </Text>
+              
+              <Text color="gray.300" fontSize="sm" lineHeight="1.5">
+                <strong style={{color: '#F56565'}}>👀 Look at Your Device:</strong> The KeepKey screen shows a 3×3 grid 
+                with numbers in random positions. For each digit of your PIN, find where that number 
+                appears on your device and click the corresponding position on this screen.
+              </Text>
+              
+              <Text color="gray.300" fontSize="sm" lineHeight="1.5">
+                <strong style={{color: '#F56565'}}>🎯 Example:</strong> If your PIN is "1234" and on your device screen 
+                you see "1" in the top-left, "2" in the center, "3" in bottom-right, and "4" in the middle-left, 
+                then click those exact positions on the grid above.
+              </Text>
+              
+              <Box p={3} bg="red.900" borderRadius="md" border="1px solid #C53030" w="100%">
+                <Text color="red.200" fontSize="sm" textAlign="center" fontWeight="bold">
+                  ⚠️ The layout changes each time for security. Always check your device screen first!
+                </Text>
+              </Box>
+            </VStack>
+          </HStack>
+        </Box>
+      )}
+
+      {/* Action Buttons */}
+      <VStack gap={3} w="100%">
+        <Button
+          onClick={() => {
+            // Restart the entire recovery process from the beginning
+            console.log("🔄 Restarting recovery process after PIN failure");
+            setState('initializing');
+            setSession(null);
+            setPinPositions([]);
+            setShowPinHelp(false);
+            setError(null);
+            // Don't reset failure count - keep tracking attempts
+          }}
+          colorScheme="blue"
+          size="lg"
+          w="100%"
+        >
+          Try PIN Again
+        </Button>
+        
+        {pinFailureCount >= 3 && (
+          <Button
+            onClick={() => {
+              // Full reset after multiple failures
+              console.log("🔄 Full reset after multiple PIN failures");
+              setState('initializing');
+              setSession(null);
+              setPinFailureCount(0);
+              setPinPositions([]);
+              setShowPinHelp(false);
+              setError(null);
+              setCurrentWord(0);
+              setCurrentChar(0);
+              setCharacterInputs(['', '', '', '']);
+              setIsAutoCompleted(false);
+              setLastCharacterResult(null);
+              setFeedbackMessage('');
+              setIsRecoveryLocked(false);
+            }}
+            variant="outline"
+            size="lg"
+            w="100%"
+            borderColor="orange.500"
+            color="orange.300"
+            _hover={{ borderColor: "orange.400", color: "orange.200" }}
+          >
+            Restart Recovery Process
+          </Button>
+        )}
+        
+        {onBack && (
+          <Button
+            onClick={async () => {
+              // Properly cancel the recovery session on the device
+              console.log("🔄 Cancelling recovery session from PIN error");
+              if (session) {
+                try {
+                  await safeDeviceInvoke('cancel_recovery_session', {
+                    sessionId: session.session_id
+                  });
+                  console.log("✅ Recovery session cancelled successfully");
+                } catch (error) {
+                  console.error("⚠️ Failed to cancel recovery session:", error);
+                  // Continue with cancellation even if device communication fails
+                }
+              }
+              // Reset all recovery state
+              setState('initializing');
+              setSession(null);
+              setPinPositions([]);
+              setShowPinHelp(false);
+              setError(null);
+              setCurrentWord(0);
+              setCurrentChar(0);
+              setCharacterInputs(['', '', '', '']);
+              setIsAutoCompleted(false);
+              setLastCharacterResult(null);
+              setFeedbackMessage('');
+              setIsRecoveryLocked(false);
+              setPinFailureCount(0);
+              // Call onBack to navigate away
+              onBack();
+            }}
+            variant="ghost"
+            size="md"
+            color="gray.400"
+            _hover={{ color: "gray.300" }}
+          >
+            Cancel Recovery
+          </Button>
+        )}
+      </VStack>
+    </VStack>
+  );
 
   // Prevent escape key and other interruptions when recovery is locked
   useEffect(() => {
@@ -989,7 +1224,7 @@ export function RecoveryFlow({
         }}
       >
         <Box
-          maxW="lg"
+          maxW={state === 'pin-error' && showPinHelp ? "800px" : "lg"}
           bg="gray.800"
           color="white"
           p={8}
@@ -1006,6 +1241,8 @@ export function RecoveryFlow({
         )}
         
         {(state === 'pin-first' || state === 'pin-confirm') && renderPinEntry()}
+        
+        {state === 'pin-error' && renderPinError()}
         
         {state === 'button-confirm' && (
           <VStack gap={4}>
@@ -1033,17 +1270,81 @@ export function RecoveryFlow({
             <Heading size="lg" color="red.400">Recovery Failed</Heading>
             <Text color="gray.400">{error}</Text>
             {onBack && (
-              <Button onClick={onBack} variant="outline" size="lg">
+              <Button 
+                onClick={async () => {
+                  // Properly cancel the recovery session on the device
+                  console.log("🔄 Cancelling recovery session from error state");
+                  if (session) {
+                    try {
+                      await safeDeviceInvoke('cancel_recovery_session', {
+                        sessionId: session.session_id
+                      });
+                      console.log("✅ Recovery session cancelled successfully");
+                    } catch (error) {
+                      console.error("⚠️ Failed to cancel recovery session:", error);
+                      // Continue with cancellation even if device communication fails
+                    }
+                  }
+                  // Reset all recovery state
+                  setState('initializing');
+                  setSession(null);
+                  setPinPositions([]);
+                  setShowPinHelp(false);
+                  setError(null);
+                  setCurrentWord(0);
+                  setCurrentChar(0);
+                  setCharacterInputs(['', '', '', '']);
+                  setIsAutoCompleted(false);
+                  setLastCharacterResult(null);
+                  setFeedbackMessage('');
+                  setIsRecoveryLocked(false);
+                  setPinFailureCount(0);
+                  // Call onBack to navigate away
+                  onBack();
+                }} 
+                variant="outline" 
+                size="lg"
+              >
                 Try Again
               </Button>
             )}
           </VStack>
         )}
         
-        {onBack && state !== 'error' && state !== 'complete' && !isRecoveryLocked && (
+        {onBack && state !== 'error' && state !== 'complete' && state !== 'pin-error' && !isRecoveryLocked && (
           <Box mt={4} textAlign="center">
             <Button
-              onClick={onBack}
+              onClick={async () => {
+                // Properly cancel the recovery session on the device
+                console.log("🔄 Cancelling recovery session");
+                if (session) {
+                  try {
+                    await safeDeviceInvoke('cancel_recovery_session', {
+                      sessionId: session.session_id
+                    });
+                    console.log("✅ Recovery session cancelled successfully");
+                  } catch (error) {
+                    console.error("⚠️ Failed to cancel recovery session:", error);
+                    // Continue with cancellation even if device communication fails
+                  }
+                }
+                // Reset all recovery state
+                setState('initializing');
+                setSession(null);
+                setPinPositions([]);
+                setShowPinHelp(false);
+                setError(null);
+                setCurrentWord(0);
+                setCurrentChar(0);
+                setCharacterInputs(['', '', '', '']);
+                setIsAutoCompleted(false);
+                setLastCharacterResult(null);
+                setFeedbackMessage('');
+                setIsRecoveryLocked(false);
+                setPinFailureCount(0);
+                // Call onBack to navigate away
+                onBack();
+              }}
               variant="ghost"
               size="sm"
               color="gray.400"
@@ -1052,7 +1353,7 @@ export function RecoveryFlow({
             </Button>
           </Box>
         )}
-        
+
         {isRecoveryLocked && (
           <Box mt={4} textAlign="center">
             <Text fontSize="xs" color="yellow.400" textAlign="center">
