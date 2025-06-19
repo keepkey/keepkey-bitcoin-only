@@ -17,6 +17,7 @@ const TAG: &str = " | lib | ";
 // ---------- Public modules ----------
 pub mod messages;
 pub mod transport;
+pub mod commands;
 
 pub mod features;
 pub mod device_queue;

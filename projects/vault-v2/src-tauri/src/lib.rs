@@ -207,7 +207,20 @@ pub fn run() {
             commands::debug_onboarding_state,
             // Test commands
             commands::test_device_queue,
-            commands::test_status_emission
+            commands::test_status_emission,
+            // Recovery commands - delegated to keepkey_rust
+            commands::start_device_recovery,
+            commands::send_recovery_character,
+            commands::send_recovery_pin_response,
+            commands::get_recovery_status,
+            commands::cancel_recovery_session,
+            // Seed verification commands (dry run recovery)
+            commands::start_seed_verification,
+            commands::send_verification_character,
+            commands::send_verification_pin,
+            commands::get_verification_status,
+            commands::cancel_seed_verification,
+            commands::force_cleanup_seed_verification
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
