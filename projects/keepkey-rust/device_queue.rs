@@ -183,6 +183,8 @@ pub struct DeviceWorker {
     cache: HashMap<CacheKey, CachedResponse>,
     metrics: DeviceQueueMetrics,
     cmd_rx: mpsc::Receiver<DeviceCmd>,
+    /// Track if device is in PIN flow mode (ResetDevice, PIN setup, etc)
+    is_pin_flow: bool,
 }
 
 impl DeviceWorker {
@@ -198,6 +200,7 @@ impl DeviceWorker {
             cache: HashMap::new(),
             metrics: DeviceQueueMetrics::default(),
             cmd_rx,
+            is_pin_flow: false,
         }
     }
     
@@ -243,7 +246,7 @@ impl DeviceWorker {
                 let result = self.handle_send_raw(message, bypass_cache).await;
                 let _ = respond_to.send(result);
             }
-            DeviceCmd::UpdateBootloader { target_version, bootloader_bytes, respond_to, enqueued_at } => {
+            DeviceCmd::UpdateBootloader { target_version, bootloader_bytes, respond_to, enqueued_at: _ } => {
                 let result = self.handle_update_bootloader(target_version, bootloader_bytes).await;
                 let _ = respond_to.send(result);
             }
@@ -427,9 +430,50 @@ impl DeviceWorker {
     
     /// Handle raw message sending 
     async fn handle_send_raw(&mut self, message: Message, bypass_cache: bool) -> Result<Message> {
+        // Detect if this is a PIN flow related message
+        let is_pin_flow_message = matches!(
+            &message,
+            Message::ResetDevice(_) | 
+            Message::PinMatrixAck(_) | 
+            Message::ChangePin(_) |
+            Message::RecoveryDevice(_)
+        );
+        
+        // Update PIN flow state based on message type
+        if matches!(&message, Message::ResetDevice(_) | Message::ChangePin(_) | Message::RecoveryDevice(_)) {
+            info!("🔐 Entering PIN flow mode for device {} due to {:?}", self.device_id, message.message_type());
+            self.is_pin_flow = true;
+        }
+        
+        // Store PIN flow state before mutable borrow
+        let use_pin_flow_handler = self.is_pin_flow || is_pin_flow_message;
+        
         // For raw messages, we generally don't cache unless specifically allowed
         let transport = self.ensure_transport().await?;
-        let response = transport.with_standard_handler().handle(message)?;
+        
+        // Use appropriate handler based on current state and message type
+        let response = if use_pin_flow_handler {
+            info!("🔐 Using PIN flow handler for message {:?}", message.message_type());
+            transport.with_pin_flow_handler().handle(message)?
+        } else {
+            transport.with_standard_handler().handle(message)?
+        };
+        
+        // Update PIN flow state based on response
+        match &response {
+            Message::Success(_) | Message::Failure(_) => {
+                // PIN flow completed (either success or failure)
+                if self.is_pin_flow {
+                    info!("🔓 Exiting PIN flow mode for device {} after {:?}", self.device_id, response.message_type());
+                    self.is_pin_flow = false;
+                }
+            }
+            Message::EntropyRequest(_) => {
+                // Device is asking for entropy, usually means PIN flow is completing
+                info!("🔐 Device requesting entropy, PIN flow continuing");
+            }
+            _ => {}
+        }
         
         // If this was a mutable operation, purge cache
         if bypass_cache || self.is_mutable_operation(&response) {
