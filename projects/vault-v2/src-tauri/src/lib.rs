@@ -195,8 +195,9 @@ pub fn run() {
             commands::get_device_log_path,
             commands::get_recent_device_logs,
             commands::cleanup_device_logs,
-            // Test command
-            commands::test_device_queue
+            // Test commands
+            commands::test_device_queue,
+            commands::test_status_emission
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

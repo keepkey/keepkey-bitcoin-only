@@ -1398,6 +1398,24 @@ fn read_varint(cursor: &mut Cursor<Vec<u8>>) -> Result<u64, String> {
 fn read_exact(cursor: &mut Cursor<Vec<u8>>, buf: &mut [u8]) -> Result<(), String> {
     use std::io::Read;
     cursor.read_exact(buf).map_err(|e| format!("Failed to read data: {}", e))
+}
+
+/// Test status event emission
+#[tauri::command]
+pub async fn test_status_emission(app: tauri::AppHandle) -> Result<String, String> {
+    println!("📡 Test command: emitting test status...");
+    let test_payload = serde_json::json!({
+        "status": "Test message from backend"
+    });
+    println!("📡 Test payload: {}", test_payload);
+    
+    if let Err(e) = app.emit("status:update", test_payload) {
+        println!("❌ Failed to emit test status: {}", e);
+        Err(format!("Failed to emit test status: {}", e))
+    } else {
+        println!("✅ Successfully emitted test status");
+        Ok("Test status emitted successfully".to_string())
+    }
 } 
 
 // Bootloader and firmware update functions have been moved to device/updates.rs for better organization

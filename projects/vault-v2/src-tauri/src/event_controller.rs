@@ -4,7 +4,6 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
-use hex;
 
 pub struct EventController {
     cancellation_token: CancellationToken,
@@ -36,6 +35,35 @@ impl EventController {
             
             println!("✅ Event controller started - monitoring device connections");
             
+            // Wait a moment for frontend to set up listeners, then emit initial scanning status
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            println!("📡 Emitting status: Scanning for devices...");
+            let scanning_payload = serde_json::json!({
+                "status": "Scanning for devices..."
+            });
+            println!("📡 Scanning payload: {}", scanning_payload);
+            if let Err(e) = app_handle.emit("status:update", scanning_payload) {
+                println!("❌ Failed to emit scanning status: {}", e);
+            } else {
+                println!("✅ Successfully emitted scanning status");
+            }
+            
+            // Test emission after longer delay to check if frontend is listening
+            let app_for_test = app_handle.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(3000)).await;
+                println!("📡 Test: Emitting delayed test status...");
+                let test_payload = serde_json::json!({
+                    "status": "Test message after 3 seconds"
+                });
+                println!("📡 Test payload: {}", test_payload);
+                if let Err(e) = app_for_test.emit("status:update", test_payload) {
+                    println!("❌ Failed to emit delayed test status: {}", e);
+                } else {
+                    println!("✅ Successfully emitted delayed test status");
+                }
+            });
+            
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -55,6 +83,19 @@ impl EventController {
                                          device.manufacturer.as_deref().unwrap_or("Unknown"), 
                                          device.product.as_deref().unwrap_or("Unknown"));
                                 
+                                // Emit device found status
+                                let device_short = &device.unique_id[device.unique_id.len().saturating_sub(8)..];
+                                println!("📡 Emitting status: Device found {}", device_short);
+                                let device_found_payload = serde_json::json!({
+                                    "status": format!("Device found {}", device_short)
+                                });
+                                println!("📡 Device found payload: {}", device_found_payload);
+                                if let Err(e) = app_handle.emit("status:update", device_found_payload) {
+                                    println!("❌ Failed to emit device found status: {}", e);
+                                } else {
+                                    println!("✅ Successfully emitted device found status");
+                                }
+                                
                                 // Emit basic device connected event first
                                 let _ = app_handle.emit("device:connected", device);
                                 
@@ -64,12 +105,31 @@ impl EventController {
                                 tokio::spawn(async move {
                                     println!("📡 Fetching device features for: {}", device_for_task.unique_id);
                                     
+                                    // Emit getting features status
+                                    println!("📡 Emitting status: Getting features...");
+                                    if let Err(e) = app_for_task.emit("status:update", serde_json::json!({
+                                        "status": "Getting features..."
+                                    })) {
+                                        println!("❌ Failed to emit getting features status: {}", e);
+                                    }
+                                    
                                     match try_get_device_features(&device_for_task, &app_for_task).await {
                                         Ok(features) => {
+                                            let device_label = features.label.as_deref().unwrap_or("Unlabeled");
+                                            let device_version = &features.version;
+                                            
                                             println!("✅ Device ready: {} v{} ({})", 
-                                                   features.label.as_deref().unwrap_or("Unlabeled"),
-                                                   features.version,
+                                                   device_label,
+                                                   device_version,
                                                    device_for_task.unique_id);
+                                            
+                                            // Emit device info status
+                                            println!("📡 Emitting status: {} v{}", device_label, device_version);
+                                            if let Err(e) = app_for_task.emit("status:update", serde_json::json!({
+                                                "status": format!("{} v{}", device_label, device_version)
+                                            })) {
+                                                println!("❌ Failed to emit device info status: {}", e);
+                                            }
                                             
                                             // Evaluate device status to determine if updates are needed
                                             let status = crate::commands::evaluate_device_status(
@@ -77,13 +137,19 @@ impl EventController {
                                                 Some(&features)
                                             );
                                             
-                                            // Only emit device:ready if device is actually ready (not in bootloader mode, no updates needed)
+                                            // Emit status updates based on what the device needs
                                             let is_actually_ready = !status.needs_bootloader_update && 
                                                                    !status.needs_firmware_update && 
                                                                    !status.needs_initialization;
                                             
                                             if is_actually_ready {
                                                 println!("✅ Device is fully ready, emitting device:ready event");
+                                                println!("📡 Emitting status: Device ready");
+                                                if let Err(e) = app_for_task.emit("status:update", serde_json::json!({
+                                                    "status": "Device ready"
+                                                })) {
+                                                    println!("❌ Failed to emit device ready status: {}", e);
+                                                }
                                                 let ready_payload = serde_json::json!({
                                                     "device": device_for_task,
                                                     "features": features,
@@ -95,6 +161,26 @@ impl EventController {
                                                         status.needs_bootloader_update, 
                                                         status.needs_firmware_update, 
                                                         status.needs_initialization);
+                                                
+                                                // Emit appropriate status message based on what updates are needed
+                                                let status_message = if status.needs_bootloader_update && status.needs_firmware_update && status.needs_initialization {
+                                                    "Device needs updates"
+                                                } else if status.needs_bootloader_update {
+                                                    "Bootloader update needed"
+                                                } else if status.needs_firmware_update {
+                                                    "Firmware update needed"
+                                                } else if status.needs_initialization {
+                                                    "Device setup needed"
+                                                } else {
+                                                    "Device ready"
+                                                };
+                                                
+                                                println!("📡 Emitting status: {}", status_message);
+                                                if let Err(e) = app_for_task.emit("status:update", serde_json::json!({
+                                                    "status": status_message
+                                                })) {
+                                                    println!("❌ Failed to emit update status: {}", e);
+                                                }
                                             }
                                             
                                             // Emit device:features-updated event with evaluated status (for DeviceUpdateManager)
@@ -153,6 +239,14 @@ impl EventController {
                             if !current_devices.iter().any(|d| d.unique_id == device.unique_id) {
                                 println!("🔌❌ Device disconnected: {}", device.unique_id);
                                 
+                                // Emit device disconnected status
+                                println!("📡 Emitting status: Device disconnected");
+                                if let Err(e) = app_handle.emit("status:update", serde_json::json!({
+                                    "status": "Device disconnected"
+                                })) {
+                                    println!("❌ Failed to emit disconnect status: {}", e);
+                                }
+                                
                                 // Clean up device queue for disconnected device
                                 if let Some(state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {
                                     let device_id = device.unique_id.clone();
@@ -170,6 +264,21 @@ impl EventController {
                                 
                                 let _ = app_handle.emit("device:disconnected", &device.unique_id);
                             }
+                        }
+                        
+                        // If no devices connected after checking disconnections, emit scanning status
+                        if current_devices.is_empty() && !last_devices.is_empty() {
+                            // After a short delay, go back to scanning
+                            let app_for_scanning = app_handle.clone();
+                            tokio::spawn(async move {
+                                tokio::time::sleep(Duration::from_millis(1000)).await;
+                                println!("📡 Emitting status: Scanning for devices... (after disconnect)");
+                                if let Err(e) = app_for_scanning.emit("status:update", serde_json::json!({
+                                    "status": "Scanning for devices..."
+                                })) {
+                                    println!("❌ Failed to emit scanning status after disconnect: {}", e);
+                                }
+                            });
                         }
                         
                         last_devices = current_devices;

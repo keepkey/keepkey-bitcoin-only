@@ -68,30 +68,6 @@ function App() {
     
     // Function to restart backend startup process
     const { reinitialize } = useWallet();
-
-    // Function to check device status and trigger appropriate dialogs
-    const checkDeviceStatus = async (deviceId: string) => {
-        try {
-            console.log('Checking device status for:', deviceId);
-            const status = await invoke<any>('get_device_status', { deviceId });
-            if (status) {
-                console.log('Device status retrieved:', status);
-                // The DeviceUpdateManager should pick this up via its event listeners
-                // If it doesn't, we might need to emit an event or handle it differently
-            } else {
-                console.log('No device status returned, device may be ready');
-                // Device is ready, no updates needed
-                setDeviceUpdateComplete(true);
-                setLoadingStatus('Device ready');
-            }
-        } catch (error) {
-            console.error('Failed to check device status:', error);
-            // Assume device is ready if status check fails
-            setDeviceUpdateComplete(true);
-            setLoadingStatus('Device ready');
-        }
-    };
-
     const handleLogoClick = async () => {
         if (isRestarting) return; // Prevent multiple clicks
         
@@ -136,21 +112,29 @@ function App() {
     }, [shouldShowOnboarding, onboardingLoading, showOnboarding, clearCache]);
 
     useEffect(() => {
-        let unlistenAppState: (() => void) | undefined;
+        let unlistenStatusUpdate: (() => void) | undefined;
+        let unlistenDeviceReady: (() => void) | undefined;
 
         const setupEventListeners = async () => {
             try {
-                // Listen for device connected events (basic connection)
-                const unlistenDeviceConnected = await listen('device:connected', (event) => {
+                console.log('🎯 Setting up event listeners...');
+                // Listen for status updates from backend
+                console.log('🎯 Setting up status:update listener...');
+                unlistenStatusUpdate = await listen('status:update', (event) => {
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    const device = event.payload as any;
-                    const deviceId: string = device.unique_id;
-                    console.log('Device connected event received:', deviceId);
-                    setLoadingStatus('Device detected – fetching features...');
+                    const payload = event.payload as any;
+                    console.log('🎯 Frontend received status update:', payload);
+                    
+                    if (payload.status) {
+                        console.log('🎯 Setting loading status to:', payload.status);
+                        setLoadingStatus(payload.status);
+                    } else {
+                        console.log('❌ No status field in payload:', payload);
+                    }
                 });
 
-                // Listen for device ready events (device with features loaded)
-                unlistenAppState = await listen('device:ready', (event) => {
+                // Listen for device ready events (device with features loaded and fully ready)
+                unlistenDeviceReady = await listen('device:ready', (event) => {
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     const payload = event.payload as any;
                     console.log('Device ready event received:', payload);
@@ -158,26 +142,22 @@ function App() {
                     if (payload.device && payload.features) {
                         setDeviceConnected(true);
                         setDeviceInfo({ features: payload.features, error: null });
-                        setLoadingStatus('Checking for updates...');
+                        setDeviceUpdateComplete(true);
+                        console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
+                    }
+                });
+
+                // Listen for device features-updated events (includes status evaluation for DeviceUpdateManager)
+                const unlistenFeaturesUpdated = await listen('device:features-updated', (event) => {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    const payload = event.payload as any;
+                    console.log('Device features-updated event received:', payload);
+                    
+                    if (payload.features) {
+                        setDeviceConnected(true);
+                        setDeviceInfo({ features: payload.features, error: null });
                         // Reset update completion state for new device connections
                         setDeviceUpdateComplete(false);
-                        console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
-                        
-                        // Check if device is in bootloader mode or needs updates
-                        if (payload.features.bootloader_mode || payload.features.bootloaderMode) {
-                            console.log('🔄 Device in bootloader mode detected, triggering status check...');
-                            setLoadingStatus('Device in bootloader mode - checking updates...');
-                            // Trigger device status check to determine if bootloader update is needed
-                            checkDeviceStatus(payload.device.unique_id);
-                        } else if (!payload.features.initialized) {
-                            console.log('🔄 Device not initialized, triggering status check...');
-                            setLoadingStatus('Device not initialized - checking setup...');
-                            // Device needs initialization, trigger status check
-                            checkDeviceStatus(payload.device.unique_id);
-                        } else {
-                            // Device appears ready, but still check for firmware updates
-                            checkDeviceStatus(payload.device.unique_id);
-                        }
                     }
                 });
 
@@ -188,7 +168,7 @@ function App() {
                     console.log('Device access error event received:', errorData);
                     
                     showDeviceAccessError(errorData.error);
-                    setLoadingStatus('Device in use by another app');
+                    setLoadingStatus('Device busy');
                 });
 
                 // Listen for device disconnection events
@@ -197,13 +177,16 @@ function App() {
                     setDeviceConnected(false);
                     setDeviceInfo(null);
                     setDeviceUpdateComplete(false);
-                    setLoadingStatus('No device connected');
                 });
 
+                console.log('✅ All event listeners set up successfully');
+                
                 // Return cleanup function that removes all listeners
                 return () => {
-                    if (unlistenDeviceConnected) unlistenDeviceConnected();
-                    if (unlistenAppState) unlistenAppState();
+                    console.log('🧹 Cleaning up event listeners...');
+                    if (unlistenStatusUpdate) unlistenStatusUpdate();
+                    if (unlistenDeviceReady) unlistenDeviceReady();
+                    if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
                     if (unlistenAccessError) unlistenAccessError();
                     if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
                 };
@@ -216,7 +199,8 @@ function App() {
         setupEventListeners();
 
         return () => {
-            if (unlistenAppState) unlistenAppState();
+            if (unlistenStatusUpdate) unlistenStatusUpdate();
+            if (unlistenDeviceReady) unlistenDeviceReady();
         };
     }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
 
