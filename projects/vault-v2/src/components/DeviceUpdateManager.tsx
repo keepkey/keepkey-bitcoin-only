@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
 import { FirmwareUpdateDialog } from './FirmwareUpdateDialog'
 import { OnboardingWizard } from './OnboardingWizard/OnboardingWizard'
+import { EnterBootloaderModeDialog } from './EnterBootloaderModeDialog'
 import type { DeviceStatus, DeviceFeatures } from '../types/device'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -13,6 +14,7 @@ interface DeviceUpdateManagerProps {
 
 export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) => {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null)
+  const [showEnterBootloaderMode, setShowEnterBootloaderMode] = useState(false)
   const [showBootloaderUpdate, setShowBootloaderUpdate] = useState(false)
   const [showFirmwareUpdate, setShowFirmwareUpdate] = useState(false)
   const [showWalletCreation, setShowWalletCreation] = useState(false)
@@ -56,25 +58,42 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
   const handleDeviceStatus = (status: DeviceStatus) => {
     console.log('Handling device status:', status)
     
+    // Check if device is in bootloader mode
+    const isInBootloaderMode = status.features?.bootloaderMode || false
+    
     // Determine which dialog to show based on priority
     if (status.needsBootloaderUpdate && status.bootloaderCheck) {
-      console.log('Device needs bootloader update')
-      setShowBootloaderUpdate(true)
-      setShowFirmwareUpdate(false)
-      setShowWalletCreation(false)
+      if (isInBootloaderMode) {
+        // Device needs bootloader update AND is in bootloader mode -> show update dialog
+        console.log('Device needs bootloader update and is in bootloader mode')
+        setShowEnterBootloaderMode(false)
+        setShowBootloaderUpdate(true)
+        setShowFirmwareUpdate(false)
+        setShowWalletCreation(false)
+      } else {
+        // Device needs bootloader update but NOT in bootloader mode -> show enter bootloader mode dialog
+        console.log('Device needs bootloader update but not in bootloader mode')
+        setShowEnterBootloaderMode(true)
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(false)
+        setShowWalletCreation(false)
+      }
     } else if (status.needsFirmwareUpdate && status.firmwareCheck) {
       console.log('Device needs firmware update')
+      setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(true)
       setShowWalletCreation(false)
     } else if (status.needsInitialization) {
       console.log('Device needs initialization')
+      setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(false)
       setShowWalletCreation(true)
     } else {
       // Device is ready
       console.log('Device is ready, no updates needed')
+      setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(false)
       setShowWalletCreation(false)
@@ -221,10 +240,24 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     onComplete?.()
   }
 
+  const handleEnterBootloaderModeClose = () => {
+    setShowEnterBootloaderMode(false)
+    // Don't call onComplete here - wait for user to actually enter bootloader mode
+  }
+
   if (!deviceStatus) return null
 
   return (
     <>
+      {showEnterBootloaderMode && deviceStatus.bootloaderCheck && deviceStatus.deviceId && (
+        <EnterBootloaderModeDialog
+          isOpen={showEnterBootloaderMode}
+          bootloaderCheck={deviceStatus.bootloaderCheck}
+          deviceId={deviceStatus.deviceId}
+          onClose={handleEnterBootloaderModeClose}
+        />
+      )}
+
       {showBootloaderUpdate && deviceStatus.bootloaderCheck && deviceStatus.deviceId && (
         <BootloaderUpdateDialog
           isOpen={showBootloaderUpdate}
