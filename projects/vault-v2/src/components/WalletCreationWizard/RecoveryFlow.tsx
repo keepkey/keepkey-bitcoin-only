@@ -283,17 +283,29 @@ export function RecoveryFlow({
         
         // Check if this was successful or failed
         if (result.error && result.error.includes('Failure')) {
-          setLastCharacterResult('failure');
-          setFeedbackMessage('Incorrect character - please try again');
-          setState('character-failure');
-          
-          // Show failure feedback for 1.5 seconds then return to input
-          setTimeout(() => {
-            setState('phrase-entry');
-            setLastCharacterResult(null);
-            setFeedbackMessage('');
-            // Keep recovery locked during failure - user needs to continue
-          }, 1500);
+          // Check if this is a final failure (recovery completely failed)
+          if (currentWord >= wordCount - 1 && currentChar >= 3) {
+            // This is a complete recovery failure
+            setLastCharacterResult('failure');
+            setFeedbackMessage('Recovery failed - the seed phrase was incorrect');
+            setState('character-failure');
+            setIsRecoveryLocked(false); // Unlock so user can try again
+            
+            // Don't auto-return to input - let user decide what to do
+          } else {
+            // This is just an individual character failure
+            setLastCharacterResult('failure');
+            setFeedbackMessage('Incorrect character - please try again');
+            setState('character-failure');
+            
+            // Show failure feedback for 1.5 seconds then return to input
+            setTimeout(() => {
+              setState('phrase-entry');
+              setLastCharacterResult(null);
+              setFeedbackMessage('');
+              // Keep recovery locked during individual character failure
+            }, 1500);
+          }
         } else {
           // Character was accepted - update state and continue
           setCurrentWord(result.word_pos);
@@ -322,13 +334,9 @@ export function RecoveryFlow({
         setLastCharacterResult('failure');
         setFeedbackMessage(`Failed to send character: ${error}`);
         setState('character-failure');
+        setIsRecoveryLocked(false); // Unlock on communication error so user can exit/retry
         
-        setTimeout(() => {
-          setState('phrase-entry');
-          setLastCharacterResult(null);
-          setFeedbackMessage('');
-          // Keep recovery locked - user needs to continue or manually exit
-        }, 2000);
+        // Don't auto-return on communication errors - let user decide
       } finally {
         setIsProcessing(false);
       }
@@ -390,13 +398,9 @@ export function RecoveryFlow({
       setLastCharacterResult('failure');
       setFeedbackMessage(`Failed to delete character: ${error}`);
       setState('character-failure');
+      setIsRecoveryLocked(false); // Unlock on delete error so user can exit/retry
       
-      setTimeout(() => {
-        setState('phrase-entry');
-        setLastCharacterResult(null);
-        setFeedbackMessage('');
-        // Keep recovery locked - user needs to continue or manually exit
-      }, 1500);
+      // Don't auto-return on delete errors - let user decide
     } finally {
       setIsProcessing(false);
     }
@@ -457,7 +461,10 @@ export function RecoveryFlow({
       }
     } catch (error) {
       console.error('Failed to move to next word:', error);
-      onError(`Failed to move to next word: ${error}`);
+      setLastCharacterResult('failure');
+      setFeedbackMessage(`Failed to move to next word: ${error}`);
+      setState('character-failure');
+      setIsRecoveryLocked(false); // Unlock on error so user can exit/retry
     } finally {
       setIsProcessing(false);
     }
@@ -480,7 +487,10 @@ export function RecoveryFlow({
       }
     } catch (error) {
       console.error('Failed to complete recovery:', error);
-      onError(`Failed to complete recovery: ${error}`);
+      setLastCharacterResult('failure');
+      setFeedbackMessage(`Failed to complete recovery: ${error}`);
+      setState('character-failure');
+      setIsRecoveryLocked(false); // Unlock on error so user can exit/retry
     } finally {
       setIsProcessing(false);
     }
@@ -697,24 +707,62 @@ export function RecoveryFlow({
   );
 
   // Render character failure feedback
-  const renderCharacterFailure = () => (
-    <VStack gap={6}>
-      <Box
-        style={{
-          animation: 'shake 0.5s ease-in-out',
-          filter: 'drop-shadow(0 0 20px rgba(245, 101, 101, 0.5))'
-        }}
-      >
-        <Icon as={FaExclamationTriangle} boxSize={16} color="red.400" />
-      </Box>
-      <Heading size="lg" textAlign="center" color="red.400">
-        Try Again
-      </Heading>
-      <Text color="gray.300" textAlign="center">
-        {feedbackMessage}
-      </Text>
-    </VStack>
-  );
+  const renderCharacterFailure = () => {
+    const isCompleteFailure = !isRecoveryLocked; // Complete failures unlock the UI
+    
+    return (
+      <VStack gap={6}>
+        <Box
+          style={{
+            animation: 'shake 0.5s ease-in-out',
+            filter: 'drop-shadow(0 0 20px rgba(245, 101, 101, 0.5))'
+          }}
+        >
+          <Icon as={FaExclamationTriangle} boxSize={16} color="red.400" />
+        </Box>
+        <Heading size="lg" textAlign="center" color="red.400">
+          {isCompleteFailure ? 'Recovery Failed' : 'Try Again'}
+        </Heading>
+        <Text color="gray.300" textAlign="center">
+          {feedbackMessage}
+        </Text>
+        
+        {isCompleteFailure && (
+          <VStack gap={3} w="100%">
+            <Button
+              onClick={() => {
+                // Reset recovery state and restart
+                setState('initializing');
+                setCurrentWord(0);
+                setCurrentChar(0);
+                setCharacterInputs(['', '', '', '']);
+                setIsAutoCompleted(false);
+                setLastCharacterResult(null);
+                setFeedbackMessage('');
+                setIsRecoveryLocked(false);
+              }}
+              colorScheme="blue"
+              size="lg"
+              w="100%"
+            >
+              Try Recovery Again
+            </Button>
+            
+            {onBack && (
+              <Button
+                onClick={onBack}
+                variant="outline"
+                size="lg"
+                w="100%"
+              >
+                Cancel Recovery
+              </Button>
+            )}
+          </VStack>
+        )}
+      </VStack>
+    );
+  };
 
   // Prevent escape key and other interruptions when recovery is locked
   useEffect(() => {
