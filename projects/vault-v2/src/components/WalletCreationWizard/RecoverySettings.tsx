@@ -17,7 +17,7 @@ interface RecoverySettingsProps {
 }
 
 export interface RecoverySettings {
-  wordCount: 12 | 18 | 24;
+  wordCount: 12;
   usePassphrase: boolean;
 }
 
@@ -27,7 +27,7 @@ export function RecoverySettings({
   isLoading = false, 
   error 
 }: RecoverySettingsProps) {
-  const [wordCount, setWordCount] = useState<12 | 18 | 24>(12);
+  const [wordCount] = useState<12>(12);
   const [usePassphrase, setUsePassphrase] = useState(false);
 
   const handleSubmit = () => {
@@ -36,10 +36,6 @@ export function RecoverySettings({
       usePassphrase,
     };
     onComplete(settings);
-  };
-
-  const handleWordCountChange = (count: 12 | 18 | 24) => {
-    setWordCount(count);
   };
 
   const handlePassphraseToggle = () => {
@@ -82,26 +78,15 @@ export function RecoverySettings({
             <Text fontSize="lg" fontWeight="semibold" mb={4}>
               Recovery Sentence Length
             </Text>
-            <Stack gap={3}>
-              {[12, 18, 24].map((count) => (
-                <Box
-                  key={count}
-                  p={3}
-                  borderRadius="md"
-                  cursor="pointer"
-                  bg={wordCount === count ? "blue.600" : "gray.700"}
-                  borderWidth={wordCount === count ? "2px" : "1px"}
-                  borderColor={wordCount === count ? "blue.400" : "gray.600"}
-                  onClick={() => handleWordCountChange(count as 12 | 18 | 24)}
-                  transition="all 0.2s"
-                  _hover={{
-                    bg: wordCount === count ? "blue.700" : "gray.600"
-                  }}
-                >
-                  <Text fontSize="md">{count} words</Text>
-                </Box>
-              ))}
-            </Stack>
+            <Box
+              p={3}
+              borderRadius="md"
+              bg="blue.600"
+              borderWidth="2px"
+              borderColor="blue.400"
+            >
+              <Text fontSize="md">12 words</Text>
+            </Box>
           </Box>
 
           <Box w="100%">

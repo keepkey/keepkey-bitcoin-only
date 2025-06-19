@@ -82,7 +82,7 @@ export const Step3ForceRecovery: React.FC<StepProps> = ({
                 ⚠️ Before proceeding, ensure you have:
               </Text>
               <VStack align="start" gap={1}>
-                <Text fontSize="sm" color="yellow.600">• Your 12-24 word recovery phrase written down</Text>
+                <Text fontSize="sm" color="yellow.600">• Your 12-word recovery phrase written down</Text>
                 <Text fontSize="sm" color="yellow.600">• Any passphrases you may have used</Text>
                 <Text fontSize="sm" color="yellow.600">• Knowledge of your wallet setup</Text>
               </VStack>

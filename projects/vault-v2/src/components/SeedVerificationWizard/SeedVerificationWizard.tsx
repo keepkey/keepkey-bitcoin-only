@@ -234,28 +234,25 @@ const SeedVerificationWizard: React.FC<SeedVerificationWizardProps> = ({
               {currentStep === 'word-count' && (
                 <VStack gap={4}>
                   <Text textAlign="center" color="gray.300">
-                    Select the number of words in your recovery phrase:
+                    KeepKey uses 12-word recovery phrases. Click below to begin verification:
                   </Text>
                   <VStack gap={2}>
-                    {[12, 18, 24].map((count) => (
-                      <Button
-                        key={count}
-                        size="lg"
-                        variant="outline"
-                        width="full"
-                        onClick={() => handleStartVerification(count)}
-                        loading={isLoading}
-                        borderColor="gray.500"
-                        color="white"
-                        _hover={{ 
-                          borderColor: "blue.400", 
-                          bg: "gray.600" 
-                        }}
-                        _active={{ bg: "gray.500" }}
-                      >
-                        {count} Words
-                      </Button>
-                    ))}
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      width="full"
+                      onClick={() => handleStartVerification(12)}
+                      loading={isLoading}
+                      borderColor="gray.500"
+                      color="white"
+                      _hover={{ 
+                        borderColor: "blue.400", 
+                        bg: "gray.600" 
+                      }}
+                      _active={{ bg: "gray.500" }}
+                    >
+                      12 Words
+                    </Button>
                   </VStack>
                 </VStack>
               )}

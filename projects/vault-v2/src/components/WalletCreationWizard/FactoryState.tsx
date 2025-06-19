@@ -92,7 +92,7 @@ export function FactoryState({ onCreateWallet, onRecoverWallet, onClose }: Facto
               textAlign="center"
               mt={4}
             >
-              Recovery requires your existing 12, 18, or 24-word recovery phrase
+              Recovery requires your existing 12-word recovery phrase
             </Text>
           </VStack>
         </Box>

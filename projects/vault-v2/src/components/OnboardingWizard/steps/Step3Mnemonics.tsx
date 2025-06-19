@@ -48,7 +48,7 @@ export function Step3Mnemonics() {
                 </HStack>
                 <VStack align="start" gap={2}>
                   <Text color="gray.400" fontSize="sm">
-                    • A 12, 18, or 24-word backup of your entire wallet
+                    • A 12-word backup of your entire wallet
                   </Text>
                   <Text color="gray.400" fontSize="sm">
                     • The only way to recover funds if device is lost

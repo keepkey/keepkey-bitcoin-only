@@ -12,9 +12,7 @@ const VerificationWordCount: React.FC<VerificationWordCountProps> = ({
   isLoading
 }) => {
   const wordCountOptions = [
-    { count: 12, description: "Most common for KeepKey devices" },
-    { count: 18, description: "Enhanced security option" },
-    { count: 24, description: "Maximum security option" }
+    { count: 12, description: "Standard for KeepKey devices" }
   ];
 
   return (
@@ -22,7 +20,7 @@ const VerificationWordCount: React.FC<VerificationWordCountProps> = ({
       <VStack gap={3}>
         <Icon as={FaKey} boxSize={8} color="blue.500" />
         <Text textAlign="center" color="gray.500">
-          Select the number of words in your recovery phrase that you want to verify.
+          KeepKey uses 12-word recovery phrases. Click below to begin verification.
         </Text>
       </VStack>
 
@@ -52,7 +50,7 @@ const VerificationWordCount: React.FC<VerificationWordCountProps> = ({
       </VStack>
 
       <Text fontSize="xs" textAlign="center" color="gray.400">
-        Your recovery phrase length was determined when you first initialized your device.
+        Your KeepKey uses a 12-word recovery phrase that was generated when you first initialized your device.
       </Text>
     </VStack>
   );

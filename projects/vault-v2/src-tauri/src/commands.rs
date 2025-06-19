@@ -1744,7 +1744,7 @@ pub async fn initialize_device_pin(
     // Create ResetDevice message with PIN protection enabled
     let reset_device = keepkey_rust::messages::ResetDevice {
         display_random: Some(false),  // Don't show confusing entropy screen to users
-        strength: Some(256),
+        strength: Some(128),  // 128 bits = 12 words (Bitcoin-only)
         passphrase_protection: Some(false),
         pin_protection: Some(true),  // This triggers PIN creation flow
         language: Some("english".to_string()),
