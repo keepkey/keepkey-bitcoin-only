@@ -2302,7 +2302,7 @@ pub async fn start_device_recovery(
         language: Some("english".to_string()),
         label: Some(label),
         enforce_wordlist: None,      // Don't set - might not be supported
-        use_character_cipher: None,  // Don't set - might not be supported  
+        use_character_cipher: Some(true),  // Re-enable - device expects substitution cipher
         auto_lock_delay_ms: None,    // Don't set - might not be supported
         u2f_counter: None,           // Don't set - not needed for recovery
         dry_run: Some(false),        // Essential - distinguishes from verification

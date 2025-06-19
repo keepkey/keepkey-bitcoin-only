@@ -431,7 +431,7 @@ export function RecoveryFlow({
           if (currentWord >= wordCount - 1 && currentChar >= 3) {
             // This is a complete recovery failure
             setLastCharacterResult('failure');
-            setFeedbackMessage('Recovery failed - the seed phrase was incorrect');
+            setFeedbackMessage('Recovery failed - the seed phrase words were not entered correctly. Please verify your recovery phrase and try again.');
             setState('character-failure');
             setIsRecoveryLocked(false); // Unlock so user can try again
             
@@ -439,7 +439,7 @@ export function RecoveryFlow({
           } else {
             // This is just an individual character failure
             setLastCharacterResult('failure');
-            setFeedbackMessage('Incorrect character - please try again');
+            setFeedbackMessage('Incorrect character - please check your device screen and try again');
             setState('character-failure');
             
             // Show failure feedback for 1.5 seconds then return to input
@@ -475,8 +475,20 @@ export function RecoveryFlow({
         }
       } catch (error) {
         console.error('Failed to send character:', error);
+        
+        // Show proper error feedback to user
+        const errorString = String(error);
         setLastCharacterResult('failure');
-        setFeedbackMessage(`Failed to send character: ${error}`);
+        
+        if (errorString.includes('Words were not entered correctly') || 
+            errorString.includes('substitution cipher')) {
+          setFeedbackMessage('Make sure to use the scrambled keyboard shown on your KeepKey device screen. The positions change for security.');
+        } else if (errorString.includes('Failure')) {
+          setFeedbackMessage('Character entry failed - please check your device screen and try again');
+        } else {
+          setFeedbackMessage(`Failed to send character: ${error}`);
+        }
+        
         setState('character-failure');
         setIsRecoveryLocked(false); // Unlock on communication error so user can exit/retry
         
@@ -644,15 +656,38 @@ export function RecoveryFlow({
       }
       
       if (result.is_complete) {
-        setState('complete');
-        onComplete();
+        // Recovery completed successfully
+        triggerConfetti();
+        setLastCharacterResult('success');
+        setFeedbackMessage('Recovery completed successfully!');
+        setState('character-success');
+        setIsRecoveryLocked(false); // Unlock UI on completion
+        
+        setTimeout(() => {
+          setState('complete');
+          onComplete();
+        }, 3000); // Let them enjoy the confetti
+      } else {
+        // Recovery not complete yet - this shouldn't happen when user clicks "Complete"
+        console.warn("🔄 Recovery completion returned but not marked as complete");
       }
     } catch (error) {
       console.error('Failed to complete recovery:', error);
+      
+      // Show proper error feedback to user
+      const errorString = String(error);
       setLastCharacterResult('failure');
-      setFeedbackMessage(`Failed to complete recovery: ${error}`);
+      
+      if (errorString.includes('Words were not entered correctly') || 
+          errorString.includes('substitution cipher') ||
+          errorString.includes('Failure')) {
+        setFeedbackMessage('Recovery failed - the seed phrase words were not entered correctly. Please check your recovery phrase and try again.');
+      } else {
+        setFeedbackMessage(`Failed to complete recovery: ${error}`);
+      }
+      
       setState('character-failure');
-      setIsRecoveryLocked(false); // Unlock on error so user can exit/retry
+      setIsRecoveryLocked(false); // Unlock on completion error so user can retry or exit
     } finally {
       setIsProcessing(false);
     }
