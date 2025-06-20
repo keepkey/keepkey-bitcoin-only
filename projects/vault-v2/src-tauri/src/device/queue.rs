@@ -7,6 +7,86 @@ use tokio::sync::RwLock;
 // Import types needed for DeviceRequestWrapper
 use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, DeviceQueueManager, parse_transaction_from_hex};
 
+// PIN Request tracking for new event-driven PIN flow
+#[derive(Clone, Debug)]
+pub struct PendingPinRequest {
+    pub request_id: String,
+    pub device_id: String,
+    pub original_request: DeviceRequestWrapper,
+    pub session_id: String,
+    pub pin_request_type: String,
+}
+
+// PIN-aware message handler for emitting events instead of auto-responding
+fn pin_aware_message_handler(msg: &keepkey_rust::messages::Message, app_handle: &tauri::AppHandle, device_id: &str, request_id: &str) -> anyhow::Result<Option<keepkey_rust::messages::Message>> {
+    match msg {
+        keepkey_rust::messages::Message::PinMatrixRequest(pin_req) => {
+            // Don't auto-respond to PIN requests - emit an event instead
+            let pin_type = match pin_req.r#type {
+                Some(t) => match keepkey_rust::messages::PinMatrixRequestType::from_i32(t) {
+                    Some(keepkey_rust::messages::PinMatrixRequestType::Current) => "current",
+                    Some(keepkey_rust::messages::PinMatrixRequestType::NewFirst) => "new_first", 
+                    Some(keepkey_rust::messages::PinMatrixRequestType::NewSecond) => "new_second",
+                    _ => "unknown"
+                },
+                None => "unknown"
+            };
+            
+            let session_id = format!("pin_request_{}_{}", device_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+            
+            let pin_event_payload = serde_json::json!({
+                "device_id": device_id,
+                "request_id": request_id,
+                "session_id": session_id,
+                "pin_type": pin_type,
+                "message": match pin_type {
+                    "current" => "Enter your current PIN",
+                    "new_first" => "Enter a new PIN",
+                    "new_second" => "Re-enter the new PIN",
+                    _ => "Enter PIN"
+                }
+            });
+            
+            println!("📡 Emitting device:pin-request event: {:?}", pin_event_payload);
+            
+            if let Err(e) = app_handle.emit("device:pin-request", &pin_event_payload) {
+                eprintln!("Failed to emit PIN request event: {}", e);
+            }
+            
+            // Store this as a pending request
+            let pending_request = PendingPinRequest {
+                request_id: request_id.to_string(),
+                device_id: device_id.to_string(),
+                original_request: DeviceRequestWrapper {
+                    device_id: device_id.to_string(),
+                    request_id: request_id.to_string(),
+                    request: DeviceRequest::GetFeatures, // Placeholder
+                },
+                session_id: session_id.clone(),
+                pin_request_type: pin_type.to_string(),
+            };
+            
+            tokio::spawn(async move {
+                let mut pending_pins = PENDING_PIN_REQUESTS.lock().await;
+                pending_pins.insert(session_id.clone(), pending_request);
+                println!("📋 Stored pending PIN request session: {}", session_id);
+            });
+            
+            // Return None to stop the message flow - frontend will respond
+            Ok(None)
+        }
+        _ => {
+            // For other messages, use default handling
+            Ok(None)
+        }
+    }
+}
+
+// Global tracking for pending PIN requests
+lazy_static::lazy_static! {
+    pub static ref PENDING_PIN_REQUESTS: Arc<tokio::sync::Mutex<HashMap<String, PendingPinRequest>>> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+}
+
 // Create a cache for device states to remember OOB bootloader status
 lazy_static::lazy_static! {
     static ref DEVICE_STATE_CACHE: Arc<RwLock<HashMap<String, DeviceStateCache>>> = Arc::new(RwLock::new(HashMap::new()));
@@ -215,10 +295,83 @@ pub async fn add_to_device_queue(
                 _ => None,
             };
             
-            queue_handle
-                .get_address(path_parts, coin_name.clone(), script_type_int, show_display)
-                .await
-                .map_err(|e| format!("Failed to get address: {}", e))
+            // Create GetAddress message with PIN-aware handling
+            let get_address_msg = keepkey_rust::messages::Message::GetAddress(
+                keepkey_rust::messages::GetAddress {
+                    address_n: path_parts,
+                    coin_name: Some(coin_name.clone()),
+                    script_type: script_type_int,
+                    show_display,
+                    multisig: None,
+                }
+            );
+            
+            // Use send_raw to get address (now uses PIN flow handler that doesn't auto-respond)
+            match queue_handle.send_raw(get_address_msg, false).await {
+                Ok(keepkey_rust::messages::Message::Address(addr)) => {
+                    Ok(addr.address)
+                }
+                Ok(keepkey_rust::messages::Message::PinMatrixRequest(pin_req)) => {
+                    // Handle PIN request by emitting event
+                    let pin_type = match pin_req.r#type {
+                        Some(t) => match keepkey_rust::messages::PinMatrixRequestType::from_i32(t) {
+                            Some(keepkey_rust::messages::PinMatrixRequestType::Current) => "current",
+                            Some(keepkey_rust::messages::PinMatrixRequestType::NewFirst) => "new_first", 
+                            Some(keepkey_rust::messages::PinMatrixRequestType::NewSecond) => "new_second",
+                            _ => "unknown"
+                        },
+                        None => "unknown"
+                    };
+                    
+                    let session_id = format!("pin_request_{}_{}", request.device_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+                    
+                    let pin_event_payload = serde_json::json!({
+                        "device_id": request.device_id,
+                        "request_id": request.request_id,
+                        "session_id": session_id,
+                        "pin_type": pin_type,
+                        "message": match pin_type {
+                            "current" => "Enter your current PIN",
+                            "new_first" => "Enter a new PIN",
+                            "new_second" => "Re-enter the new PIN",
+                            _ => "Enter PIN"
+                        }
+                    });
+                    
+                    println!("📡 Emitting device:pin-request event: {:?}", pin_event_payload);
+                    
+                    if let Err(e) = app.emit("device:pin-request", &pin_event_payload) {
+                        eprintln!("Failed to emit PIN request event: {}", e);
+                    }
+                    
+                    // Store the pending request
+                    let pending_request = PendingPinRequest {
+                        request_id: request.request_id.clone(),
+                        device_id: request.device_id.clone(),
+                        original_request: request.clone(),
+                        session_id: session_id.clone(),
+                        pin_request_type: pin_type.to_string(),
+                    };
+                    
+                    tokio::spawn(async move {
+                        let mut pending_pins = PENDING_PIN_REQUESTS.lock().await;
+                        pending_pins.insert(session_id.clone(), pending_request);
+                        println!("📋 Stored pending PIN request session: {}", session_id);
+                    });
+                    
+                    // Return a special error that indicates PIN is required
+                    Err("PIN required - please enter PIN in dialog".to_string())
+                }
+                Ok(keepkey_rust::messages::Message::Failure(failure)) => {
+                    Err(format!("Device returned error: {}", failure.message.unwrap_or_default()))
+                }
+                Ok(_) => {
+                    Err("Unexpected response from device for address request".to_string())
+                }
+                Err(e) => {
+                    Err(format!("Failed to get address: {}", e))
+                }
+            }
         }
         DeviceRequest::GetFeatures => {
             let features = queue_handle
