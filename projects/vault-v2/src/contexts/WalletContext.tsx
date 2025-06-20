@@ -297,10 +297,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Skip the database check since we confirmed devices are connected
       console.log(tag, 'Connected devices confirmed, proceeding with initialization');
 
-      // Always try to fetch fresh xpubs on startup to ensure we have the latest
-      // This ensures we detect newly connected devices and get their xpubs
-      console.log(tag, '🔄 Always fetching fresh xpubs on startup...');
-      await getXpubsFromDeviceQueue();
+      // Don't fetch xpubs immediately - wait for device:ready event instead
+      // This prevents trying to fetch xpubs from PIN-locked devices
+      console.log(tag, '🔄 Skipping immediate xpub fetch - waiting for device:ready event...');
 
       // Set sync status based on whether we have in-memory xpubs
       // Since we removed the database, we'll use in-memory xpubs to determine sync status

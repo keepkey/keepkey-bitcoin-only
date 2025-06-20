@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { Box, VStack, HStack, Text, Button, SimpleGrid, Icon } from '@chakra-ui/react'
+import { FaCircle } from 'react-icons/fa'
 
 interface PinUnlockDialogProps {
   isOpen: boolean
@@ -118,84 +120,177 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+    <div style={{ 
+      position: 'fixed', 
+      top: 0, 
+      left: 0, 
+      right: 0, 
+      bottom: 0, 
+      backgroundColor: 'rgba(0, 0, 0, 0.8)', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      zIndex: 9999 
+    }}>
+      <Box
+        maxW="500px"
+        bg="gray.800"
+        borderRadius="xl"
+        boxShadow="xl"
+        borderWidth="1px"
+        borderColor="gray.700"
+        overflow="hidden"
+        w="90%"
+      >
+        <Box bg="gray.850" p={6}>
+          <Text fontSize="2xl" fontWeight="bold" color="white" textAlign="center">
             Enter PIN to Unlock
-          </h2>
-          <p className="text-sm text-gray-600">
-            Your KeepKey device is locked. Enter your PIN using the matrix displayed on your device.
-          </p>
-        </div>
+          </Text>
+        </Box>
+        
+        <Box p={6}>
+          <VStack gap={6}>
+            <Text 
+              color="gray.400" 
+              textAlign="center"
+              fontSize="md"
+              lineHeight="1.6"
+            >
+              Your KeepKey device is locked. Enter your PIN using the matrix displayed on your device.
+            </Text>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* PIN Display */}
-        <div className="mb-6">
-          <div className="text-sm text-gray-600 mb-2">PIN entered:</div>
-          <div className="flex items-center min-h-[2rem]">
-            {pinMatrix.map((_, index) => (
-              <span key={index} className="w-3 h-3 bg-gray-800 rounded-full mr-2"></span>
-            ))}
-            {pinMatrix.length === 0 && (
-              <span className="text-gray-400 text-sm">No digits entered</span>
+            {error && (
+              <Text color="red.400" fontSize="sm" textAlign="center" p={3} bg="red.900" borderRadius="md" borderWidth="1px" borderColor="red.600">
+                {error}
+              </Text>
             )}
-          </div>
-        </div>
 
-        {/* PIN Matrix */}
-        <div className="mb-6">
-          <div className="text-sm text-gray-600 mb-3">
-            Look at your KeepKey device and click the positions shown:
-          </div>
-          <div className="grid grid-cols-3 gap-2 max-w-48 mx-auto">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((position) => (
-              <button
-                key={position}
-                onClick={() => handleMatrixClick(position)}
-                disabled={isLoading}
-                className="aspect-square bg-gray-100 hover:bg-gray-200 disabled:hover:bg-gray-100 disabled:opacity-50 rounded border-2 border-gray-300 text-lg font-semibold text-gray-700 transition-colors"
+            {/* PIN Dots Display */}
+            <VStack gap={2}>
+              <Box
+                p={4}
+                bg="gray.700"
+                borderRadius="lg"
+                borderWidth="2px"
+                borderColor={pinMatrix.length > 0 ? "blue.500" : "gray.600"}
+                transition="all 0.2s"
               >
-                •
-              </button>
-            ))}
-          </div>
-        </div>
+                <HStack gap={2} justify="center">
+                  {Array.from({ length: Math.max(4, pinMatrix.length) }, (_, i) => (
+                    <Box
+                      key={i}
+                      w="12px"
+                      h="12px"
+                      borderRadius="full"
+                      bg={i < pinMatrix.length ? "blue.400" : "gray.500"}
+                      opacity={i < pinMatrix.length ? 1 : 0.5}
+                    />
+                  ))}
+                </HStack>
+              </Box>
+              
+              {pinMatrix.length === 0 && (
+                <Text fontSize="xs" color="blue.400" textAlign="center">
+                  Look at your KeepKey device and click the corresponding positions
+                </Text>
+              )}
+            </VStack>
 
-        {/* Action Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={handleClear}
-            disabled={isLoading || pinMatrix.length === 0}
-            className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Clear
-          </button>
-          <button
-            onClick={handleCancel}
-            disabled={isLoading}
-            className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={isLoading || pinMatrix.length === 0}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? 'Unlocking...' : 'Unlock'}
-          </button>
-        </div>
+            {/* PIN Matrix */}
+            <SimpleGrid
+              columns={3}
+              gap={4}
+              w="250px"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((position) => (
+                <Button
+                  key={position}
+                  onClick={() => handleMatrixClick(position)}
+                  size="lg"
+                  h="60px"
+                  bg="gray.700"
+                  borderColor="gray.600"
+                  borderWidth="1px"
+                  color="gray.300"
+                  _hover={{
+                    bg: "gray.600",
+                    borderColor: "blue.500",
+                    transform: "scale(1.05)",
+                  }}
+                  _active={{
+                    bg: "gray.500",
+                    transform: "scale(0.95)",
+                  }}
+                  transition="all 0.2s"
+                  disabled={isLoading || pinMatrix.length >= 9}
+                >
+                  <Icon as={FaCircle} boxSize={4} />
+                </Button>
+              ))}
+            </SimpleGrid>
 
-        <div className="mt-4 text-xs text-gray-500 text-center">
-          The numbers on the buttons correspond to the positions shown on your KeepKey device screen.
-        </div>
-      </div>
+            {/* Action Buttons */}
+            <HStack gap={4} w="full">
+              <Button
+                onClick={handleClear}
+                variant="outline"
+                size="lg"
+                flex={1}
+                borderColor="gray.600"
+                color="gray.300"
+                fontSize="md"
+                fontWeight="semibold"
+                _hover={{
+                  bg: "gray.700",
+                  borderColor: "gray.500",
+                }}
+                disabled={isLoading || pinMatrix.length === 0}
+              >
+                Clear
+              </Button>
+              
+              <Button
+                onClick={handleCancel}
+                variant="outline"
+                size="lg"
+                flex={1}
+                borderColor="gray.600"
+                color="gray.300"
+                fontSize="md"
+                fontWeight="semibold"
+                _hover={{
+                  bg: "gray.700",
+                  borderColor: "gray.500",
+                }}
+                disabled={isLoading}
+              >
+                Cancel
+              </Button>
+              
+              <Button
+                onClick={handleSubmit}
+                colorScheme="blue"
+                size="lg"
+                flex={1}
+                fontSize="md"
+                fontWeight="semibold"
+                _hover={{
+                  transform: "translateY(-1px)",
+                  boxShadow: "lg",
+                }}
+                transition="all 0.2s"
+                disabled={isLoading || pinMatrix.length === 0}
+              >
+                {isLoading ? 'Unlocking...' : 'Unlock'}
+              </Button>
+            </HStack>
+
+            <Text fontSize="xs" color="gray.500" textAlign="center">
+              The numbered positions correspond to the layout shown on your KeepKey device screen.
+            </Text>
+          </VStack>
+        </Box>
+      </Box>
     </div>
   )
 } 
