@@ -95,8 +95,9 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
       }
-    } else if (status.needsFirmwareUpdate && status.firmwareCheck) {
-      console.log('Device needs firmware update')
+    } else if (status.needsFirmwareUpdate && status.firmwareCheck && !status.needsBootloaderUpdate) {
+      // Only show firmware update if bootloader doesn't need updating (bootloader has priority)
+      console.log('Device needs firmware update and bootloader is up to date')
       setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(true)

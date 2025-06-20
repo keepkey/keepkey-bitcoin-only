@@ -38,3 +38,13 @@ semver = "1.0.26"
 log = "0.4"  # For logging support in PIN creation
 # Note: rusb removed - handled internally by keepkey-rust
 
+# Platform-specific hidapi configuration for Windows HID compatibility
+[target.'cfg(windows)'.dependencies]
+hidapi = { version = "2.6", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+hidapi = { version = "2.6", features = ["linux-static-hidraw"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+hidapi = { version = "2.6", features = ["macos-shared-device"] }
+

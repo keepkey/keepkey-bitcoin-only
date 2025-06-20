@@ -7,6 +7,7 @@ mod device;
 mod event_controller;
 mod logging;
 mod slip132;
+mod embedded_firmware;
 
 // Re-export commonly used types
 
@@ -76,49 +77,71 @@ async fn open_url(app_handle: tauri::AppHandle, url: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn restart_backend_startup(app: tauri::AppHandle) -> Result<(), String> {
-    println!("Restarting backend startup process");
-    // Emit event to indicate restart
-    match app.emit("application:state", serde_json::json!({
-        "status": "Restarting...",
-        "connected": false,
-        "features": null
-    })) {
-        Ok(_) => {
-            // Simulate restart process
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(1000));
-                let _ = app.emit("application:state", serde_json::json!({
-                    "status": "Device ready",
-                    "connected": true,
-                    "features": {
-                        "label": "KeepKey",
-                        "vendor": "KeepKey",
-                        "model": "KeepKey",
-                        "firmware_variant": "keepkey",
-                        "device_id": "keepkey-001",
-                        "language": "english",
-                        "bootloader_mode": false,
-                        "version": "7.7.0",
-                        "firmware_hash": null,
-                        "bootloader_hash": null,
-                        "initialized": true,
-                        "imported": false,
-                        "no_backup": false,
-                        "pin_protection": true,
-                        "pin_cached": false,
-                        "passphrase_protection": false,
-                        "passphrase_cached": false,
-                        "wipe_code_protection": false,
-                        "auto_lock_delay_ms": null,
-                        "policies": []
-                    }
-                }));
-            });
-            Ok(())
-        },
-        Err(e) => Err(format!("Failed to emit restart event: {}", e))
+async fn restart_backend_startup(app: tauri::AppHandle) -> Result<(), String> {
+    println!("🔄 Restarting backend startup process...");
+    
+    // Emit initial restart status
+    let _ = app.emit("status:update", serde_json::json!({
+        "status": "Restarting backend..."
+    }));
+    
+    // 1. Stop the current event controller
+    if let Some(controller_state) = app.try_state::<std::sync::Arc<std::sync::Mutex<event_controller::EventController>>>() {
+        println!("🛑 Stopping current event controller...");
+        let controller_arc = controller_state.inner().clone();
+        
+        // Stop the controller in a separate scope to ensure proper cleanup
+        {
+            if let Ok(mut controller) = controller_arc.lock() {
+                controller.stop();
+                println!("✅ Event controller stopped successfully");
+            } else {
+                println!("⚠️ Failed to lock controller for stop");
+            };
+        } // Mutex guard is dropped here
+    } else {
+        println!("⚠️ No event controller found in app state");
     }
+    
+    // 2. Clear device queue manager state
+    if let Some(queue_manager_state) = app.try_state::<std::sync::Arc<tokio::sync::Mutex<std::collections::HashMap<String, keepkey_rust::device_queue::DeviceQueueHandle>>>>() {
+        println!("🧹 Cleaning up device queues...");
+        let queue_manager_arc = queue_manager_state.inner().clone();
+        let mut manager = queue_manager_arc.lock().await;
+        
+        // Shutdown all existing device queues
+        for (device_id, handle) in manager.drain() {
+            println!("🛑 Shutting down queue for device: {}", device_id);
+            let _ = handle.shutdown().await;
+        }
+        println!("✅ All device queues cleaned up");
+    } else {
+        println!("⚠️ No device queue manager found in app state");
+    }
+    
+    // 3. Clear last responses cache
+    if let Some(responses_state) = app.try_state::<std::sync::Arc<tokio::sync::Mutex<std::collections::HashMap<String, commands::DeviceResponse>>>>() {
+        println!("🧹 Clearing response cache...");
+        let responses_arc = responses_state.inner().clone();
+        let mut responses = responses_arc.lock().await;
+        responses.clear();
+        println!("✅ Response cache cleared");
+    }
+    
+    // 4. Give a moment for cleanup to complete
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+    
+    // 5. Start a new event controller
+    println!("🚀 Starting new event controller...");
+    let _new_controller = event_controller::spawn_event_controller(&app);
+    
+    // Emit completion status
+    let _ = app.emit("status:update", serde_json::json!({
+        "status": "Backend restarted - scanning for devices..."
+    }));
+    
+    println!("✅ Backend restart completed successfully");
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -151,7 +174,6 @@ pub fn run() {
             let _event_controller = event_controller::spawn_event_controller(&app.handle());
             
             // Start background log cleanup task
-            let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(86400)); // 24 hours
                 loop {

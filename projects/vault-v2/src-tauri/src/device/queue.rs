@@ -111,18 +111,6 @@ pub async fn add_to_device_queue(
         }
     };
 
-    let status = if let Some(raw) = &raw_features_opt {
-        // Convert to the simplified struct used by the evaluator
-        let converted = crate::commands::convert_features_to_device_features(raw.clone());
-        crate::commands::evaluate_device_status(request.device_id.clone(), Some(&converted))
-    } else {
-        // Fallback – we couldn't grab features, assume unknown status
-        crate::commands::evaluate_device_status(request.device_id.clone(), None)
-    };
-
-    // Special handling for devices that might be in OOB bootloader mode
-    let is_likely_oob_bootloader = raw_features_opt.is_none() && request_type != "GetFeatures";
-    
     // If we couldn't fetch features AND this isn't a plain GetFeatures request
     if raw_features_opt.is_none() && request_type != "GetFeatures" {
         // Check if the device was successfully detected during initial connection
@@ -144,6 +132,15 @@ pub async fn add_to_device_queue(
             return Err("Device state unknown – cannot service request until communication succeeds.".to_string());
         }
     }
+
+    let status = if let Some(raw) = &raw_features_opt {
+        // Convert to the simplified struct used by the evaluator
+        let converted = crate::commands::convert_features_to_device_features(raw.clone());
+        crate::commands::evaluate_device_status(request.device_id.clone(), Some(&converted))
+    } else {
+        // Fallback – we couldn't grab features, assume unknown status
+        crate::commands::evaluate_device_status(request.device_id.clone(), None)
+    };
 
     // Check if device is in interactive PIN flow and block other operations
     if crate::commands::is_device_in_pin_flow(&request.device_id) {

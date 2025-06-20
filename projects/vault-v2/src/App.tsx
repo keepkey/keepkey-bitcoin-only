@@ -14,6 +14,7 @@ import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
 import { VaultInterface } from './components/VaultInterface';
 import { useWallet } from './contexts/WalletContext';
+import { NoDeviceDialog } from './components/NoDeviceDialog';
 
 // Define the expected structure of DeviceFeatures from Rust
 interface DeviceFeatures {
@@ -59,6 +60,7 @@ function App() {
     const [isRestarting, setIsRestarting] = useState(false);
     const [deviceUpdateComplete, setDeviceUpdateComplete] = useState(false);
     const [onboardingActive, setOnboardingActive] = useState(false);
+    const [showNoDeviceDialog, setShowNoDeviceDialog] = useState(false);
     const { showOnboarding, showError } = useCommonDialogs();
     const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
     
@@ -68,23 +70,34 @@ function App() {
     };
     
     // Function to restart backend startup process
-    const { reinitialize } = useWallet();
     const handleLogoClick = async () => {
         if (isRestarting) return; // Prevent multiple clicks
         
         setIsRestarting(true);
         try {
             console.log("Logo clicked - restarting backend startup process");
+            
+            // Show user feedback before restart
+            setLoadingStatus('Restarting backend...');
+            
+            // Call the proper backend restart command
             await invoke('restart_backend_startup');
-            console.log("Backend restart initiated successfully");
-            // Re-run wallet initialization to resubscribe device state after backend restart
-            reinitialize();
+            
+            console.log("✅ Backend restart command sent successfully");
+            
         } catch (error) {
-            console.error("Failed to restart backend startup:", error);
-        } finally {
-            // Reset the restarting flag after a delay
-            setTimeout(() => setIsRestarting(false), 2000);
+            console.error("Failed to restart backend:", error);
+            setLoadingStatus('Backend restart failed - try again');
+            
+            // Reset the restarting flag on error
+            setTimeout(() => {
+                setIsRestarting(false);
+                setLoadingStatus('Device scan');
+            }, 3000);
         }
+        
+        // Note: Don't reset isRestarting here - let the backend restart process complete
+        // The restart flag will be reset when new device scanning starts
     };
 
     // Check onboarding status on startup
@@ -141,6 +154,16 @@ function App() {
                     if (payload.status) {
                         console.log('🎯 Setting loading status to:', payload.status);
                         setLoadingStatus(payload.status);
+                        
+                        // Reset restarting flag when backend restart is complete and scanning begins
+                        if (isRestarting && (
+                            payload.status.includes('Scanning for devices') || 
+                            payload.status.includes('Device found') ||
+                            payload.status === 'Getting features...'
+                        )) {
+                            console.log('🎯 Backend restart completed - resetting restart flag');
+                            setIsRestarting(false);
+                        }
                     } else {
                         console.log('❌ No status field in payload:', payload);
                     }
@@ -192,6 +215,18 @@ function App() {
                     setDeviceUpdateComplete(false);
                 });
 
+                // Listen for no device detected events to show dialog
+                const unlistenNoDeviceDetected = await listen('device:no-device-detected', (event) => {
+                    console.log('No device detected event received:', event.payload);
+                    setShowNoDeviceDialog(true);
+                });
+
+                // Listen for device found events to hide no device dialog
+                const unlistenDeviceConnected = await listen('device:connected', (event) => {
+                    console.log('Device connected event received:', event.payload);
+                    setShowNoDeviceDialog(false); // Hide the no device dialog when a device connects
+                });
+
                 console.log('✅ All event listeners set up successfully');
                 
                 // Return cleanup function that removes all listeners
@@ -202,6 +237,8 @@ function App() {
                     if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
                     if (unlistenAccessError) unlistenAccessError();
                     if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
+                    if (unlistenNoDeviceDetected) unlistenNoDeviceDetected();
+                    if (unlistenDeviceConnected) unlistenDeviceConnected();
                 };
                 
             } catch (error) {
@@ -309,6 +346,12 @@ function App() {
               setDeviceUpdateComplete(true);
               setLoadingStatus('Device ready');
             }}
+          />
+
+          {/* No device detected dialog */}
+          <NoDeviceDialog 
+            isOpen={showNoDeviceDialog}
+            onClose={() => setShowNoDeviceDialog(false)}
           />
 
           {/* REST and MCP links in bottom right corner */}

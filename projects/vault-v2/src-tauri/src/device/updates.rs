@@ -1,10 +1,9 @@
 use tauri::State;
-use std::fs;
-use std::path::PathBuf;
 use semver::Version;
 use uuid;
 use crate::logging::{log_device_request, log_device_response};
 use crate::commands::DeviceQueueManager;
+use crate::embedded_firmware;
 
 /// Update device bootloader using the device queue
 #[tauri::command]
@@ -32,129 +31,38 @@ pub async fn update_device_bootloader(
     let _target_semver = Version::parse(&target_version)
         .map_err(|e| format!("Invalid target bootloader version: {}", e))?;
     
-    // Load the bootloader binary from the firmware directory (bundled with app)
-    let bootloader_filename = format!("bl_v{}", target_version);
+    // Load the bootloader binary from embedded firmware (bundled with app)
+    println!("📦 Loading embedded bootloader binary for version {}", target_version);
     
-    // Debug: Log current working directory and environment
-    let cwd = std::env::current_dir().unwrap_or_default();
-    println!("🔍 Current working directory: {:?}", cwd);
-    
-    // Get executable location for bundled app paths
-    let exe_path = std::env::current_exe().ok();
-    let exe_dir = exe_path.as_ref().and_then(|p| p.parent());
-    
-    if let Some(exe_dir) = &exe_dir {
-        println!("🔍 Executable directory: {:?}", exe_dir);
-    }
-    
-    // Try multiple possible paths for the firmware directory
-    let mut possible_firmware_paths = vec![
-        // Development paths
-        PathBuf::from("firmware").join(&bootloader_filename).join("blupdater.bin"), // Bundled with app (dev)
-        PathBuf::from("./firmware").join(&bootloader_filename).join("blupdater.bin"), // Explicit current dir
-        cwd.join("firmware").join(&bootloader_filename).join("blupdater.bin"), // Absolute from cwd
-    ];
-    
-    // Add executable-relative paths for bundled apps
-    if let Some(exe_dir) = exe_dir {
-        // Common Tauri bundled app locations
-        possible_firmware_paths.push(exe_dir.join("firmware").join(&bootloader_filename).join("blupdater.bin"));
-        possible_firmware_paths.push(exe_dir.join("../Resources/firmware").join(&bootloader_filename).join("blupdater.bin")); // macOS
-        possible_firmware_paths.push(exe_dir.join("../firmware").join(&bootloader_filename).join("blupdater.bin"));
-        
-        // Windows specific paths
-        #[cfg(target_os = "windows")]
-        {
-            possible_firmware_paths.push(exe_dir.join("resources/firmware").join(&bootloader_filename).join("blupdater.bin"));
+    let bootloader_bytes = match embedded_firmware::get_bootloader_bytes(&target_version) {
+        Some(bytes) => {
+            println!("✅ Found embedded bootloader v{}: {} bytes", target_version, bytes.len());
+            bytes.to_vec()
         }
-        
-        // Linux specific paths  
-        #[cfg(target_os = "linux")]
-        {
-            possible_firmware_paths.push(exe_dir.join("resources/firmware").join(&bootloader_filename).join("blupdater.bin"));
-            possible_firmware_paths.push(exe_dir.join("../share/vault-v2/firmware").join(&bootloader_filename).join("blupdater.bin"));
-        }
-    }
-    
-    // Debug: Log all paths being tried
-    println!("🔍 Trying to find bootloader file. Checking paths:");
-    for (i, path) in possible_firmware_paths.iter().enumerate() {
-        println!("  Path {}: {:?} - exists: {}", i + 1, path, path.exists());
-    }
-    
-    let firmware_path = possible_firmware_paths.iter().find(|path| path.exists()).cloned();
-    
-    let bootloader_bytes = if let Some(path) = firmware_path {
-        println!("📂 Loading bootloader from: {}", path.display());
-        fs::read(&path)
-            .map_err(|e| format!("Failed to read bootloader file {}: {}", path.display(), e))?
-    } else {
-        // Check available bootloader versions from all possible firmware directories
-        let mut possible_firmware_dirs = vec![
-            PathBuf::from("firmware"),
-            PathBuf::from("./firmware"),
-            cwd.join("firmware"),
-        ];
-        
-        // Add executable-relative directories for bundled apps
-        if let Some(exe_dir) = exe_dir {
-            possible_firmware_dirs.push(exe_dir.join("firmware"));
-            possible_firmware_dirs.push(exe_dir.join("../Resources/firmware")); // macOS
-            possible_firmware_dirs.push(exe_dir.join("../firmware"));
+        None => {
+            let available_versions = embedded_firmware::get_available_bootloader_versions();
+            let error_msg = format!(
+                "Bootloader version {} not found in embedded firmware. Available versions: {}",
+                target_version,
+                available_versions.join(", ")
+            );
             
-            #[cfg(target_os = "windows")]
-            {
-                possible_firmware_dirs.push(exe_dir.join("resources/firmware"));
+            println!("❌ {}", error_msg);
+            
+            // Log the error response
+            let response_data = serde_json::json!({
+                "error": error_msg,
+                "operation": "update_device_bootloader",
+                "available_versions": available_versions
+            });
+            
+            if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error_msg)).await {
+                eprintln!("Failed to log bootloader update error response: {}", e);
             }
             
-            #[cfg(target_os = "linux")]
-            {
-                possible_firmware_dirs.push(exe_dir.join("resources/firmware"));
-                possible_firmware_dirs.push(exe_dir.join("../share/vault-v2/firmware"));
-            }
+            return Err(error_msg);
         }
-        
-        let mut available_versions = String::from("No firmware directory found");
-        for firmware_dir in &possible_firmware_dirs {
-            println!("🔍 Checking firmware directory: {:?} - exists: {}", firmware_dir, firmware_dir.exists());
-            if firmware_dir.exists() {
-                match fs::read_dir(firmware_dir) {
-                    Ok(entries) => {
-                        let versions: Vec<String> = entries
-                            .filter_map(|e| e.ok())
-                            .map(|e| e.file_name().to_string_lossy().to_string())
-                            .filter(|name| name.starts_with("bl_v"))
-                            .collect();
-                        available_versions = format!("Available bootloader versions in {}: {}", 
-                            firmware_dir.display(), versions.join(", "));
-                        break;
-                    }
-                    Err(_) => continue,
-                }
-            }
-        }
-        
-        let error_msg = format!(
-            "Bootloader file not found: bl_v{}/blupdater.bin in any firmware directory. {}. Target version was: {}",
-            target_version,
-            available_versions,
-            target_version
-        );
-        
-        // Log the error response
-        let response_data = serde_json::json!({
-            "error": error_msg,
-            "operation": "update_device_bootloader"
-        });
-        
-        if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error_msg)).await {
-            eprintln!("Failed to log bootloader update error response: {}", e);
-        }
-        
-        return Err(error_msg);
     };
-    
-    println!("📦 Loaded bootloader binary: {} bytes", bootloader_bytes.len());
     
     // Get or create device queue handle
     let queue_handle = {
@@ -317,129 +225,38 @@ pub async fn update_device_firmware(
     let _target_semver = Version::parse(&target_version)
         .map_err(|e| format!("Invalid target firmware version: {}", e))?;
     
-    // Load the firmware binary from the firmware directory (bundled with app)
-    let firmware_filename = format!("v{}", target_version);
+    // Load the firmware binary from embedded firmware (bundled with app)
+    println!("📦 Loading embedded firmware binary for version {}", target_version);
     
-    // Debug: Log current working directory and environment
-    let cwd = std::env::current_dir().unwrap_or_default();
-    println!("🔍 Current working directory: {:?}", cwd);
-    
-    // Get executable location for bundled app paths
-    let exe_path = std::env::current_exe().ok();
-    let exe_dir = exe_path.as_ref().and_then(|p| p.parent());
-    
-    if let Some(exe_dir) = &exe_dir {
-        println!("🔍 Executable directory: {:?}", exe_dir);
-    }
-    
-    // Try multiple possible paths for the firmware directory
-    let mut possible_firmware_paths = vec![
-        // Development paths
-        PathBuf::from("firmware").join(&firmware_filename).join("firmware.keepkey.bin"), // Bundled with app (dev)
-        PathBuf::from("./firmware").join(&firmware_filename).join("firmware.keepkey.bin"), // Explicit current dir
-        cwd.join("firmware").join(&firmware_filename).join("firmware.keepkey.bin"), // Absolute from cwd
-    ];
-    
-    // Add executable-relative paths for bundled apps
-    if let Some(exe_dir) = exe_dir {
-        // Common Tauri bundled app locations
-        possible_firmware_paths.push(exe_dir.join("firmware").join(&firmware_filename).join("firmware.keepkey.bin"));
-        possible_firmware_paths.push(exe_dir.join("../Resources/firmware").join(&firmware_filename).join("firmware.keepkey.bin")); // macOS
-        possible_firmware_paths.push(exe_dir.join("../firmware").join(&firmware_filename).join("firmware.keepkey.bin"));
-        
-        // Windows specific paths
-        #[cfg(target_os = "windows")]
-        {
-            possible_firmware_paths.push(exe_dir.join("resources/firmware").join(&firmware_filename).join("firmware.keepkey.bin"));
+    let firmware_bytes = match embedded_firmware::get_firmware_bytes(&target_version) {
+        Some(bytes) => {
+            println!("✅ Found embedded firmware v{}: {} bytes", target_version, bytes.len());
+            bytes.to_vec()
         }
-        
-        // Linux specific paths  
-        #[cfg(target_os = "linux")]
-        {
-            possible_firmware_paths.push(exe_dir.join("resources/firmware").join(&firmware_filename).join("firmware.keepkey.bin"));
-            possible_firmware_paths.push(exe_dir.join("../share/vault-v2/firmware").join(&firmware_filename).join("firmware.keepkey.bin"));
-        }
-    }
-    
-    // Debug: Log all paths being tried
-    println!("🔍 Trying to find firmware file. Checking paths:");
-    for (i, path) in possible_firmware_paths.iter().enumerate() {
-        println!("  Path {}: {:?} - exists: {}", i + 1, path, path.exists());
-    }
-    
-    let firmware_path = possible_firmware_paths.iter().find(|path| path.exists()).cloned();
-    
-    let firmware_bytes = if let Some(path) = firmware_path {
-        println!("📂 Loading firmware from: {}", path.display());
-        fs::read(&path)
-            .map_err(|e| format!("Failed to read firmware file {}: {}", path.display(), e))?
-    } else {
-        // Check available firmware versions from all possible firmware directories
-        let mut possible_firmware_dirs = vec![
-            PathBuf::from("firmware"),
-            PathBuf::from("./firmware"),
-            cwd.join("firmware"),
-        ];
-        
-        // Add executable-relative directories for bundled apps
-        if let Some(exe_dir) = exe_dir {
-            possible_firmware_dirs.push(exe_dir.join("firmware"));
-            possible_firmware_dirs.push(exe_dir.join("../Resources/firmware")); // macOS
-            possible_firmware_dirs.push(exe_dir.join("../firmware"));
+        None => {
+            let available_versions = embedded_firmware::get_available_firmware_versions();
+            let error_msg = format!(
+                "Firmware version {} not found in embedded firmware. Available versions: {}",
+                target_version,
+                available_versions.join(", ")
+            );
             
-            #[cfg(target_os = "windows")]
-            {
-                possible_firmware_dirs.push(exe_dir.join("resources/firmware"));
+            println!("❌ {}", error_msg);
+            
+            // Log the error response
+            let response_data = serde_json::json!({
+                "error": error_msg,
+                "operation": "update_device_firmware",
+                "available_versions": available_versions
+            });
+            
+            if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error_msg)).await {
+                eprintln!("Failed to log firmware update error response: {}", e);
             }
             
-            #[cfg(target_os = "linux")]
-            {
-                possible_firmware_dirs.push(exe_dir.join("resources/firmware"));
-                possible_firmware_dirs.push(exe_dir.join("../share/vault-v2/firmware"));
-            }
+            return Err(error_msg);
         }
-        
-        let mut available_versions = String::from("No firmware directory found");
-        for firmware_dir in &possible_firmware_dirs {
-            println!("🔍 Checking firmware directory: {:?} - exists: {}", firmware_dir, firmware_dir.exists());
-            if firmware_dir.exists() {
-                match fs::read_dir(firmware_dir) {
-                    Ok(entries) => {
-                        let versions: Vec<String> = entries
-                            .filter_map(|e| e.ok())
-                            .map(|e| e.file_name().to_string_lossy().to_string())
-                            .filter(|name| name.starts_with("v"))
-                            .collect();
-                        available_versions = format!("Available firmware versions in {}: {}", 
-                            firmware_dir.display(), versions.join(", "));
-                        break;
-                    }
-                    Err(_) => continue,
-                }
-            }
-        }
-        
-        let error_msg = format!(
-            "Firmware file not found: v{}/firmware.keepkey.bin in any firmware directory. {}. Target version was: {}",
-            target_version,
-            available_versions,
-            target_version
-        );
-        
-        // Log the error response
-        let response_data = serde_json::json!({
-            "error": error_msg,
-            "operation": "update_device_firmware"
-        });
-        
-        if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error_msg)).await {
-            eprintln!("Failed to log firmware update error response: {}", e);
-        }
-        
-        return Err(error_msg);
     };
-    
-    println!("📦 Loaded firmware binary: {} bytes", firmware_bytes.len());
     
     // Get or create device queue handle
     let queue_handle = {

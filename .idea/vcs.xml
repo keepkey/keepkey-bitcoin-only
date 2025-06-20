@@ -3,5 +3,37 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/code-signing-keys" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/common/defs/ethereum/chains" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/common/defs/ethereum/tokens" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/crypto/tests/wycheproof" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/QR-Code-generator" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/fido2-tests" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/libopencm3" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/asf4" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/axtls" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/berkeley-db-1.xx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/btstack" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/libffi" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/lwip" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/mbedtls" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/mbedtls/crypto" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/mynewt-nimble" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/nrfx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/nxp_driver" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/stm32lib" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/tinyusb" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/tinyusb/hw/mcu/nxp" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/tinyusb/hw/mcu/ti" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/micropython/lib/tinyusb/tools/uf2" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/nanopb" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/crypto/trezor-firmware/vendor/secp256k1-zkp" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/device-protocol" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/googletest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/python-keepkey" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/qrenc/QR-Code-generator" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/projects/keepkey-firmware-btc-only/deps/sca-hardening/SecAESSTM32" vcs="Git" />
   </component>
 </project>

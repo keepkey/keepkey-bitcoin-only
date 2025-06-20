@@ -32,6 +32,8 @@ impl EventController {
         let task_handle = tauri::async_runtime::spawn(async move {
             let mut interval = interval(Duration::from_millis(1000)); // Check every second
             let mut last_devices: Vec<FriendlyUsbDevice> = Vec::new();
+            let mut scan_start_time = std::time::Instant::now();
+            let mut no_device_message_shown = false;
             
             println!("✅ Event controller started - monitoring device connections");
             
@@ -73,6 +75,42 @@ impl EventController {
                     _ = interval.tick() => {
                         // Get current devices using high-level API
                         let current_devices = keepkey_rust::features::list_connected_devices();
+                        
+                        // Check if we should show "no device detected" message
+                        if current_devices.is_empty() {
+                            let scan_duration = scan_start_time.elapsed();
+                            
+                            // Show "no device detected" message after 10 seconds of scanning with no devices
+                            if scan_duration > Duration::from_secs(10) && !no_device_message_shown {
+                                println!("📡 Emitting no-device-detected event");
+                                
+                                // Emit special event for showing the no device dialog
+                                if let Err(e) = app_handle.emit("device:no-device-detected", serde_json::json!({
+                                    "scan_duration_secs": scan_duration.as_secs(),
+                                    "message": "No KeepKey detected - please connect your device"
+                                })) {
+                                    println!("❌ Failed to emit no-device-detected event: {}", e);
+                                } else {
+                                    println!("✅ Successfully emitted no-device-detected event");
+                                }
+                                
+                                // Also emit status update for the loading indicator
+                                let no_device_payload = serde_json::json!({
+                                    "status": "No KeepKey detected - please connect your device"
+                                });
+                                if let Err(e) = app_handle.emit("status:update", no_device_payload) {
+                                    println!("❌ Failed to emit no device status: {}", e);
+                                } else {
+                                    println!("✅ Successfully emitted no device status");
+                                }
+                                
+                                no_device_message_shown = true;
+                            }
+                        } else {
+                            // Reset the scan timer and message flag when devices are found
+                            scan_start_time = std::time::Instant::now();
+                            no_device_message_shown = false;
+                        }
                         
                         // Check for newly connected devices
                         for device in &current_devices {
@@ -348,6 +386,10 @@ impl EventController {
                         
                         // If no devices connected after checking disconnections, emit scanning status
                         if current_devices.is_empty() && !last_devices.is_empty() {
+                            // Reset scan timer when last device disconnects
+                            scan_start_time = std::time::Instant::now();
+                            no_device_message_shown = false;
+                            
                             // After a short delay, go back to scanning
                             let app_for_scanning = app_handle.clone();
                             tokio::spawn(async move {

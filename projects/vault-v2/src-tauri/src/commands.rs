@@ -1131,8 +1131,17 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
                 // Use explicit bootloader version if available
                 bl_version.clone()
             } else {
-                // For modern firmware without explicit bootloader version, assume it's recent enough
-                "2.1.4".to_string() // Assume recent bootloader if not specified
+                // CRITICAL FIX: Don't assume unknown bootloaders are latest
+                // Many devices with older firmware (like 4.0.0) have outdated bootloaders
+                // that need updating. We should conservatively assume they need bootloader updates
+                // unless we explicitly know otherwise.
+                if features.version.starts_with("7.") {
+                    // Only assume latest bootloader for very recent firmware (v7.x)
+                    "2.1.4".to_string()
+                } else {
+                    // For older firmware versions (4.x, 5.x, 6.x), assume older bootloader
+                    "1.0.3".to_string() // Conservative assumption - will trigger bootloader update
+                }
             }
         };
         

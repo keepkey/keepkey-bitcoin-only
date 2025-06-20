@@ -91,15 +91,19 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     setSelectedDeviceId(deviceId)
     
     try {
+      // First, get device status to check bootloader info
+      const deviceInfo = await invoke('get_device_status', { deviceId }) as any
+      console.log('Device status for bootloader update:', deviceInfo)
+      
       // Directly call the bootloader update command with a target version
-      // Using "2.1.0" as the target version (from device_update.rs LATEST_BOOTLOADER_VERSION)
+      // Using "2.1.4" as the target version (from device_update.rs LATEST_BOOTLOADER_VERSION)
       console.log('Calling update_device_bootloader with deviceId:', deviceId)
       
       // Call the backend command to update the bootloader
       // This will internally create a high-priority blocking action
       const result = await invoke('update_device_bootloader', { 
         deviceId, 
-        targetVersion: "2.1.0" 
+        targetVersion: "2.1.4" 
       }) as boolean
       
       console.log('Bootloader update result:', result)
@@ -115,13 +119,48 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     } catch (error) {
       console.error('Failed to start bootloader update:', error)
       
-      // Show error message
-      alert(`Failed to start bootloader update: ${error}`)
+      const errorMessage = String(error)
       
-      // Fallback to direct dialog if command fails and close settings dialog
-      setShowBootloaderUpdate(true)
-      // Close the settings dialog to prevent multiple dialogs
-      onClose()
+      // Check if the error is about device not being in bootloader mode
+      if (errorMessage.includes('bootloader mode') || 
+          errorMessage.includes('Bootloader Mode') ||
+          errorMessage.includes('Device is not in bootloader mode')) {
+        
+        console.log('Device not in bootloader mode - showing EnterBootloaderModeDialog')
+        
+        // Get device status to pass to the dialog
+        try {
+          const deviceInfo = await invoke('get_device_status', { deviceId }) as any
+          if (deviceInfo?.bootloaderCheck) {
+            setDeviceStatus(deviceInfo)
+            setShowBootloaderUpdate(true)
+            // Close the settings dialog to show the bootloader dialog
+            onClose()
+          } else {
+            // Fallback if no bootloader check info - still show dialog with default info
+            const defaultBootloaderCheck = {
+              currentVersion: "Unknown",
+              latestVersion: "2.1.4", 
+              needsUpdate: true
+            }
+            setDeviceStatus({ ...deviceInfo, bootloaderCheck: defaultBootloaderCheck })
+            setShowBootloaderUpdate(true)
+            onClose()
+          }
+        } catch (statusError) {
+          console.error('Failed to get device status:', statusError)
+          // Final fallback - show alert
+          alert(`Device must be in bootloader mode. Please hold the button while reconnecting to enter bootloader mode.`)
+        }
+      } else {
+        // For other errors, show the original alert
+        alert(`Failed to start bootloader update: ${error}`)
+        
+        // Fallback to direct dialog if command fails and close settings dialog
+        setShowBootloaderUpdate(true)
+        // Close the settings dialog to prevent multiple dialogs
+        onClose()
+      }
     }
   }
 

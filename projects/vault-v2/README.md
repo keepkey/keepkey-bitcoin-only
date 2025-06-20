@@ -274,26 +274,65 @@ cargo test --lib
 
 ### **Prerequisites**
 - Rust 1.70+ with Cargo
-- Node.js 18+ with npm/yarn
+- **Bun** (preferred) or Node.js 18+ with npm
 - KeepKey device (for hardware testing)
 
 ### **Development Setup**
+
+#### **Windows**
+```powershell
+# Clone the repository
+git clone <repository-url>
+cd keepkey-bitcoin-only
+
+# Build using PowerShell skill (recommended)
+make vault
+
+# Or manually using the skill:
+powershell -ExecutionPolicy Bypass -File "skills/build.ps1" -Debug
+
+# Or from vault-v2 directory:
+cd projects/vault-v2
+bun install  # or npm install
+bun run tauri:dev  # or npm run tauri:dev
+```
+
+#### **macOS/Linux**
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd keepkey-bitcoin-only/projects/vault-v2
+cd keepkey-bitcoin-only
 
-# Install frontend dependencies
-npm install
+# Build using Makefile
+make vault
 
-# Run in development mode
-npm run tauri dev
+# Or manually:
+cd projects/vault-v2
+bun install  # or npm install  
+bun run tauri:dev  # or npm run tauri:dev
+```
+
+### **Quick Commands**
+```bash
+# From project root (any platform)
+make vault         # Development mode
+make vault-build   # Production build
+make vault-dev     # Quick dev build (skip checks)
+make clean         # Clean all artifacts
+make rebuild       # Clean + rebuild
+
+# Platform info
+make platform-info # Show detected platform and build method
 ```
 
 ### **Building**
 ```bash
-# Build for production
-npm run tauri build
+# Production build (from project root)
+make vault-build
+
+# Or manually:
+cd projects/vault-v2
+bun run tauri:build  # or npm run tauri:build
 ```
 
 ## 🔍 **Debugging**

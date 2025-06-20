@@ -28,7 +28,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusb = { version = "0.9.3", features = ["vendored"] }
 semver = "1.0"
-hidapi = { version = "2.6", features = ["linux-static-hidraw"] }
 hex  = "0.4"     # just a helper crate
 anyhow = "1.0.58"
 async-trait = "0.1"
@@ -65,3 +64,13 @@ base64 = "0.22"
 sha2 = "0.10"
 reqwest = { version = "0.11", features = ["json"] }
 uuid = { version = "1.0", features = ["v4"] }
+
+# Platform-specific hidapi configuration for Windows HID compatibility
+[target.'cfg(windows)'.dependencies]
+hidapi = { version = "2.6", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+hidapi = { version = "2.6", features = ["linux-static-hidraw"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+hidapi = { version = "2.6", features = ["macos-shared-device"] }

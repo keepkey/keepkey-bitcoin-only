@@ -30,6 +30,7 @@ interface DialogContextType {
   
   // Current dialog
   activeDialog: DialogConfig | null;
+  isAnyDialogOpen: boolean;
   
   // App focus management
   requestAppFocus: () => void;
@@ -200,6 +201,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     getQueue,
     isShowing,
     activeDialog: state.active,
+    isAnyDialogOpen: !!state.active,
     requestAppFocus,
     releaseAppFocus,
   };

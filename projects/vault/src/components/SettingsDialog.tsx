@@ -151,14 +151,14 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     
     try {
       // Directly call the bootloader update command with a target version
-      // Using "2.1.0" as the target version (from device_update.rs LATEST_BOOTLOADER_VERSION)
+      // Using "2.1.4" as the target version (from device_update.rs LATEST_BOOTLOADER_VERSION)
       console.log('Calling update_device_bootloader with deviceId:', deviceId)
       
       // Call the backend command to update the bootloader
       // This will internally create a high-priority blocking action
       const result = await invoke('update_device_bootloader', { 
         deviceId, 
-        targetVersion: "2.1.0" 
+        targetVersion: "2.1.4" 
       }) as boolean
       
       console.log('Bootloader update result:', result)

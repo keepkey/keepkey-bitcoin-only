@@ -23,6 +23,7 @@ pub enum HidError {
 
 pub struct HidTransport {
     device: HidDevice,
+    use_report_id: bool,  // Track whether this device supports report IDs
 }
 
 impl HidTransport {
@@ -94,6 +95,9 @@ impl HidTransport {
             return Err(anyhow!("No KeepKey devices found"));
         }
         
+        // Track the product ID to determine report ID usage
+        let mut device_pid = 0;
+        
         // Find the KeepKey device
         let device = if let Some(serial) = serial_number {
             info!("Attempting to find KeepKey device with serial number: {}", serial);
@@ -104,6 +108,7 @@ impl HidTransport {
                     
             if let Some(info) = exact_match {
                 info!("Found KeepKey device with exact serial match: {}", serial);
+                device_pid = info.product_id();
                 match info.open_device(&api) {
                     Ok(device) => Some(device),
                     Err(e) => {
@@ -150,7 +155,11 @@ impl HidTransport {
                 match info.open_device(&api) {
                     Ok(device) => {
                         info!("Successfully opened KeepKey device with serial: {:?}", info.serial_number());
-                        return Ok(Self { device });
+                        device_pid = info.product_id();
+                        return Ok(Self { 
+                            device,
+                            use_report_id: device_pid != 0x0001  // Older devices (PID 0x0001) don't use report IDs
+                        });
                     }
                     Err(e) => {
                         debug!("Failed to open device with serial {:?}: {}", info.serial_number(), e);
@@ -187,7 +196,16 @@ impl HidTransport {
             }
         })?;
         
-        Ok(Self { device })
+        // Determine whether to use report IDs based on device PID
+        let use_report_id = device_pid != 0x0001;  // Older devices (PID 0x0001) don't use report IDs
+        
+        if use_report_id {
+            info!("Using HID report IDs for newer KeepKey device (PID: {:04x})", device_pid);
+        } else {
+            info!("NOT using HID report IDs for older KeepKey device (PID: {:04x})", device_pid);
+        }
+        
+        Ok(Self { device, use_report_id })
     }
 }
 
@@ -197,9 +215,6 @@ impl Transport for HidTransport {
     fn write(&mut self, msg: &[u8], _timeout: Duration) -> Result<usize, Self::Error> {
         // The incoming message already has the protocol header from Message::encode
         // Format: [#][#][msg_type(2)][length(4)][data...]
-        
-        // For v4 compatibility, we need to send with the old format:
-        // [Report ID][0x3f][0x23][0x23][msg_type(2)][length(4)][data...]
         
         if msg.len() < 8 {
             return Err(HidError::Other("Message too short".to_string()));
@@ -225,34 +240,41 @@ impl Transport for HidTransport {
             debug!("HID Write: First {} data bytes: {}", preview_len, preview.join(" "));
         }
         
-        // Prepare first packet with v4 format (EXACT MATCH TO WORKING VAULT V1)
+        // Prepare first packet - format depends on device type
         let mut first_packet = vec![0u8; HID_REPORT_SIZE];
-        first_packet[0] = REPORT_ID;  // 0x00 - REQUIRED BY VAULT V1!
-        first_packet[1] = 0x3f;
-        first_packet[2] = 0x23;
-        first_packet[3] = 0x23;
-        first_packet[4..6].copy_from_slice(msg_type);
-        first_packet[6..10].copy_from_slice(msg_length);
+        let data_offset = if self.use_report_id {
+            // Newer devices: [Report ID][0x3f][0x23][0x23][msg_type(2)][length(4)][data...]
+            first_packet[0] = REPORT_ID;  // 0x00
+            first_packet[1] = 0x3f;
+            first_packet[2] = 0x23;
+            first_packet[3] = 0x23;
+            first_packet[4..6].copy_from_slice(msg_type);
+            first_packet[6..10].copy_from_slice(msg_length);
+            10  // Data starts at offset 10
+        } else {
+            // Older devices (PID 0x0001): [0x3f][0x23][0x23][msg_type(2)][length(4)][data...]
+            first_packet[0] = 0x3f;
+            first_packet[1] = 0x23;
+            first_packet[2] = 0x23;
+            first_packet[3..5].copy_from_slice(msg_type);
+            first_packet[5..9].copy_from_slice(msg_length);
+            9   // Data starts at offset 9
+        };
         
         // Copy as much data as fits in first packet
-        let first_chunk_size = (HID_REPORT_SIZE - 10).min(msg_data.len());
+        let first_chunk_size = (HID_REPORT_SIZE - data_offset).min(msg_data.len());
         if first_chunk_size > 0 {
-            first_packet[10..10 + first_chunk_size].copy_from_slice(&msg_data[..first_chunk_size]);
+            first_packet[data_offset..data_offset + first_chunk_size].copy_from_slice(&msg_data[..first_chunk_size]);
         }
         
-        debug!("HID Write: Sending first packet (64 bytes), data chunk size: {}", first_chunk_size);
+        debug!("HID Write: Sending first packet (64 bytes), data chunk size: {}, using_report_id: {}", 
+               first_chunk_size, self.use_report_id);
         
         // Log the actual bytes being sent for debugging
-        let preview: Vec<String> = first_packet[..32].iter()
+        let preview: Vec<String> = first_packet[..16].iter()
             .map(|b| format!("{:02x}", b))
             .collect();
-        info!("HID Write: First 32 bytes of packet: {}", preview.join(" "));
-        
-        // Log the FULL packet for detailed debugging
-        let full_packet_hex: Vec<String> = first_packet.iter()
-            .map(|b| format!("{:02x}", b))
-            .collect();
-        info!("🔍 HID Write: FULL PACKET (64 bytes): {}", full_packet_hex.join(" "));
+        info!("HID Write: First 16 bytes of packet: {}", preview.join(" "));
         
         // Send first packet
         self.device
