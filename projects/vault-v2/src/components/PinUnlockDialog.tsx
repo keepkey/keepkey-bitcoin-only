@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Button, Grid, Text, HStack, Icon, VStack, Box } from '@chakra-ui/react'
-import { FaCircle, FaExclamationTriangle, FaTimes } from 'react-icons/fa'
+import { FaCircle, FaExclamationTriangle, FaTimes, FaCheckCircle } from 'react-icons/fa'
 
 interface PinUnlockDialogProps {
   isOpen: boolean
@@ -14,7 +14,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
   const [pinPositions, setPinPositions] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [step, setStep] = useState<'trigger' | 'enter' | 'submitting'>('trigger')
+  const [step, setStep] = useState<'trigger' | 'enter' | 'submitting' | 'success'>('trigger')
 
   // Reset state when dialog opens/closes
   useEffect(() => {
@@ -36,11 +36,27 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
       
       // If we get here, the PIN request was triggered successfully
       // Device should now be showing PIN matrix
+      console.log('✅ PIN trigger successful, proceeding to PIN entry')
       setStep('enter')
       
     } catch (err: any) {
-      console.error('❌ Failed to trigger PIN request:', err)
-      setError(`Failed to request PIN: ${err}`)
+      console.error('❌ PIN trigger response:', err)
+      
+      // Check if this is an expected "failure" that actually means PIN mode was triggered
+      const errorStr = String(err).toLowerCase()
+      const isExpectedPinTrigger = errorStr.includes('unknown message') || 
+                                   errorStr.includes('failure') ||
+                                   errorStr.includes('pin') ||
+                                   errorStr.includes('matrix')
+      
+      if (isExpectedPinTrigger) {
+        console.log('🔐 PIN trigger "failed" as expected - device should be in PIN mode, proceeding to PIN entry')
+        setStep('enter')
+        setError(null) // Clear any error since this is expected
+      } else {
+        console.error('🚫 Unexpected PIN trigger failure:', err)
+        setError(`Unable to communicate with device: ${err}`)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -68,13 +84,28 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
         positions: pinPositions 
       })
       
-      // PIN submitted successfully
+      // PIN submitted successfully - show success feedback briefly before closing
       console.log('✅ PIN submitted successfully')
-      onUnlocked()
+      setStep('success')
+      
+      // Auto-close after brief success display
+      setTimeout(() => {
+        onUnlocked()
+      }, 1000)
       
     } catch (err: any) {
       console.error('❌ PIN submission failed:', err)
-      setError(`PIN verification failed: ${err}`)
+      
+      // This is a real PIN validation error - show it clearly
+      const errorStr = String(err)
+      if (errorStr.toLowerCase().includes('incorrect') || errorStr.toLowerCase().includes('invalid') || errorStr.toLowerCase().includes('wrong')) {
+        setError('Incorrect PIN. Please check your device screen and try again.')
+      } else {
+        setError(`PIN verification failed: ${err}`)
+      }
+      
+      // Reset to PIN entry step and clear entered PIN
+      setPinPositions([])
       setStep('enter')
     }
   }
@@ -223,16 +254,30 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
             </VStack>
           )}
 
-          {/* Error display */}
-          {error && (
+          {step === 'success' && (
+            <VStack gap={4}>
+              <Icon as={FaCheckCircle} color="green.400" boxSize={12} />
+              <Text textAlign="center" fontSize="lg" fontWeight="bold" color="green.400">
+                Device Unlocked!
+              </Text>
+              <Text fontSize="sm" color="gray.400" textAlign="center">
+                Your KeepKey is now ready to use
+              </Text>
+            </VStack>
+          )}
+
+          {/* Error display - only show for real errors, not expected PIN trigger responses */}
+          {error && step !== 'success' && (
             <Box bg="red.900" borderColor="red.700" border="1px solid" p={4} borderRadius="md" w="full">
               <HStack gap={3} align="start">
                 <Icon as={FaExclamationTriangle} color="red.400" mt={1} />
                 <VStack align="start" gap={2} flex={1}>
                   <Text fontSize="sm" color="red.100">{error}</Text>
-                  <Button size="sm" colorScheme="red" variant="outline" onClick={handleRetry}>
-                    Try Again
-                  </Button>
+                  {step === 'trigger' && (
+                    <Button size="sm" colorScheme="red" variant="outline" onClick={handleRetry}>
+                      Try Again
+                    </Button>
+                  )}
                 </VStack>
               </HStack>
             </Box>
