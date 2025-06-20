@@ -65,8 +65,8 @@ export const Step0Warning: React.FC<StepProps> = ({
         width="full"
         size="md"
         mt={3}
-        leftIcon={<FaShieldAlt />}
       >
+        <FaShieldAlt />
         Start Bootloader Update
       </Button>
     </VStack>

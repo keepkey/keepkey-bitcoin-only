@@ -36,7 +36,9 @@ export function VaultSetup() {
   }
 
   const getKeepKeySignature = async (): Promise<string> => {
-   }
+    // TODO: Implement KeepKey signature request
+    return ''
+  }
 
   const handleCreateVault = async () => {
     if (!password) {

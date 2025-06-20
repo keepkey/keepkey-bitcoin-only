@@ -55,14 +55,14 @@ export const Step2Completion: React.FC<StepProps> = ({
           Finish
         </Button>
       ) : (
-        <HStack width="full" spacing={4} mt={4}>
+        <HStack width="full" gap={4} mt={4}>
           <Button 
             colorScheme="orange" 
             onClick={handleRetry} 
-            leftIcon={<FaRedo />} 
             variant="outline"
             flex={1}
           >
+            <FaRedo />
             Try Again
           </Button>
           <Button colorScheme="gray" onClick={onNext} flex={1}> {/* onNext here means close wizard */}

@@ -117,23 +117,17 @@ export async function createUnsignedUxtoTx(
       feeRateFromNode = defaultFeeRates;
     }
 
-    const feeLevel = 5;
+    const feeLevel: number = 5;
     let effectiveFeeRate;
 
-    switch (feeLevel) {
-      case 1:
-      case 2:
-        effectiveFeeRate = feeRateFromNode.slow;
-        break;
-      case 3:
-      case 4:
-        effectiveFeeRate = feeRateFromNode.average;
-        break;
-      case 5:
-        effectiveFeeRate = feeRateFromNode.fastest;
-        break;
-      default:
-        throw new Error('Invalid fee level');
+    if (feeLevel === 1 || feeLevel === 2) {
+      effectiveFeeRate = feeRateFromNode.slow;
+    } else if (feeLevel === 3 || feeLevel === 4) {
+      effectiveFeeRate = feeRateFromNode.average;
+    } else if (feeLevel === 5) {
+      effectiveFeeRate = feeRateFromNode.fastest;
+    } else {
+      throw new Error('Invalid fee level');
     }
 
     if (!effectiveFeeRate) throw new Error('Unable to get fee rate for network');
