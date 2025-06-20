@@ -162,6 +162,7 @@ pub struct DeviceStatus {
     pub needs_bootloader_update: bool,
     pub needs_firmware_update: bool,
     pub needs_initialization: bool,
+    pub needs_pin_unlock: bool,
     pub bootloader_check: Option<BootloaderCheck>,
     pub firmware_check: Option<FirmwareCheck>,
     pub initialization_check: Option<InitializationCheck>,
@@ -1101,6 +1102,7 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
         needs_bootloader_update: false,
         needs_firmware_update: false,
         needs_initialization: false,
+        needs_pin_unlock: false,
         bootloader_check: None,
         firmware_check: None,
         initialization_check: None,
@@ -1182,6 +1184,13 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             let initialized = features.initialized;
             let has_backup = !features.no_backup;
             let imported = features.imported.unwrap_or(false);
+            
+            // Check if device is unlocked (PIN cached or no PIN protection)
+            let has_pin_protection = features.pin_protection;
+            let pin_cached = features.pin_cached;
+            let is_unlocked = !has_pin_protection || pin_cached;
+            let is_pin_locked = initialized && has_pin_protection && !pin_cached;
+            
             // Device needs setup if it has never been initialized OR if the user never created a recovery backup
             // "no_backup" is true when the device has no backup. We require BOTH `initialized` and `has_backup` to be
             // true before we say that the device is fully ready for use in the Vault.
@@ -1193,10 +1202,19 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
                 imported,
                 needs_setup,
             });
-            status.needs_initialization = needs_setup;
             
-            println!("🔧 Initialization check: initialized={}, needs_setup={}", 
-                    initialized, needs_setup);
+            // IMPORTANT: Only mark as needing initialization if it truly needs setup
+            // A device that is initialized but locked with PIN should NOT be marked as needing initialization
+            // Instead, it should be handled as a PIN unlock case
+            status.needs_initialization = needs_setup;
+            status.needs_pin_unlock = is_pin_locked;
+            
+            println!("🔧 Initialization check: initialized={}, needs_setup={}, has_pin_protection={}, pin_cached={}, is_unlocked={}", 
+                    initialized, needs_setup, has_pin_protection, pin_cached, is_unlocked);
+            
+            if is_pin_locked {
+                println!("🔒 Device is initialized but locked with PIN - needs unlock (NOT initialization)");
+            }
         } else {
             // Device is in bootloader mode - initialization status unknown
             // For OOB bootloaders (version 1.x), assume they'll need initialization after bootloader update
@@ -1212,10 +1230,12 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             // Don't set needs_initialization=true during bootloader mode
             // The bootloader update takes priority, then we'll re-evaluate after device reboots
             status.needs_initialization = false;
+            status.needs_pin_unlock = false; // PIN unlock not applicable in bootloader mode
         }
     } else {
         // No features available - device not communicating
         status.connected = false;
+        status.needs_pin_unlock = false; // Can't determine PIN status if device not communicating
     }
     
     status
@@ -1662,8 +1682,9 @@ pub struct PinCreationSession {
 pub enum PinStep {
     AwaitingFirst,   // Waiting for first PIN entry
     AwaitingSecond,  // Waiting for PIN confirmation
-    Completed,       // PIN creation done
-    Failed,          // PIN creation failed
+    AwaitingUnlock,  // Waiting for PIN unlock entry
+    Completed,       // PIN creation/unlock done
+    Failed,          // PIN creation/unlock failed
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1866,6 +1887,78 @@ pub async fn send_pin_matrix_response(
             
             // Analyze response to determine next step
             match current_step {
+                PinStep::AwaitingUnlock => {
+                    // PIN unlock - check if device is now unlocked
+                    match response {
+                        keepkey_rust::messages::Message::Features(features) => {
+                            let pin_cached = features.pin_cached.unwrap_or(false);
+                            if pin_cached {
+                                log::info!("✅ PIN unlock successful, device is now unlocked");
+                                
+                                // Update session state to completed
+                                if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                    if let Some(session) = sessions.get_mut(&session_id) {
+                                        session.current_step = PinStep::Completed;
+                                        session.is_active = false;
+                                    }
+                                }
+                                // Unmark device from PIN flow - PIN unlock completed
+                                let _ = unmark_device_in_pin_flow(&device_id);
+                                
+                                Ok(PinMatrixResult {
+                                    success: true,
+                                    next_step: Some("unlocked".to_string()),
+                                    session_id: session_id.clone(),
+                                    error: None,
+                                })
+                            } else {
+                                log::error!("❌ PIN unlock failed - device still locked");
+                                
+                                // Update session state to failed
+                                if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                    if let Some(session) = sessions.get_mut(&session_id) {
+                                        session.current_step = PinStep::Failed;
+                                        session.is_active = false;
+                                    }
+                                }
+                                // Unmark device from PIN flow on failure
+                                let _ = unmark_device_in_pin_flow(&device_id);
+                                
+                                Err("PIN unlock failed - incorrect PIN".to_string())
+                            }
+                        }
+                        keepkey_rust::messages::Message::Failure(f) => {
+                            log::error!("❌ PIN unlock failed: {}", f.message.as_deref().unwrap_or("Unknown error"));
+                            
+                            // Update session state to failed  
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Failed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow on failure
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            
+                            Err(format!("PIN unlock failed: {}", f.message.as_deref().unwrap_or("Unknown error")))
+                        }
+                        _ => {
+                            log::error!("❌ Unexpected response to PIN unlock: {:?}", response);
+                            
+                            // Update session state to failed
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Failed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow on failure
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            
+                            Err("Unexpected response from device during PIN unlock".to_string())
+                        }
+                    }
+                }
                 PinStep::AwaitingFirst => {
                     // First PIN entry - check what device wants next
                     match response {
@@ -2028,10 +2121,10 @@ pub async fn send_pin_matrix_response(
                     }
                 }
                 PinStep::Completed => {
-                    Err("PIN creation already completed".to_string())
+                    Err("PIN session already completed".to_string())
                 }
                 PinStep::Failed => {
-                    Err("PIN creation failed".to_string())
+                    Err("PIN session failed".to_string())
                 }
             }
         }
@@ -2047,6 +2140,290 @@ pub async fn send_pin_matrix_response(
             // Unmark device from PIN flow on communication error
             let _ = unmark_device_in_pin_flow(&device_id);
             Err(format!("Failed to send PIN to device: {}", e))
+        }
+    }
+}
+
+/// Start PIN unlock process for a device that is locked
+#[tauri::command]
+pub async fn start_pin_unlock(
+    device_id: String,
+    _queue_manager: tauri::State<'_, DeviceQueueManager>,
+) -> Result<PinCreationSession, String> {
+    log::info!("Starting PIN unlock for device: {}", device_id);
+    
+    // Check if device is already in PIN flow
+    if is_device_in_pin_flow(&device_id) {
+        return Err("Device is already in PIN flow".to_string());
+    }
+    
+    // Mark device as in PIN flow BEFORE starting any operations
+    mark_device_in_pin_flow(&device_id)?;
+    
+    // Generate unique session ID
+    let session_id = format!("pin_unlock_{}_{}", device_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+    
+    // Create PIN unlock session
+    let session = PinCreationSession {
+        device_id: device_id.clone(),
+        session_id: session_id.clone(),
+        current_step: PinStep::AwaitingUnlock,
+        is_active: true,
+    };
+    
+    // Store session
+    {
+        let mut sessions = PIN_SESSIONS.lock().map_err(|_| "Failed to lock PIN sessions".to_string())?;
+        sessions.insert(session_id.clone(), session.clone());
+    }
+    
+    log::info!("PIN unlock session created: {}", session_id);
+    Ok(session)
+}
+
+/// Send PIN unlock response (for unlocking an already initialized device)
+#[tauri::command]
+pub async fn send_pin_unlock_response(
+    session_id: String,
+    positions: Vec<u8>,  // Positions 1-9 that user clicked
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+) -> Result<PinMatrixResult, String> {
+    log::info!("Sending PIN unlock response for session: {} with {} positions", session_id, positions.len());
+    
+    // Validate positions
+    if positions.is_empty() || positions.len() > 9 {
+        return Err("PIN must be between 1 and 9 digits".to_string());
+    }
+    
+    for &pos in &positions {
+        if pos < 1 || pos > 9 {
+            return Err("Invalid PIN position: positions must be 1-9".to_string());
+        }
+    }
+    
+    // Get session data (release lock before async call)
+    let device_id = {
+        let mut sessions = PIN_SESSIONS.lock().map_err(|_| "Failed to lock PIN sessions".to_string())?;
+        let session = sessions.get_mut(&session_id)
+            .ok_or_else(|| format!("PIN session not found: {}", session_id))?;
+        
+        if !session.is_active {
+            return Err("PIN session is not active".to_string());
+        }
+        
+        if session.current_step != PinStep::AwaitingUnlock {
+            return Err("PIN session is not awaiting unlock".to_string());
+        }
+        
+        session.device_id.clone()
+    };
+    
+    // Convert positions to PIN string for device protocol (positions as characters)
+    let pin_string: String = positions.iter()
+        .map(|&pos| (b'0' + pos) as char)
+        .collect();
+    
+    log::info!("Converted positions to PIN string for device communication: {}", pin_string);
+    
+    // Get or create device queue handle  
+    let queue_handle = {
+        let mut manager = queue_manager.lock().await;
+        match manager.get(&device_id) {
+            Some(handle) => handle.clone(),
+            None => {
+                // Find the device by ID
+                let devices = keepkey_rust::features::list_connected_devices();
+                let device_info = devices
+                    .iter()
+                    .find(|d| d.unique_id == device_id)
+                    .ok_or_else(|| format!("Device {} not found", device_id))?;
+                
+                // Spawn a new device worker using the factory
+                let handle = keepkey_rust::device_queue::DeviceQueueFactory::spawn_worker(
+                    device_id.clone(),
+                    device_info.clone()
+                );
+                manager.insert(device_id.clone(), handle.clone());
+                handle
+            }
+        }
+    };
+    
+    // Try a simple GetFeatures with PIN to unlock device
+    let get_features = keepkey_rust::messages::Message::GetFeatures(
+        keepkey_rust::messages::GetFeatures {}
+    );
+    
+    match queue_handle.send_raw(get_features, false).await {
+        Ok(response) => {
+            match response {
+                keepkey_rust::messages::Message::PinMatrixRequest(_) => {
+                    // Device wants PIN, send our PIN response
+                    let pin_matrix_ack = keepkey_rust::messages::Message::PinMatrixAck(
+                        keepkey_rust::messages::PinMatrixAck {
+                            pin: pin_string.clone(),
+                        }
+                    );
+                    
+                    match queue_handle.send_raw(pin_matrix_ack, false).await {
+                        Ok(features_response) => {
+                            match features_response {
+                                keepkey_rust::messages::Message::Features(features) => {
+                                    // Check if PIN was accepted (device should now be unlocked)
+                                    let pin_cached = features.pin_cached.unwrap_or(false);
+                                    if pin_cached {
+                                        log::info!("✅ PIN unlock successful, device is now unlocked");
+                                        
+                                        // Update session state to completed
+                                        if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                            if let Some(session) = sessions.get_mut(&session_id) {
+                                                session.current_step = PinStep::Completed;
+                                                session.is_active = false;
+                                            }
+                                        }
+                                        // Unmark device from PIN flow - PIN unlock completed
+                                        let _ = unmark_device_in_pin_flow(&device_id);
+                                        
+                                        Ok(PinMatrixResult {
+                                            success: true,
+                                            next_step: Some("unlocked".to_string()),
+                                            session_id: session_id.clone(),
+                                            error: None,
+                                        })
+                                    } else {
+                                        log::error!("❌ PIN unlock failed - device still locked");
+                                        
+                                        // Update session state to failed
+                                        if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                            if let Some(session) = sessions.get_mut(&session_id) {
+                                                session.current_step = PinStep::Failed;
+                                                session.is_active = false;
+                                            }
+                                        }
+                                        // Unmark device from PIN flow on failure
+                                        let _ = unmark_device_in_pin_flow(&device_id);
+                                        
+                                        Err("PIN unlock failed - incorrect PIN".to_string())
+                                    }
+                                }
+                                keepkey_rust::messages::Message::Failure(f) => {
+                                    log::error!("❌ PIN unlock failed: {}", f.message.as_deref().unwrap_or("Unknown error"));
+                                    
+                                    // Update session state to failed
+                                    if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                        if let Some(session) = sessions.get_mut(&session_id) {
+                                            session.current_step = PinStep::Failed;
+                                            session.is_active = false;
+                                        }
+                                    }
+                                    // Unmark device from PIN flow on failure
+                                    let _ = unmark_device_in_pin_flow(&device_id);
+                                    
+                                    Err(format!("PIN unlock failed: {}", f.message.as_deref().unwrap_or("Unknown error")))
+                                }
+                                _ => {
+                                    log::error!("❌ Unexpected response to PIN unlock: {:?}", features_response);
+                                    
+                                    // Update session state to failed
+                                    if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                        if let Some(session) = sessions.get_mut(&session_id) {
+                                            session.current_step = PinStep::Failed;
+                                            session.is_active = false;
+                                        }
+                                    }
+                                    // Unmark device from PIN flow on failure
+                                    let _ = unmark_device_in_pin_flow(&device_id);
+                                    
+                                    Err("Unexpected response from device during PIN unlock".to_string())
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to send PIN to device: {}", e);
+                            
+                            // Update session state to failed
+                            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                                if let Some(session) = sessions.get_mut(&session_id) {
+                                    session.current_step = PinStep::Failed;
+                                    session.is_active = false;
+                                }
+                            }
+                            // Unmark device from PIN flow on failure
+                            let _ = unmark_device_in_pin_flow(&device_id);
+                            
+                            Err(format!("Failed to send PIN to device: {}", e))
+                        }
+                    }
+                }
+                keepkey_rust::messages::Message::Features(features) => {
+                    // Device responded with features without asking for PIN - already unlocked
+                    let pin_cached = features.pin_cached.unwrap_or(false);
+                    if pin_cached {
+                        log::info!("✅ Device is already unlocked");
+                        
+                        // Update session state to completed
+                        if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                            if let Some(session) = sessions.get_mut(&session_id) {
+                                session.current_step = PinStep::Completed;
+                                session.is_active = false;
+                            }
+                        }
+                        // Unmark device from PIN flow - already unlocked
+                        let _ = unmark_device_in_pin_flow(&device_id);
+                        
+                        Ok(PinMatrixResult {
+                            success: true,
+                            next_step: Some("already_unlocked".to_string()),
+                            session_id: session_id.clone(),
+                            error: None,
+                        })
+                    } else {
+                        log::error!("❌ Device claims no PIN protection but is not unlocked");
+                        
+                        // Update session state to failed
+                        if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                            if let Some(session) = sessions.get_mut(&session_id) {
+                                session.current_step = PinStep::Failed;
+                                session.is_active = false;
+                            }
+                        }
+                        // Unmark device from PIN flow on failure  
+                        let _ = unmark_device_in_pin_flow(&device_id);
+                        
+                        Err("Device state inconsistent - no PIN protection but not unlocked".to_string())
+                    }
+                }
+                _ => {
+                    log::error!("❌ Unexpected initial response from device: {:?}", response);
+                    
+                    // Update session state to failed
+                    if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                        if let Some(session) = sessions.get_mut(&session_id) {
+                            session.current_step = PinStep::Failed;
+                            session.is_active = false;
+                        }
+                    }
+                    // Unmark device from PIN flow on failure
+                    let _ = unmark_device_in_pin_flow(&device_id);
+                    
+                    Err("Unexpected response from device during PIN unlock initialization".to_string())
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to communicate with device for PIN unlock: {}", e);
+            
+            // Update session state to failed
+            if let Ok(mut sessions) = PIN_SESSIONS.lock() {
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.current_step = PinStep::Failed;  
+                    session.is_active = false;
+                }
+            }
+            // Unmark device from PIN flow on failure
+            let _ = unmark_device_in_pin_flow(&device_id);
+            
+            Err(format!("Failed to communicate with device: {}", e))
         }
     }
 }
@@ -2868,7 +3245,7 @@ pub async fn send_verification_character(
     session_id: String,
     character: Option<String>,
     action: Option<RecoveryAction>,
-    queue_manager: tauri::State<'_, DeviceQueueManager>,
+    _queue_manager: tauri::State<'_, DeviceQueueManager>,
 ) -> Result<RecoveryProgress, String> {
     log::info!("Sending verification character for session: {} - char: {:?}, action: {:?}", 
         session_id, character, action);
@@ -2885,7 +3262,7 @@ pub async fn send_verification_character(
 pub async fn send_verification_pin(
     session_id: String,
     positions: Vec<u8>,
-    queue_manager: tauri::State<'_, DeviceQueueManager>,
+    _queue_manager: tauri::State<'_, DeviceQueueManager>,
 ) -> Result<bool, String> {
     log::info!("Sending verification PIN for session: {} with {} positions", session_id, positions.len());
     

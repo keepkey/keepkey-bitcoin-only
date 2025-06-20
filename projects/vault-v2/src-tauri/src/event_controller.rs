@@ -141,7 +141,7 @@ impl EventController {
                                             let device_label = features.label.as_deref().unwrap_or("Unlabeled");
                                             let device_version = &features.version;
                                             
-                                            println!("✅ Device ready: {} v{} ({})", 
+                                            println!("📡 Got device features: {} v{} ({})", 
                                                    device_label,
                                                    device_version,
                                                    device_for_task.unique_id);
@@ -160,12 +160,18 @@ impl EventController {
                                                 Some(&features)
                                             );
                                             
-                                            // Emit status updates based on what the device needs
-                                            let is_actually_ready = !status.needs_bootloader_update && 
-                                                                   !status.needs_firmware_update && 
-                                                                   !status.needs_initialization;
-                                            
-                                            if is_actually_ready {
+                                                                        // Check if device is locked with PIN before determining if it's ready
+                            let has_pin_protection = features.pin_protection;
+                            let pin_cached = features.pin_cached;
+                            let is_pin_locked = features.initialized && has_pin_protection && !pin_cached;
+                            
+                            // Emit status updates based on what the device needs
+                            let is_actually_ready = !status.needs_bootloader_update && 
+                                                   !status.needs_firmware_update && 
+                                                   !status.needs_initialization &&
+                                                   !is_pin_locked;  // Device is NOT ready if locked with PIN
+                            
+                            if is_actually_ready {
                                                 println!("✅ Device is fully ready, emitting device:ready event");
                                                 println!("📡 Emitting status: Device ready");
                                                 if let Err(e) = app_for_task.emit("status:update", serde_json::json!({
@@ -186,13 +192,34 @@ impl EventController {
                                     println!("📡 Successfully emitted/queued device:ready for {}", device_for_task.unique_id);
                                 }
                                             } else {
-                                                println!("⚠️ Device connected but needs updates (bootloader: {}, firmware: {}, init: {})", 
-                                                        status.needs_bootloader_update, 
-                                                        status.needs_firmware_update, 
-                                                        status.needs_initialization);
+                                                                                println!("⚠️ Device connected but needs updates (bootloader: {}, firmware: {}, init: {}, pin_locked: {})", 
+                                        status.needs_bootloader_update, 
+                                        status.needs_firmware_update, 
+                                        status.needs_initialization,
+                                        is_pin_locked);
+                                                
+                                                if is_pin_locked {
+                                                    println!("🔒 Device is initialized but locked with PIN - emitting unlock event");
+                                                    
+                                                    // Emit PIN unlock needed event
+                                                    let pin_unlock_payload = serde_json::json!({
+                                                        "deviceId": device_for_task.unique_id,
+                                                        "features": features,
+                                                        "status": status,
+                                                        "needsPinUnlock": true
+                                                    });
+                                                    
+                                                    if let Err(e) = crate::commands::emit_or_queue_event(&app_for_task, "device:pin-unlock-needed", pin_unlock_payload).await {
+                                                        println!("❌ Failed to emit/queue device:pin-unlock-needed event: {}", e);
+                                                    } else {
+                                                        println!("📡 Successfully emitted/queued device:pin-unlock-needed for {}", device_for_task.unique_id);
+                                                    }
+                                                }
                                                 
                                                 // Emit appropriate status message based on what updates are needed
-                                                let status_message = if status.needs_bootloader_update && status.needs_firmware_update && status.needs_initialization {
+                                                let status_message = if is_pin_locked {
+                                                    "Device locked - enter PIN"
+                                                } else if status.needs_bootloader_update && status.needs_firmware_update && status.needs_initialization {
                                                     "Device needs updates"
                                                 } else if status.needs_bootloader_update {
                                                     "Bootloader update needed"

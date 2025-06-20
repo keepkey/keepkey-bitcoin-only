@@ -3,6 +3,7 @@ import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
 import { FirmwareUpdateDialog } from './FirmwareUpdateDialog'
 import { WalletCreationWizard } from './WalletCreationWizard/WalletCreationWizard'
 import { EnterBootloaderModeDialog } from './EnterBootloaderModeDialog'
+import { PinUnlockDialog } from './PinUnlockDialog'
 import type { DeviceStatus, DeviceFeatures } from '../types/device'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -18,6 +19,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
   const [showBootloaderUpdate, setShowBootloaderUpdate] = useState(false)
   const [showFirmwareUpdate, setShowFirmwareUpdate] = useState(false)
   const [showWalletCreation, setShowWalletCreation] = useState(false)
+  const [showPinUnlock, setShowPinUnlock] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [connectedDeviceId, setConnectedDeviceId] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
@@ -60,6 +62,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     console.log('🔧 DeviceUpdateManager: Status needs_initialization:', status.needsInitialization)
     console.log('🔧 DeviceUpdateManager: Status needs_firmware_update:', status.needsFirmwareUpdate)
     console.log('🔧 DeviceUpdateManager: Status needs_bootloader_update:', status.needsBootloaderUpdate)
+    console.log('🔧 DeviceUpdateManager: Status needs_pin_unlock:', status.needsPinUnlock)
     
     // Check if device is in bootloader mode - handle both field formats from backend
     const isInBootloaderMode = status.features?.bootloader_mode || status.features?.bootloaderMode || false
@@ -108,6 +111,16 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(false)
       setShowWalletCreation(true)
+    } else if (status.needsPinUnlock) {
+      // Device is initialized but locked with PIN - this is handled by the PIN unlock event listener
+      console.log('🔒 DeviceUpdateManager: Device needs PIN unlock - NOT calling onComplete()')
+      // Don't call onComplete() here - PIN unlock dialog will be shown via the pin-unlock-needed event
+      // Just ensure other dialogs are hidden
+      setShowEnterBootloaderMode(false)
+      setShowBootloaderUpdate(false)
+      setShowFirmwareUpdate(false)
+      setShowWalletCreation(false)
+      // showPinUnlock will be set by the pin-unlock-needed event listener
     } else {
       // Device is ready
       console.log('🔧 DeviceUpdateManager: Device is ready, no updates needed')
@@ -116,6 +129,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(false)
       setShowWalletCreation(false)
+      setShowPinUnlock(false)
       onComplete?.()
     }
   }
@@ -197,6 +211,27 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         setConnectedDeviceId(null)
       })
 
+      // Listen for PIN unlock needed events
+      const pinUnlockUnsubscribe = listen<{
+        deviceId: string
+        features: DeviceFeatures
+        status: DeviceStatus
+        needsPinUnlock: boolean
+      }>('device:pin-unlock-needed', (event) => {
+        console.log('🔒 DeviceUpdateManager: PIN unlock needed event received:', event.payload)
+        const { status } = event.payload
+        
+        // Show PIN unlock dialog instead of initialization
+        console.log('🔒 DeviceUpdateManager: Setting showPinUnlock = true')
+        setDeviceStatus(status)
+        setConnectedDeviceId(status.deviceId)
+        setShowEnterBootloaderMode(false)
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(false)
+        setShowWalletCreation(false)
+        setShowPinUnlock(true)
+      })
+
       // Listen for device disconnection
       const disconnectedUnsubscribe = listen<string>('device:disconnected', (event) => {
         console.log('Device disconnected:', event.payload)
@@ -214,6 +249,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         setShowBootloaderUpdate(false)
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
+        setShowPinUnlock(false)
         setRetryCount(0)
         if (timeoutId) clearTimeout(timeoutId)
       })
@@ -224,6 +260,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         if (featuresUnsubscribe) (await featuresUnsubscribe)()
         if (connectedUnsubscribe) (await connectedUnsubscribe)()
         ;(await accessErrorUnsubscribe)()
+        ;(await pinUnlockUnsubscribe)()
         ;(await disconnectedUnsubscribe)()
         if (timeoutId) clearTimeout(timeoutId)
       }
@@ -289,6 +326,18 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     // Don't call onComplete here - wait for user to actually enter bootloader mode
   }
 
+  const handlePinUnlocked = () => {
+    console.log('🔒 PIN unlock successful, device is now unlocked')
+    setShowPinUnlock(false)
+    // Device should now be ready to use
+    onComplete?.()
+  }
+
+  const handlePinUnlockClose = () => {
+    setShowPinUnlock(false)
+    // Don't call onComplete - user cancelled PIN entry
+  }
+
   if (!deviceStatus) {
     console.log('🔧 DeviceUpdateManager: No deviceStatus, returning null')
     return null
@@ -299,6 +348,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     showFirmwareUpdate,
     showBootloaderUpdate,
     showEnterBootloaderMode,
+    showPinUnlock,
     deviceStatus: deviceStatus?.needsInitialization
   })
 
@@ -342,6 +392,15 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
           deviceId={deviceStatus.deviceId}
           onComplete={handleWalletCreationComplete}
           onClose={() => setShowWalletCreation(false)}
+        />
+      )}
+
+      {showPinUnlock && deviceStatus.deviceId && (
+        <PinUnlockDialog
+          isOpen={showPinUnlock}
+          deviceId={deviceStatus.deviceId}
+          onUnlocked={handlePinUnlocked}
+          onClose={handlePinUnlockClose}
         />
       )}
     </>

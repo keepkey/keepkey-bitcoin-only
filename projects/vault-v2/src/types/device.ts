@@ -28,6 +28,7 @@ export interface DeviceStatus {
   needsBootloaderUpdate: boolean
   needsFirmwareUpdate: boolean
   needsInitialization: boolean
+  needsPinUnlock: boolean
   bootloaderCheck?: BootloaderCheck
   firmwareCheck?: FirmwareCheck
   initializationCheck?: InitializationCheck

@@ -194,6 +194,9 @@ pub fn run() {
             commands::cancel_pin_creation,
             commands::initialize_device_wallet,
             commands::complete_wallet_creation,
+            // PIN unlock commands
+            commands::start_pin_unlock,
+            commands::send_pin_unlock_response,
             // Logging commands
             commands::get_device_log_path,
             commands::get_recent_device_logs,
