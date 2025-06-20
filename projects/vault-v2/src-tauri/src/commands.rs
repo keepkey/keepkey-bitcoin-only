@@ -3420,3 +3420,86 @@ pub fn are_devices_potentially_same(id1: &str, id2: &str) -> bool {
     
     false
 }
+
+/// Send PIN matrix response to device (for responding to PinMatrixRequest)
+#[tauri::command]
+pub async fn send_pin_matrix_ack(
+    device_id: String,
+    positions: Vec<u8>,  // Positions 1-9 that user clicked
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+) -> Result<bool, String> {
+    log::info!("Sending PIN matrix ACK for device: {} with {} positions", device_id, positions.len());
+    
+    // Validate positions
+    if positions.is_empty() || positions.len() > 9 {
+        return Err("PIN must be between 1 and 9 digits".to_string());
+    }
+    
+    for &pos in &positions {
+        if pos < 1 || pos > 9 {
+            return Err("Invalid PIN position: positions must be 1-9".to_string());
+        }
+    }
+    
+    // Convert positions to PIN string (positions are 1-9)
+    let pin = positions.iter().map(|&p| p.to_string()).collect::<String>();
+    
+    // Get device queue handle
+    let queue_manager_guard = queue_manager.lock().await;
+    let queue_handle = queue_manager_guard.get(&device_id)
+        .ok_or_else(|| format!("Device not found: {}", device_id))?;
+        
+    // Create PinMatrixAck message
+    let pin_ack = keepkey_rust::messages::PinMatrixAck { pin };
+    
+    // Send the PIN response
+    match queue_handle.send_raw(pin_ack.into(), false).await {
+        Ok(_) => {
+            log::info!("Successfully sent PIN matrix ACK for device: {}", device_id);
+            Ok(true)
+        }
+        Err(e) => {
+            log::error!("Failed to send PIN matrix ACK for device {}: {}", device_id, e);
+            Err(format!("Failed to send PIN: {}", e))
+        }
+    }
+}
+
+/// Trigger a PIN request by making an authenticated request (GetAddress)
+#[tauri::command] 
+pub async fn trigger_pin_request(
+    device_id: String,
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+) -> Result<bool, String> {
+    log::info!("Triggering PIN request for device: {}", device_id);
+    
+    // Get device queue handle
+    let queue_manager_guard = queue_manager.lock().await;
+    let queue_handle = queue_manager_guard.get(&device_id)
+        .ok_or_else(|| format!("Device not found: {}", device_id))?;
+        
+    // Create a simple GetAddress request that will trigger PIN on locked device
+    let get_address = keepkey_rust::messages::GetAddress {
+        address_n: vec![44, 0, 0, 0, 0], // m/44'/0'/0'/0/0
+        coin_name: Some("Bitcoin".to_string()),
+        script_type: Some(0), // SPENDADDRESS
+        show_display: Some(false),
+        ..Default::default()
+    };
+    
+    // Send the request - this will trigger PinMatrixRequest on locked device
+    match queue_handle.send_raw(get_address.into(), false).await {
+        Ok(keepkey_rust::messages::Message::PinMatrixRequest(_)) => {
+            log::info!("Successfully triggered PIN request for device: {}", device_id);
+            Ok(true)
+        }
+        Ok(other_msg) => {
+            log::warn!("Unexpected response when triggering PIN request: {:?}", other_msg.message_type());
+            Err(format!("Unexpected response: {:?}", other_msg.message_type()))
+        }
+        Err(e) => {
+            log::error!("Failed to trigger PIN request for device {}: {}", device_id, e);
+            Err(format!("Failed to trigger PIN request: {}", e))
+        }
+    }
+}

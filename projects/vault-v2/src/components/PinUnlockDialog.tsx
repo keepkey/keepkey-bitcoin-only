@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Box, VStack, HStack, Text, Button, SimpleGrid, Icon } from '@chakra-ui/react'
-import { FaCircle } from 'react-icons/fa'
+import { Button, Grid, Text, HStack, Icon, VStack, Box } from '@chakra-ui/react'
+import { FaCircle, FaExclamationTriangle, FaTimes } from 'react-icons/fa'
 
 interface PinUnlockDialogProps {
   isOpen: boolean
@@ -10,287 +10,236 @@ interface PinUnlockDialogProps {
   onClose: () => void
 }
 
-interface PinMatrixResult {
-  success: boolean
-  next_step?: string
-  session_id: string
-  error?: string
-}
-
-interface PinCreationSession {
-  device_id: string
-  session_id: string
-  current_step: string
-  is_active: boolean
-}
-
 export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUnlockDialogProps) => {
-  const [pinMatrix, setPinMatrix] = useState<number[]>([])
+  const [pinPositions, setPinPositions] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [unlockSession, setUnlockSession] = useState<PinCreationSession | null>(null)
+  const [step, setStep] = useState<'trigger' | 'enter' | 'submitting'>('trigger')
 
-  const handleMatrixClick = (position: number) => {
-    if (pinMatrix.length < 9) { // Max PIN length
-      setPinMatrix([...pinMatrix, position])
+  // Reset state when dialog opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setPinPositions([])
+      setError(null)
+      setStep('trigger')
+      triggerPinRequest()
     }
-  }
+  }, [isOpen, deviceId])
 
-  const handleClear = () => {
-    setPinMatrix([])
-    setError(null)
-  }
-
-  const handleSubmit = async () => {
-    if (pinMatrix.length === 0) {
-      setError('Please enter your PIN')
-      return
-    }
-
-    setIsLoading(true)
-    setError(null)
-
+  const triggerPinRequest = async () => {
     try {
-      // First, start PIN unlock session if we don't have one
-      if (!unlockSession) {
-        console.log('🔒 Starting PIN unlock session for device:', deviceId)
-        const session = await invoke<PinCreationSession>('start_pin_unlock', { 
-          deviceId 
-        })
-        console.log('🔒 PIN unlock session created:', session)
-        setUnlockSession(session)
-        
-        // Now send the PIN
-        const result = await invoke<PinMatrixResult>('send_pin_unlock_response', {
-          sessionId: session.session_id,
-          positions: pinMatrix
-        })
-        
-        console.log('🔒 PIN unlock result:', result)
-        
-        if (result.success) {
-          console.log('🔒 PIN unlock successful!')
-          onUnlocked()
-        } else {
-          setError(result.error || 'PIN unlock failed')
-          handleClear()
-        }
-      } else {
-        // We already have a session, just send the PIN
-        const result = await invoke<PinMatrixResult>('send_pin_unlock_response', {
-          sessionId: unlockSession.session_id,
-          positions: pinMatrix
-        })
-        
-        console.log('🔒 PIN unlock result:', result)
-        
-        if (result.success) {
-          console.log('🔒 PIN unlock successful!')
-          onUnlocked()
-        } else {
-          setError(result.error || 'PIN unlock failed')
-          handleClear()
-        }
-      }
-    } catch (err) {
-      console.error('🔒 PIN unlock error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to unlock device')
-      handleClear()
+      setIsLoading(true)
+      setError(null)
+      console.log('🔐 Triggering PIN request for device:', deviceId)
+      
+      await invoke('trigger_pin_request', { deviceId })
+      
+      // If we get here, the PIN request was triggered successfully
+      // Device should now be showing PIN matrix
+      setStep('enter')
+      
+    } catch (err: any) {
+      console.error('❌ Failed to trigger PIN request:', err)
+      setError(`Failed to request PIN: ${err}`)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleCancel = async () => {
-    // Cancel the unlock session if it exists
-    if (unlockSession) {
-      try {
-        await invoke('cancel_pin_creation', { sessionId: unlockSession.session_id })
-      } catch (err) {
-        console.error('Failed to cancel PIN unlock session:', err)
-      }
-    }
+  const handlePinButtonClick = (position: number) => {
+    if (pinPositions.length >= 9) return // Max 9 digits
     
-    setPinMatrix([])
+    setPinPositions(prev => [...prev, position])
+  }
+
+  const handleSubmitPin = async () => {
+    if (pinPositions.length === 0) {
+      setError('Please enter your PIN')
+      return
+    }
+
+    try {
+      setStep('submitting')
+      setError(null)
+      console.log('🔐 Submitting PIN with positions:', pinPositions)
+      
+      await invoke('send_pin_matrix_ack', { 
+        deviceId, 
+        positions: pinPositions 
+      })
+      
+      // PIN submitted successfully
+      console.log('✅ PIN submitted successfully')
+      onUnlocked()
+      
+    } catch (err: any) {
+      console.error('❌ PIN submission failed:', err)
+      setError(`PIN verification failed: ${err}`)
+      setStep('enter')
+    }
+  }
+
+  const handleClearPin = () => {
+    setPinPositions([])
+  }
+
+  const handleRetry = () => {
     setError(null)
-    setUnlockSession(null)
-    onClose()
+    setStep('trigger')
+    triggerPinRequest()
   }
 
   if (!isOpen) return null
 
   return (
-    <div style={{ 
-      position: 'fixed', 
-      top: 0, 
-      left: 0, 
-      right: 0, 
-      bottom: 0, 
-      backgroundColor: 'rgba(0, 0, 0, 0.8)', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      zIndex: 9999 
-    }}>
+    <Box
+      position="fixed"
+      top={0}
+      left={0}
+      right={0}
+      bottom={0}
+      bg="blackAlpha.800"
+      zIndex={9999}
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+    >
       <Box
-        maxW="500px"
         bg="gray.800"
+        color="white"
+        border="1px solid"
+        borderColor="gray.600"
         borderRadius="xl"
-        boxShadow="xl"
-        borderWidth="1px"
-        borderColor="gray.700"
-        overflow="hidden"
+        p={6}
+        maxW="md"
         w="90%"
+        maxH="90vh"
+        overflowY="auto"
       >
-        <Box bg="gray.850" p={6}>
-          <Text fontSize="2xl" fontWeight="bold" color="white" textAlign="center">
-            Enter PIN to Unlock
-          </Text>
-        </Box>
-        
-        <Box p={6}>
-          <VStack gap={6}>
-            <Text 
-              color="gray.400" 
-              textAlign="center"
-              fontSize="md"
-              lineHeight="1.6"
-            >
-              Your KeepKey device is locked. Enter your PIN using the matrix displayed on your device.
-            </Text>
+        {/* Header */}
+        <HStack justify="space-between" mb={6}>
+          <Text fontSize="xl" fontWeight="bold">Unlock Device</Text>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onClose}
+            color="gray.400"
+            _hover={{ color: "white" }}
+          >
+            <Icon as={FaTimes} />
+          </Button>
+        </HStack>
 
-            {error && (
-              <Text color="red.400" fontSize="sm" textAlign="center" p={3} bg="red.900" borderRadius="md" borderWidth="1px" borderColor="red.600">
-                {error}
+        <VStack gap={6}>
+          
+          {step === 'trigger' && (
+            <VStack gap={4}>
+              <Text textAlign="center">
+                {isLoading ? 'Requesting PIN from device...' : 'Ready to unlock'}
               </Text>
-            )}
-
-            {/* PIN Dots Display */}
-            <VStack gap={2}>
-              <Box
-                p={4}
-                bg="gray.700"
-                borderRadius="lg"
-                borderWidth="2px"
-                borderColor={pinMatrix.length > 0 ? "blue.500" : "gray.600"}
-                transition="all 0.2s"
-              >
-                <HStack gap={2} justify="center">
-                  {Array.from({ length: Math.max(4, pinMatrix.length) }, (_, i) => (
-                    <Box
-                      key={i}
-                      w="12px"
-                      h="12px"
-                      borderRadius="full"
-                      bg={i < pinMatrix.length ? "blue.400" : "gray.500"}
-                      opacity={i < pinMatrix.length ? 1 : 0.5}
-                    />
-                  ))}
-                </HStack>
-              </Box>
-              
-              {pinMatrix.length === 0 && (
-                <Text fontSize="xs" color="blue.400" textAlign="center">
-                  Look at your KeepKey device and click the corresponding positions
-                </Text>
+              <Text fontSize="sm" color="gray.400" textAlign="center">
+                Check your device screen for the PIN matrix
+              </Text>
+              {!isLoading && (
+                <Button onClick={triggerPinRequest} colorScheme="blue">
+                  Request PIN
+                </Button>
               )}
             </VStack>
+          )}
 
-            {/* PIN Matrix */}
-            <SimpleGrid
-              columns={3}
-              gap={4}
-              w="250px"
-            >
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((position) => (
-                <Button
-                  key={position}
-                  onClick={() => handleMatrixClick(position)}
-                  size="lg"
-                  h="60px"
-                  bg="gray.700"
-                  borderColor="gray.600"
-                  borderWidth="1px"
-                  color="gray.300"
-                  _hover={{
-                    bg: "gray.600",
-                    borderColor: "blue.500",
-                    transform: "scale(1.05)",
-                  }}
-                  _active={{
-                    bg: "gray.500",
-                    transform: "scale(0.95)",
-                  }}
-                  transition="all 0.2s"
-                  disabled={isLoading || pinMatrix.length >= 9}
+          {step === 'enter' && (
+            <VStack gap={4} w="full">
+              <Text textAlign="center" fontSize="lg" fontWeight="bold">
+                Enter PIN from Device
+              </Text>
+              <Text fontSize="sm" color="gray.400" textAlign="center">
+                Look at your device screen and click the positions shown
+              </Text>
+
+              {/* PIN dots display */}
+              <HStack gap={2} justify="center" minH="30px">
+                {Array.from({ length: Math.max(6, pinPositions.length) }, (_, i) => (
+                  <Icon
+                    key={i}
+                    as={FaCircle}
+                    color={i < pinPositions.length ? "blue.400" : "gray.600"}
+                    w={3}
+                    h={3}
+                  />
+                ))}
+              </HStack>
+
+              {/* 3x3 PIN matrix */}
+              <Grid templateColumns="repeat(3, 1fr)" gap={3} w="200px">
+                {Array.from({ length: 9 }, (_, i) => {
+                  const position = i + 1
+                  return (
+                    <Button
+                      key={position}
+                      onClick={() => handlePinButtonClick(position)}
+                      variant="outline"
+                      borderColor="gray.500"
+                      color="white"
+                      _hover={{ bg: "gray.700", borderColor: "blue.400" }}
+                      _active={{ bg: "blue.600" }}
+                      size="lg"
+                      fontSize="xl"
+                      disabled={pinPositions.length >= 9}
+                    >
+                      •
+                    </Button>
+                  )
+                })}
+              </Grid>
+
+              {/* Action buttons */}
+              <HStack gap={3} w="full" justify="center">
+                <Button 
+                  onClick={handleClearPin}
+                  variant="ghost"
+                  size="sm"
+                  disabled={pinPositions.length === 0}
                 >
-                  <Icon as={FaCircle} boxSize={4} />
+                  Clear
                 </Button>
-              ))}
-            </SimpleGrid>
+                <Button
+                  onClick={handleSubmitPin}
+                  colorScheme="blue"
+                  disabled={pinPositions.length === 0}
+                >
+                  Unlock Device
+                </Button>
+              </HStack>
+            </VStack>
+          )}
 
-            {/* Action Buttons */}
-            <HStack gap={4} w="full">
-              <Button
-                onClick={handleClear}
-                variant="outline"
-                size="lg"
-                flex={1}
-                borderColor="gray.600"
-                color="gray.300"
-                fontSize="md"
-                fontWeight="semibold"
-                _hover={{
-                  bg: "gray.700",
-                  borderColor: "gray.500",
-                }}
-                disabled={isLoading || pinMatrix.length === 0}
-              >
-                Clear
-              </Button>
-              
-              <Button
-                onClick={handleCancel}
-                variant="outline"
-                size="lg"
-                flex={1}
-                borderColor="gray.600"
-                color="gray.300"
-                fontSize="md"
-                fontWeight="semibold"
-                _hover={{
-                  bg: "gray.700",
-                  borderColor: "gray.500",
-                }}
-                disabled={isLoading}
-              >
-                Cancel
-              </Button>
-              
-              <Button
-                onClick={handleSubmit}
-                colorScheme="blue"
-                size="lg"
-                flex={1}
-                fontSize="md"
-                fontWeight="semibold"
-                _hover={{
-                  transform: "translateY(-1px)",
-                  boxShadow: "lg",
-                }}
-                transition="all 0.2s"
-                disabled={isLoading || pinMatrix.length === 0}
-              >
-                {isLoading ? 'Unlocking...' : 'Unlock'}
-              </Button>
-            </HStack>
+          {step === 'submitting' && (
+            <VStack gap={4}>
+              <Text textAlign="center">Verifying PIN...</Text>
+              <Text fontSize="sm" color="gray.400" textAlign="center">
+                Please wait while your device processes the PIN
+              </Text>
+            </VStack>
+          )}
 
-            <Text fontSize="xs" color="gray.500" textAlign="center">
-              The numbered positions correspond to the layout shown on your KeepKey device screen.
-            </Text>
-          </VStack>
-        </Box>
+          {/* Error display */}
+          {error && (
+            <Box bg="red.900" borderColor="red.700" border="1px solid" p={4} borderRadius="md" w="full">
+              <HStack gap={3} align="start">
+                <Icon as={FaExclamationTriangle} color="red.400" mt={1} />
+                <VStack align="start" gap={2} flex={1}>
+                  <Text fontSize="sm" color="red.100">{error}</Text>
+                  <Button size="sm" colorScheme="red" variant="outline" onClick={handleRetry}>
+                    Try Again
+                  </Button>
+                </VStack>
+              </HStack>
+            </Box>
+          )}
+
+        </VStack>
       </Box>
-    </div>
+    </Box>
   )
 } 
