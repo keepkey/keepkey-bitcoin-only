@@ -112,15 +112,13 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       setShowFirmwareUpdate(false)
       setShowWalletCreation(true)
     } else if (status.needsPinUnlock) {
-      // Device is initialized but locked with PIN - this is handled by the PIN unlock event listener
-      console.log('🔒 DeviceUpdateManager: Device needs PIN unlock - NOT calling onComplete()')
-      // Don't call onComplete() here - PIN unlock dialog will be shown via the pin-unlock-needed event
-      // Just ensure other dialogs are hidden
+      // Device is initialized but locked with PIN - show PIN unlock dialog
+      console.log('🔒 DeviceUpdateManager: Device needs PIN unlock - showing PIN dialog')
       setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(false)
       setShowWalletCreation(false)
-      // showPinUnlock will be set by the pin-unlock-needed event listener
+      setShowPinUnlock(true)
     } else {
       // Device is ready
       console.log('🔧 DeviceUpdateManager: Device is ready, no updates needed')

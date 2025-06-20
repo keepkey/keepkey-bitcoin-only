@@ -2,9 +2,10 @@ import { VStack, HStack, Box, Text, Button, Badge, Icon, Spinner, IconButton, Fl
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { FaUsb, FaDownload, FaWallet, FaShieldAlt, FaExclamationTriangle, FaTools, FaTrash, FaCheckCircle } from 'react-icons/fa'
+import { FaUsb, FaDownload, FaWallet, FaShieldAlt, FaExclamationTriangle, FaTools, FaTrash, FaCheckCircle, FaLock } from 'react-icons/fa'
 import type { DeviceFeatures, DeviceStatus } from '../types/device'
 import { useTroubleshootingWizard } from '../contexts/DialogContext'
+import { PinUnlockDialog } from './PinUnlockDialog'
 const TAG = " | KeepKeyDeviceList | "
 interface Device {
   id: string
@@ -30,6 +31,8 @@ export const KeepKeyDeviceList = ({
   const [loading, setLoading] = useState(true)
   const [wipingDevice, setWipingDevice] = useState<string | null>(null)
   const [connectStatus, setConnectStatus] = useState<string | null>(null) // NEW: connection attempt status
+  const [pinUnlockOpen, setPinUnlockOpen] = useState(false)
+  const [pinUnlockDeviceId, setPinUnlockDeviceId] = useState<string | null>(null)
   const troubleshootingWizard = useTroubleshootingWizard()
 
   // Listen for feature fetch retrying events from backend
@@ -122,6 +125,28 @@ export const KeepKeyDeviceList = ({
     
     // Call the parent handler with device info
     onVerifySeed(device.id, device.features?.label || device.name)
+  }
+
+  const handleLockDevice = (device: Device) => {
+    console.log('🔒 [KeepKeyDeviceList] Lock/unlock device button clicked for device:', device.id)
+    
+    // Open PIN unlock dialog
+    setPinUnlockDeviceId(device.id)
+    setPinUnlockOpen(true)
+  }
+
+  const handlePinUnlockClose = () => {
+    console.log('🔒 [KeepKeyDeviceList] PIN unlock dialog closed')
+    setPinUnlockOpen(false)
+    setPinUnlockDeviceId(null)
+  }
+
+  const handlePinUnlockSuccess = () => {
+    console.log('🔒 [KeepKeyDeviceList] PIN unlock successful, refreshing devices')
+    setPinUnlockOpen(false)
+    setPinUnlockDeviceId(null)
+    // Refresh device list to show updated status
+    loadDevices()
   }
 
   useEffect(() => {
@@ -434,6 +459,26 @@ export const KeepKeyDeviceList = ({
                     </HStack>
                   </Button>
                 )}
+                
+                {/* Lock/Unlock button - only show for initialized devices with PIN protection */}
+                {device.features?.initialized && device.features?.pinProtection && (
+                  <Button
+                    size="sm"
+                    colorScheme={device.features?.pinCached ? "red" : "yellow"}
+                    variant="outline"
+                    onClick={() => handleLockDevice(device)}
+                    disabled={device.features?.bootloaderMode}
+                    flex="1"
+                    minW="100px"
+                  >
+                    <HStack gap={1}>
+                      <FaLock />
+                      <Text fontSize="xs">
+                        {device.features?.pinCached ? "Lock Device" : "Unlock Device"}
+                      </Text>
+                    </HStack>
+                  </Button>
+                )}
               </Flex>
             )}
 
@@ -518,6 +563,16 @@ export const KeepKeyDeviceList = ({
           </VStack>
         </Box>
       ))}
+      
+      {/* PIN Unlock Dialog */}
+      {pinUnlockOpen && pinUnlockDeviceId && (
+        <PinUnlockDialog
+          isOpen={pinUnlockOpen}
+          deviceId={pinUnlockDeviceId}
+          onUnlocked={handlePinUnlockSuccess}
+          onClose={handlePinUnlockClose}
+        />
+      )}
     </VStack>
   )
 }

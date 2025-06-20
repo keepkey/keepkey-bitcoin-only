@@ -2,6 +2,7 @@ use tauri::{State, AppHandle, Emitter};
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
+use anyhow;
 
 
 // Import types needed for DeviceRequestWrapper
@@ -10,6 +11,7 @@ use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, Devic
 // Create a cache for device states to remember OOB bootloader status
 lazy_static::lazy_static! {
     static ref DEVICE_STATE_CACHE: Arc<RwLock<HashMap<String, DeviceStateCache>>> = Arc::new(RwLock::new(HashMap::new()));
+    pub static ref PENDING_PIN_REQUESTS: Arc<tokio::sync::Mutex<HashMap<String, PendingPinRequest>>> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 }
 
 #[derive(Debug, Clone)]
@@ -17,6 +19,108 @@ struct DeviceStateCache {
     is_oob_bootloader: bool,
     last_features: Option<keepkey_rust::messages::Features>,
     last_update: std::time::Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingPinRequest {
+    pub request_id: String,
+    pub device_id: String,
+    pub original_request: DeviceRequestWrapper,
+    pub session_id: String,
+    pub pin_request_type: String,
+}
+
+/// Custom message handler that emits PIN events to frontend
+fn pin_aware_message_handler(msg: &keepkey_rust::messages::Message, app_handle: &tauri::AppHandle, device_id: &str, request_id: &str) -> anyhow::Result<Option<keepkey_rust::messages::Message>> {
+    use keepkey_rust::messages;
+    use log::info;
+    
+    match msg {
+        keepkey_rust::messages::Message::ButtonRequest(req) => {
+            info!("ButtonRequest received for {}, code: {:?}", device_id, req.code);
+            eprintln!("Confirm action on device...");
+            let ack = messages::ButtonAck::default();
+            Ok(Some(ack.into()))
+        }
+        keepkey_rust::messages::Message::PinMatrixRequest(pin_req) => {
+            info!("🔐 PinMatrixRequest received for device {}", device_id);
+            
+            // Determine PIN request type
+            let pin_type = match pin_req.r#type {
+                Some(t) => match messages::PinMatrixRequestType::from_i32(t) {
+                    Some(messages::PinMatrixRequestType::Current) => "current",
+                    Some(messages::PinMatrixRequestType::NewFirst) => "new_first", 
+                    Some(messages::PinMatrixRequestType::NewSecond) => "new_second",
+                    _ => "unknown"
+                },
+                None => "unknown"
+            };
+            
+            info!("🔐 PIN request type: {}", pin_type);
+            
+            // Generate session ID for this PIN request
+            let session_id = format!("pin_request_{}_{}", device_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+            
+            // Emit PIN request event to frontend
+            let pin_event_payload = serde_json::json!({
+                "device_id": device_id,
+                "request_id": request_id,
+                "session_id": session_id,
+                "pin_type": pin_type,
+                "message": match pin_type {
+                    "current" => "Enter your current PIN",
+                    "new_first" => "Enter a new PIN",
+                    "new_second" => "Re-enter the new PIN",
+                    _ => "Enter PIN"
+                }
+            });
+            
+            info!("📡 Emitting device:pin-request event with payload: {:?}", pin_event_payload);
+            
+            if let Err(e) = app_handle.emit("device:pin-request", &pin_event_payload) {
+                log::error!("Failed to emit PIN request event: {}", e);
+            }
+            
+            // Store the session for when the frontend responds
+            tokio::spawn({
+                let device_id = device_id.to_string();
+                let request_id = request_id.to_string();
+                let session_id = session_id.clone();
+                let pin_type = pin_type.to_string();
+                
+                async move {
+                    let pending_request = PendingPinRequest {
+                        request_id: request_id.clone(),
+                        device_id: device_id.clone(),
+                        original_request: DeviceRequestWrapper {
+                            device_id: device_id.clone(),
+                            request_id: request_id.clone(),
+                            request: DeviceRequest::GetFeatures, // Placeholder - we'll store the real request later
+                        },
+                        session_id: session_id.clone(),
+                        pin_request_type: pin_type,
+                    };
+                    
+                    let mut pending_pins = PENDING_PIN_REQUESTS.lock().await;
+                    pending_pins.insert(session_id.clone(), pending_request);
+                    info!("📋 Stored pending PIN request session: {}", session_id);
+                }
+            });
+            
+            // Return None to pause the message handling until PIN is provided
+            Ok(None)
+        }
+        keepkey_rust::messages::Message::PassphraseRequest(_) => {
+            info!("PassphraseRequest received for {}", device_id);
+            // For now, handle passphrase requests automatically with empty passphrase
+            // TODO: Emit passphrase request event to frontend
+            Ok(Some(messages::PassphraseAck { passphrase: String::new() }.into()))
+        }
+        keepkey_rust::messages::Message::Failure(x) => {
+            anyhow::bail!("Device failure: {}", x.message())
+        }
+        _ => Ok(None),
+    }
 }
 
 #[tauri::command]
@@ -215,10 +319,83 @@ pub async fn add_to_device_queue(
                 _ => None,
             };
             
-            queue_handle
-                .get_address(path_parts, coin_name.clone(), script_type_int, show_display)
-                .await
-                .map_err(|e| format!("Failed to get address: {}", e))
+            // Create GetAddress message with PIN-aware handling
+            let get_address_msg = keepkey_rust::messages::Message::GetAddress(
+                keepkey_rust::messages::GetAddress {
+                    address_n: path_parts,
+                    coin_name: Some(coin_name.clone()),
+                    script_type: script_type_int,
+                    show_display,
+                    multisig: None,
+                }
+            );
+            
+            // Use send_raw to get address (now uses PIN flow handler that doesn't auto-respond)
+            match queue_handle.send_raw(get_address_msg, false).await {
+                Ok(keepkey_rust::messages::Message::Address(addr)) => {
+                    Ok(addr.address)
+                }
+                Ok(keepkey_rust::messages::Message::PinMatrixRequest(pin_req)) => {
+                    // Handle PIN request by emitting event
+                    let pin_type = match pin_req.r#type {
+                        Some(t) => match keepkey_rust::messages::PinMatrixRequestType::from_i32(t) {
+                            Some(keepkey_rust::messages::PinMatrixRequestType::Current) => "current",
+                            Some(keepkey_rust::messages::PinMatrixRequestType::NewFirst) => "new_first", 
+                            Some(keepkey_rust::messages::PinMatrixRequestType::NewSecond) => "new_second",
+                            _ => "unknown"
+                        },
+                        None => "unknown"
+                    };
+                    
+                    let session_id = format!("pin_request_{}_{}", request.device_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+                    
+                    let pin_event_payload = serde_json::json!({
+                        "device_id": request.device_id,
+                        "request_id": request.request_id,
+                        "session_id": session_id,
+                        "pin_type": pin_type,
+                        "message": match pin_type {
+                            "current" => "Enter your current PIN",
+                            "new_first" => "Enter a new PIN",
+                            "new_second" => "Re-enter the new PIN",
+                            _ => "Enter PIN"
+                        }
+                    });
+                    
+                    println!("📡 Emitting device:pin-request event: {:?}", pin_event_payload);
+                    
+                    if let Err(e) = app.emit("device:pin-request", &pin_event_payload) {
+                        eprintln!("Failed to emit PIN request event: {}", e);
+                    }
+                    
+                    // Store the pending request
+                    let pending_request = PendingPinRequest {
+                        request_id: request.request_id.clone(),
+                        device_id: request.device_id.clone(),
+                        original_request: request.clone(),
+                        session_id: session_id.clone(),
+                        pin_request_type: pin_type.to_string(),
+                    };
+                    
+                    tokio::spawn(async move {
+                        let mut pending_pins = PENDING_PIN_REQUESTS.lock().await;
+                        pending_pins.insert(session_id.clone(), pending_request);
+                        println!("📋 Stored pending PIN request session: {}", session_id);
+                    });
+                    
+                    // Return a special error that indicates PIN is required
+                    Err("PIN required - please enter PIN in dialog".to_string())
+                }
+                Ok(keepkey_rust::messages::Message::Failure(failure)) => {
+                    Err(format!("Device returned error: {}", failure.message.unwrap_or_default()))
+                }
+                Ok(_) => {
+                    Err("Unexpected response from device for address request".to_string())
+                }
+                Err(e) => {
+                    Err(format!("Failed to get address: {}", e))
+                }
+            }
         }
         DeviceRequest::GetFeatures => {
             let features = queue_handle

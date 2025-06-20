@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, State, Manager};
 use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use keepkey_rust::{
@@ -2148,14 +2148,19 @@ pub async fn send_pin_matrix_response(
 #[tauri::command]
 pub async fn start_pin_unlock(
     device_id: String,
-    _queue_manager: tauri::State<'_, DeviceQueueManager>,
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
 ) -> Result<PinCreationSession, String> {
     log::info!("Starting PIN unlock for device: {}", device_id);
     
-    // Check if device is already in PIN flow
-    if is_device_in_pin_flow(&device_id) {
-        return Err("Device is already in PIN flow".to_string());
+    // Clean up any stale PIN sessions for this device first
+    {
+        let mut sessions = PIN_SESSIONS.lock().map_err(|_| "Failed to lock PIN sessions".to_string())?;
+        sessions.retain(|_, session| session.device_id != device_id);
+        log::info!("Cleaned up any existing PIN sessions for device: {}", device_id);
     }
+    
+    // Force clear device from PIN flow state to handle stale states
+    let _ = unmark_device_in_pin_flow(&device_id);
     
     // Mark device as in PIN flow BEFORE starting any operations
     mark_device_in_pin_flow(&device_id)?;
@@ -2177,7 +2182,30 @@ pub async fn start_pin_unlock(
         sessions.insert(session_id.clone(), session.clone());
     }
     
-    log::info!("PIN unlock session created: {}", session_id);
+    log::info!("PIN unlock session created: {} - attempting to trigger PIN matrix on device", session_id);
+
+    // Try to trigger the physical PIN matrix on the device by sending a benign
+    // GetFeatures request.  Any request to a PIN-locked device should cause the
+    // firmware to respond with `PinMatrixRequest`, which in turn makes the
+    // device display the PIN matrix UI.  We purposely ignore the result because
+    // it will almost certainly be an error until the user enters the PIN.
+    {
+        // use keepkey_rust::features::DeviceFeatures; // bring trait bounds into scope (currently unused)
+        let handle_opt = {
+            let manager = queue_manager.lock().await;
+            manager.get(&device_id).cloned()
+        };
+
+        if let Some(handle) = handle_opt {
+            log::info!("🔄 Sending GetFeatures to {} to trigger PIN matrix", device_id);
+            if let Err(e) = handle.get_features().await {
+                log::debug!("Ignored GetFeatures error while triggering PIN matrix: {}", e);
+            }
+        } else {
+            log::warn!("No device queue handle found for {}, could not trigger PIN matrix immediately", device_id);
+        }
+    }
+
     Ok(session)
 }
 
@@ -2249,12 +2277,20 @@ pub async fn send_pin_unlock_response(
         }
     };
     
-    // Try a simple GetFeatures with PIN to unlock device
-    let get_features = keepkey_rust::messages::Message::GetFeatures(
-        keepkey_rust::messages::GetFeatures {}
+    // Send a GetPublicKey message to trigger PIN request
+    // This is more reliable than GetFeatures for triggering PIN on locked devices
+    let trigger_msg = keepkey_rust::messages::Message::GetPublicKey(
+        keepkey_rust::messages::GetPublicKey {
+            address_n: vec![0x80000000 + 44, 0x80000000 + 0, 0x80000000 + 0], // m/44'/0'/0'
+            ecdsa_curve_name: Some("secp256k1".to_string()),
+            show_display: Some(false),
+            coin_name: Some("Bitcoin".to_string()),
+            script_type: None,
+        }
     );
     
-    match queue_handle.send_raw(get_features, false).await {
+    log::info!("🔓 Sending GetPublicKey to trigger PIN request on device...");
+    match queue_handle.send_raw(trigger_msg, false).await {
         Ok(response) => {
             match response {
                 keepkey_rust::messages::Message::PinMatrixRequest(_) => {
@@ -2271,6 +2307,8 @@ pub async fn send_pin_unlock_response(
                                 keepkey_rust::messages::Message::Features(features) => {
                                     // Check if PIN was accepted (device should now be unlocked)
                                     let pin_cached = features.pin_cached.unwrap_or(false);
+                                    log::info!("📊 PIN unlock response - Features received with pin_cached: {}", pin_cached);
+                                    
                                     if pin_cached {
                                         log::info!("✅ PIN unlock successful, device is now unlocked");
                                         
@@ -2291,7 +2329,7 @@ pub async fn send_pin_unlock_response(
                                             error: None,
                                         })
                                     } else {
-                                        log::error!("❌ PIN unlock failed - device still locked");
+                                        log::error!("❌ PIN unlock failed - device still locked (pin_cached=false)");
                                         
                                         // Update session state to failed
                                         if let Ok(mut sessions) = PIN_SESSIONS.lock() {
@@ -3419,4 +3457,135 @@ pub fn are_devices_potentially_same(id1: &str, id2: &str) -> bool {
     }
     
     false
+}
+
+/// Send PIN matrix response to device (for responding to PinMatrixRequest)
+#[tauri::command]
+pub async fn send_pin_matrix_ack(
+    session_id: String,
+    positions: Vec<u8>,  // Positions 1-9 that user clicked
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+) -> Result<bool, String> {
+    log::info!("Sending PIN matrix ACK for session: {} with {} positions", session_id, positions.len());
+    
+    // Validate positions
+    if positions.is_empty() || positions.len() > 9 {
+        return Err("PIN must be between 1 and 9 digits".to_string());
+    }
+    
+    for &pos in &positions {
+        if pos < 1 || pos > 9 {
+            return Err("Invalid PIN position: positions must be 1-9".to_string());
+        }
+    }
+    
+    // Convert positions to PIN string for device protocol
+    let pin_string: String = positions.iter()
+        .map(|&pos| (b'0' + pos) as char)
+        .collect();
+    
+    log::info!("Converted positions to PIN string: {}", pin_string);
+    
+    // Get the pending PIN request from our tracking
+    let pending_request = {
+        let mut pending_pins = crate::device::queue::PENDING_PIN_REQUESTS.lock().await;
+        pending_pins.remove(&session_id)
+    };
+    
+    if let Some(pending) = pending_request {
+        log::info!("Found pending PIN request for session {}, device {}", session_id, pending.device_id);
+        
+        // Get the device queue handle
+        let queue_handle = {
+            let manager = queue_manager.lock().await;
+            manager.get(&pending.device_id)
+                .ok_or_else(|| format!("Device {} not found in queue", pending.device_id))?
+                .clone()
+        };
+        
+        // Send PIN matrix ACK to device
+        let pin_matrix_ack = keepkey_rust::messages::Message::PinMatrixAck(
+            keepkey_rust::messages::PinMatrixAck {
+                pin: pin_string,
+            }
+        );
+        
+        match queue_handle.send_raw(pin_matrix_ack, false).await {
+            Ok(keepkey_rust::messages::Message::Address(addr)) => {
+                log::info!("✅ PIN accepted, got address: {}", addr.address);
+                Ok(true)
+            }
+            Ok(keepkey_rust::messages::Message::Features(_)) => {
+                log::info!("✅ PIN accepted, got features (device unlocked)");
+                Ok(true)
+            }
+            Ok(keepkey_rust::messages::Message::Failure(failure)) => {
+                log::error!("❌ PIN rejected: {}", failure.message.as_deref().unwrap_or("Unknown error"));
+                Err(format!("PIN rejected: {}", failure.message.as_deref().unwrap_or("Unknown error")))
+            }
+            Ok(response) => {
+                log::info!("✅ PIN sent, got response: {:?}", response.message_type());
+                Ok(true)
+            }
+            Err(e) => {
+                log::error!("❌ Failed to send PIN matrix ACK: {}", e);
+                Err(format!("Failed to send PIN to device: {}", e))
+            }
+        }
+    } else {
+        log::error!("❌ No pending PIN request found for session {}", session_id);
+        Err("PIN session not found or expired".to_string())
+    }
+}
+
+/// Cannot "trigger" PIN - instead we make a request that REQUIRES authentication
+#[tauri::command]
+pub async fn trigger_pin_request(
+    device_id: String,
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    log::info!("🔐 Making authenticated request to cause PIN display on device: {}", device_id);
+    
+    // Make a GetAddress request through the normal device queue
+    // This will cause the device to show PIN matrix if locked
+    let request = DeviceRequestWrapper {
+        device_id: device_id.clone(),
+        request_id: uuid::Uuid::new_v4().to_string(),
+        request: DeviceRequest::GetAddress {
+            path: "m/44'/0'/0'/0/0".to_string(),
+            coin_name: "Bitcoin".to_string(),
+            script_type: Some("p2pkh".to_string()),
+            show_display: Some(false),
+        },
+    };
+    
+    log::info!("🔐 Sending GetAddress request to device...");
+    
+    // Clone app handle before borrowing to avoid ownership issues
+    let app_clone = app.clone();
+    
+    // Get the last_responses state from app state
+    let last_responses = app.state::<Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>>();
+    
+    // This will go through our modified GetAddress handler that emits PIN events
+    match crate::device::queue::add_to_device_queue(
+        request,
+        queue_manager,
+        last_responses.clone(),
+        app_clone,
+    ).await {
+        Ok(response) => {
+            log::info!("✅ Got response: {}", response);
+            Ok("Request completed".to_string())
+        }
+        Err(e) if e.contains("PIN required") => {
+            log::info!("✅ PIN request triggered - device should be showing PIN matrix");
+            Ok("PIN request triggered successfully".to_string())
+        }
+        Err(e) => {
+            log::error!("❌ Failed to make request: {}", e);
+            Err(format!("Failed to trigger PIN request: {}", e))
+        }
+    }
 }

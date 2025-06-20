@@ -410,7 +410,7 @@ impl DeviceWorker {
             ..Default::default()
         };
         
-        let response = transport.with_standard_handler().handle(get_address.into())?;
+        let response = transport.with_pin_flow_handler().handle(get_address.into())?;
         
         match response {
             Message::Address(addr_response) => {
@@ -436,7 +436,10 @@ impl DeviceWorker {
             Message::ResetDevice(_) | 
             Message::PinMatrixAck(_) | 
             Message::ChangePin(_) |
-            Message::RecoveryDevice(_)
+            Message::RecoveryDevice(_) |
+            Message::GetAddress(_) |      // GetAddress can trigger PIN requests
+            Message::GetPublicKey(_) |    // GetPublicKey can trigger PIN requests
+            Message::SignTx(_)            // SignTx can trigger PIN requests
         );
         
         // Update PIN flow state based on message type
