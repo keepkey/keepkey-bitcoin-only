@@ -301,7 +301,8 @@ pub async fn get_connected_devices() -> Result<Vec<serde_json::Value>, String> {
 /// Get blocking actions (enhanced version)
 #[tauri::command]
 pub async fn get_blocking_actions() -> Result<Vec<serde_json::Value>, String> {
-    // Return empty array for now - can be enhanced later
+    // For now, return empty array since vault v2 uses DeviceUpdateManager with its own logic
+    // TODO: Implement proper blocking actions registry like vault v1
     Ok(vec![])
 }
 
@@ -1109,20 +1110,41 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
     };
     
     if let Some(features) = features {
-        let latest_bootloader_version = "2.1.5".to_string();
+        let latest_bootloader_version = "2.1.4".to_string(); // Fixed: 2.1.4 is the actual latest official bootloader
         
-        // Only check bootloader updates when device is actually in bootloader mode
-        if features.bootloader_mode {
-            // Device is in bootloader mode - determine bootloader version from firmware version
-            let current_bootloader_version = if features.version.starts_with("1.") {
+        // CRITICAL FIX: Check bootloader version regardless of current mode
+        // For OOB devices, we can infer bootloader version from firmware version
+        let current_bootloader_version = if features.bootloader_mode {
+            // Device is in bootloader mode - use the firmware version as bootloader version
+            if features.version.starts_with("1.") {
                 features.version.clone() // OOB bootloader versions like 1.0.3
             } else {
-                "Unknown bootloader".to_string()
-            };
-            
-            // Any device in bootloader mode needs update (except latest versions)
-            // Use proper semantic version comparison instead of string comparison
-            let needs_bootloader_update = match semver::Version::parse(&current_bootloader_version) {
+                // Modern bootloader in bootloader mode - use version directly
+                features.version.clone()
+            }
+        } else {
+            // Device is in normal firmware mode - check if it's an OOB device
+            if features.version.starts_with("1.0.") {
+                // OOB device: firmware version 1.0.3 = bootloader version 1.0.3
+                features.version.clone()
+            } else if let Some(ref bl_version) = features.bootloader_version {
+                // Use explicit bootloader version if available
+                bl_version.clone()
+            } else {
+                // For modern firmware without explicit bootloader version, assume it's recent enough
+                "2.1.4".to_string() // Assume recent bootloader if not specified
+            }
+        };
+        
+        // Check if bootloader needs update using proper semantic version comparison
+        let needs_bootloader_update = if features.bootloader_mode {
+            // For devices in bootloader mode, only update bootloader if it's truly old (like 1.x)
+            // Modern bootloaders (2.1.4) don't need bootloader updates - they need firmware updates
+            current_bootloader_version.starts_with("1.")
+        } else if current_bootloader_version == "Unknown bootloader" {
+            false // Can't determine, assume no update needed
+        } else {
+            match semver::Version::parse(&current_bootloader_version) {
                 Ok(current_ver) => {
                     if let Ok(latest_ver) = semver::Version::parse(&latest_bootloader_version) {
                         current_ver < latest_ver
@@ -1136,49 +1158,51 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
                     // For versions like "1.0.3", definitely needs update
                     !current_bootloader_version.starts_with("2.1.")
                 }
-            };
-            
-            println!("🔧 Device in bootloader mode: {} -> needs update: {}", 
-                    current_bootloader_version, needs_bootloader_update);
-            
+            }
+        };
+        
+        println!("🔧 Bootloader check: {} -> needs update: {} (bootloader_mode: {})", 
+                current_bootloader_version, needs_bootloader_update, features.bootloader_mode);
+        
+        // Set bootloader status regardless of current mode
+        if current_bootloader_version != "Unknown bootloader" {
             status.bootloader_check = Some(BootloaderCheck {
                 current_version: current_bootloader_version,
                 latest_version: latest_bootloader_version,
                 needs_update: needs_bootloader_update,
             });
             status.needs_bootloader_update = needs_bootloader_update;
-        } else {
-            // Device is in normal firmware mode - no bootloader check needed
-            println!("🔧 Device in normal firmware mode v{} - skipping bootloader check", features.version);
-            status.bootloader_check = None;
-            status.needs_bootloader_update = false;
         }
         
-        // Check firmware version (only for devices not in bootloader mode)
-        if !features.bootloader_mode {
-            let current_version = features.version.clone();
-            let latest_version = "7.10.0".to_string(); // Latest firmware version
-            let needs_update = !current_version.starts_with("7.10.");
-            
-            status.firmware_check = Some(FirmwareCheck {
-                current_version: current_version.clone(),
-                latest_version: latest_version.clone(),
-                needs_update,
-            });
-            status.needs_firmware_update = needs_update;
-            
-            println!("🔧 Firmware check: {} vs {} -> needs update: {}", 
-                    current_version, latest_version, needs_update);
+        // Check firmware version 
+        let current_version = features.version.clone();
+        let latest_version = "7.10.0".to_string(); // Latest firmware version
+        
+        let needs_firmware_update = if features.bootloader_mode {
+            // CRITICAL: Devices in bootloader mode need firmware updates to get out of bootloader mode
+            // Only exception is if they have an old bootloader (1.x) that needs bootloader update first
+            !current_version.starts_with("1.")
         } else {
-            // Device is in bootloader mode - firmware check not applicable
-            status.firmware_check = None;
-            status.needs_firmware_update = false;
-        }
+            // Normal mode - check if firmware needs update
+            if current_version.starts_with("1.0.") {
+                // OOB device - firmware update only after bootloader update
+                false // Bootloader has higher priority
+            } else {
+                !current_version.starts_with("7.10.")
+            }
+        };
+        
+        status.firmware_check = Some(FirmwareCheck {
+            current_version: current_version.clone(),
+            latest_version: latest_version.clone(),
+            needs_update: needs_firmware_update,
+        });
+        status.needs_firmware_update = needs_firmware_update;
+        
+        println!("🔧 Firmware check: {} vs {} -> needs update: {} (bootloader_mode: {})", 
+                current_version, latest_version, needs_firmware_update, features.bootloader_mode);
         
         // Check initialization status
-        // For devices in bootloader mode, we can't determine initialization status
-        // But we know that OOB devices (like version 1.0.3) will need initialization
-        // after bootloader update, so we should plan for that
         if !features.bootloader_mode {
             // Normal mode - can check initialization status directly
             let initialized = features.initialized;
@@ -1188,12 +1212,9 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             // Check if device is unlocked (PIN cached or no PIN protection)
             let has_pin_protection = features.pin_protection;
             let pin_cached = features.pin_cached;
-            let is_unlocked = !has_pin_protection || pin_cached;
             let is_pin_locked = initialized && has_pin_protection && !pin_cached;
             
             // Device needs setup if it has never been initialized OR if the user never created a recovery backup
-            // "no_backup" is true when the device has no backup. We require BOTH `initialized` and `has_backup` to be
-            // true before we say that the device is fully ready for use in the Vault.
             let needs_setup = !initialized || !has_backup;
             
             status.initialization_check = Some(InitializationCheck {
@@ -1205,12 +1226,11 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             
             // IMPORTANT: Only mark as needing initialization if it truly needs setup
             // A device that is initialized but locked with PIN should NOT be marked as needing initialization
-            // Instead, it should be handled as a PIN unlock case
             status.needs_initialization = needs_setup;
             status.needs_pin_unlock = is_pin_locked;
             
-            println!("🔧 Initialization check: initialized={}, needs_setup={}, has_pin_protection={}, pin_cached={}, is_unlocked={}", 
-                    initialized, needs_setup, has_pin_protection, pin_cached, is_unlocked);
+            println!("🔧 Initialization check: initialized={}, needs_setup={}, has_pin_protection={}, pin_cached={}", 
+                    initialized, needs_setup, has_pin_protection, pin_cached);
             
             if is_pin_locked {
                 println!("🔒 Device is initialized but locked with PIN - needs unlock (NOT initialization)");
@@ -3517,5 +3537,114 @@ pub async fn trigger_pin_request(
             let _ = unmark_device_in_pin_flow(&device_id);
             Err(format!("Failed to trigger PIN request: {}", e))
         }
+    }
+}
+
+/// Test command to verify bootloader mode device status evaluation
+#[tauri::command]
+pub async fn test_bootloader_mode_device_status() -> Result<String, String> {
+    println!("🧪 Testing bootloader mode device status evaluation...");
+    
+    // Create mock DeviceFeatures for a device in bootloader mode with v2.1.4
+    let bootloader_device_features = DeviceFeatures {
+        label: Some("KeepKey".to_string()),
+        vendor: Some("KeepKey LLC".to_string()),
+        model: Some("KeepKey".to_string()),
+        firmware_variant: None,
+        device_id: Some("test-device-bootloader".to_string()),
+        language: Some("english".to_string()),
+        bootloader_mode: true, // Device is in bootloader mode
+        version: "2.1.4".to_string(), // Modern bootloader version
+        firmware_hash: None,
+        bootloader_hash: None,
+        bootloader_version: None,
+        initialized: false, // Not applicable in bootloader mode
+        imported: None,
+        no_backup: true,
+        pin_protection: false,
+        pin_cached: false,
+        passphrase_protection: false,
+        passphrase_cached: false,
+        wipe_code_protection: false,
+        auto_lock_delay_ms: None,
+        policies: vec![],
+    };
+    
+    // Test the evaluation
+    let status = evaluate_device_status("test-device-bootloader".to_string(), Some(&bootloader_device_features));
+    
+    println!("🔧 Bootloader Mode Device Status Results:");
+    println!("  - bootloader_mode: {}", bootloader_device_features.bootloader_mode);
+    println!("  - needs_bootloader_update: {}", status.needs_bootloader_update);
+    println!("  - needs_firmware_update: {}", status.needs_firmware_update);
+    println!("  - needs_initialization: {}", status.needs_initialization);
+    println!("  - bootloader_check: {:?}", status.bootloader_check);
+    
+    // Verify that bootloader mode device always needs bootloader update
+    if status.needs_bootloader_update && bootloader_device_features.bootloader_mode {
+        println!("✅ CORRECT: Device in bootloader mode correctly marked as needing bootloader update");
+        Ok("Test passed: Bootloader mode device correctly requires update".to_string())
+    } else if !status.needs_bootloader_update {
+        println!("❌ INCORRECT: Device in bootloader mode should always need update");
+        Err("Test failed: Device in bootloader mode not marked as needing update".to_string())
+    } else {
+        println!("❌ UNEXPECTED: Unknown test condition");
+        Err("Test failed: Unexpected evaluation result".to_string())
+    }
+}
+
+/// Test command to verify OOB device status evaluation
+#[tauri::command]
+pub async fn test_oob_device_status_evaluation() -> Result<String, String> {
+    println!("🧪 Testing OOB device status evaluation...");
+    
+    // Create mock DeviceFeatures for an OOB device with v1.0.3 bootloader AND firmware
+    let oob_device_features = DeviceFeatures {
+        label: Some("KeepKey".to_string()),
+        vendor: Some("KeepKey LLC".to_string()),
+        model: Some("KeepKey".to_string()),
+        firmware_variant: None,
+        device_id: Some("test-device-001".to_string()),
+        language: Some("english".to_string()),
+        bootloader_mode: false, // OOB device is in normal firmware mode
+        version: "1.0.3".to_string(), // OOB firmware version
+        firmware_hash: None,
+        bootloader_hash: None,
+        bootloader_version: None, // OOB devices don't expose this
+        initialized: false, // OOB device is not initialized
+        imported: None,
+        no_backup: true, // No backup exists yet
+        pin_protection: false, // No PIN set yet
+        pin_cached: false,
+        passphrase_protection: false,
+        passphrase_cached: false,
+        wipe_code_protection: false,
+        auto_lock_delay_ms: None,
+        policies: vec![],
+    };
+    
+    // Test the evaluation
+    let status = evaluate_device_status("test-device-001".to_string(), Some(&oob_device_features));
+    
+    println!("🔧 OOB Device Status Results:");
+    println!("  - needs_bootloader_update: {}", status.needs_bootloader_update);
+    println!("  - needs_firmware_update: {}", status.needs_firmware_update);
+    println!("  - needs_initialization: {}", status.needs_initialization);
+    println!("  - bootloader_check: {:?}", status.bootloader_check);
+    println!("  - firmware_check: {:?}", status.firmware_check);
+    
+    // Verify that bootloader update is prioritized
+    if status.needs_bootloader_update && !status.needs_firmware_update {
+        println!("✅ CORRECT: Bootloader update is prioritized over firmware update for OOB device");
+        Ok("Test passed: OOB device correctly prioritizes bootloader update".to_string())
+    } else if status.needs_bootloader_update && status.needs_firmware_update {
+        println!("❌ INCORRECT: Both bootloader and firmware updates are requested (should prioritize bootloader)");
+        Err("Test failed: Firmware update should be suppressed until bootloader is updated".to_string())
+    } else if !status.needs_bootloader_update {
+        println!("❌ INCORRECT: OOB device v1.0.3 should need bootloader update");
+        Err("Test failed: OOB device v1.0.3 should require bootloader update".to_string())
+    } else {
+        println!("❌ UNEXPECTED: Unknown test condition");
+        Err("Test failed: Unexpected evaluation result".to_string())
     }
 }

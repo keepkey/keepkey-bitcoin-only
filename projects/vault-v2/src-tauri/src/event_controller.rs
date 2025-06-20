@@ -166,7 +166,9 @@ impl EventController {
                             let is_pin_locked = features.initialized && has_pin_protection && !pin_cached;
                             
                             // Emit status updates based on what the device needs
-                            let is_actually_ready = !status.needs_bootloader_update && 
+                            // CRITICAL: Device in bootloader mode is NEVER ready
+                            let is_actually_ready = !features.bootloader_mode &&  // Never ready if in bootloader mode
+                                                   !status.needs_bootloader_update && 
                                                    !status.needs_firmware_update && 
                                                    !status.needs_initialization &&
                                                    !is_pin_locked;  // Device is NOT ready if locked with PIN
@@ -192,7 +194,8 @@ impl EventController {
                                     println!("📡 Successfully emitted/queued device:ready for {}", device_for_task.unique_id);
                                 }
                                             } else {
-                                                                                println!("⚠️ Device connected but needs updates (bootloader: {}, firmware: {}, init: {}, pin_locked: {})", 
+                                                                                println!("⚠️ Device connected but needs updates (bootloader_mode: {}, bootloader: {}, firmware: {}, init: {}, pin_locked: {})", 
+                                        features.bootloader_mode,
                                         status.needs_bootloader_update, 
                                         status.needs_firmware_update, 
                                         status.needs_initialization,
@@ -217,7 +220,13 @@ impl EventController {
                                                 }
                                                 
                                                 // Emit appropriate status message based on what updates are needed
-                                                let status_message = if is_pin_locked {
+                                                let status_message = if features.bootloader_mode {
+                                                    if status.needs_bootloader_update {
+                                                        "Device in bootloader mode - update needed"
+                                                    } else {
+                                                        "Device in bootloader mode - reboot needed"
+                                                    }
+                                                } else if is_pin_locked {
                                                     "Device locked - enter PIN"
                                                 } else if status.needs_bootloader_update && status.needs_firmware_update && status.needs_initialization {
                                                     "Device needs updates"

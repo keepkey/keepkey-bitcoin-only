@@ -187,6 +187,7 @@ pub fn run() {
             commands::get_connected_devices_with_features,
             // Update commands
             device::updates::update_device_bootloader,
+            device::updates::update_device_firmware,
             // PIN creation commands
             commands::initialize_device_pin,
             commands::send_pin_matrix_response,
@@ -213,6 +214,8 @@ pub fn run() {
             // Test commands
             commands::test_device_queue,
             commands::test_status_emission,
+            commands::test_bootloader_mode_device_status,
+            commands::test_oob_device_status_evaluation,
             // Recovery commands - delegated to keepkey_rust
             commands::start_device_recovery,
             commands::send_recovery_character,

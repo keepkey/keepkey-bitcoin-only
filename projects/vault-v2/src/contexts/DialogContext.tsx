@@ -388,7 +388,7 @@ export function useFirmwareUpdateWizard() {
       const dialogId = `firmware-update-wizard-${props.deviceId}`;
       show({
         id: dialogId,
-        component: React.lazy(() => import('../components/FirmwareUpdateWizard/FirmwareUpdateWizard')),
+        component: React.lazy(() => import('../components/FirmwareUpdateWizard/FirmwareUpdateWizard').then(m => ({ default: m.FirmwareUpdateWizard }))),
         props: {
           ...props,
           onClose: () => {

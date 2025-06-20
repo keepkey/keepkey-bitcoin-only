@@ -67,7 +67,15 @@ export function BootloaderUpdateWizard({
   const { hide } = useDialog();
   const highlightColor = 'orange.500';
 
-  const activeStep = STEPS[currentStepIndex];
+  // Safety check to prevent undefined activeStep
+  const activeStep = STEPS[currentStepIndex] || STEPS[0];
+  
+  // Additional safety check and logging
+  if (!STEPS[currentStepIndex]) {
+    console.error(`🚨 [BootloaderUpdateWizard] Invalid currentStepIndex: ${currentStepIndex}, STEPS length: ${STEPS.length}`);
+    console.error(`🚨 [BootloaderUpdateWizard] Resetting to step 0`);
+    setCurrentStepIndex(0);
+  }
 
   const handleNext = useCallback(() => {
     setErrorInfo(null);
@@ -105,8 +113,37 @@ export function BootloaderUpdateWizard({
     setProgressInfo(progress);
   }, []);
 
-  const CurrentStepComponent = activeStep.component;
+  const CurrentStepComponent = activeStep?.component;
   const overallProgress = ((currentStepIndex + 1) / STEPS.length) * 100;
+
+  // Safety check - if no valid component, show error
+  if (!CurrentStepComponent || !activeStep) {
+    return (
+      <Box
+        w="100%"
+        maxW="600px"
+        bg="red.900" 
+        borderRadius="xl"
+        boxShadow="2xl"
+        borderWidth="1px"
+        borderColor="red.500"
+        overflow="hidden"
+        p={6}
+      >
+        <VStack gap={4}>
+          <Text fontSize="xl" fontWeight="bold" color="red.200">
+            Bootloader Update Wizard Error
+          </Text>
+          <Text color="red.300">
+            Failed to load wizard step. Current step index: {currentStepIndex}
+          </Text>
+          <Button colorScheme="red" onClick={onClose}>
+            Close
+          </Button>
+        </VStack>
+      </Box>
+    );
+  }
 
   return (
     <Box

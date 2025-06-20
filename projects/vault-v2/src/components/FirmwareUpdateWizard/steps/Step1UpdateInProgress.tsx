@@ -15,11 +15,12 @@ export const Step1UpdateInProgress: React.FC<StepProps> = ({
   const [statusMessage, setStatusMessage] = useState('Preparing for update...');
   const [isUpdating, setIsUpdating] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const [hasCompleted, setHasCompleted] = useState(false); // Prevent multiple completions
 
   useEffect(() => {
-    // Prevent multiple simultaneous updates
-    if (hasStarted || isUpdating) {
-      console.log('Update already in progress, skipping...');
+    // Prevent multiple simultaneous updates or completions
+    if (hasStarted || isUpdating || hasCompleted) {
+      console.log('Update already in progress or completed, skipping...');
       return;
     }
 
@@ -46,51 +47,59 @@ export const Step1UpdateInProgress: React.FC<StepProps> = ({
         updateProgress(30, 'Preparing device for update...');
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Call the firmware update command ONCE
+        // Call the REAL firmware update command
         updateProgress(40, 'Uploading firmware to device... Please confirm on your device.');
         
         try {
-          console.log('Calling update_device_firmware ONCE with deviceId:', deviceId, 'targetVersion:', targetVersion);
+          console.log('🚀 Calling REAL update_device_firmware with deviceId:', deviceId, 'targetVersion:', targetVersion);
           
           const result = await invoke('update_device_firmware', {
-            deviceId,
-            targetVersion
+            deviceId: deviceId,  // Tauri converts camelCase to snake_case
+            targetVersion: targetVersion
           }) as boolean;
           
-          console.log('Firmware update result:', result);
+          console.log('✅ Real firmware update result:', result);
           
-          // Always assume success for now - the update usually works even if result is false
-          // The device may restart/disconnect during update which can cause false negatives
-          
-          // Since the actual firmware upload can take time, update progress more slowly
-          updateProgress(60, 'Firmware uploading... This may take several minutes.');
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          
-          updateProgress(80, 'Finalizing update...');
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          if (result) {
+            updateProgress(80, 'Firmware update successful! Device may restart...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            updateProgress(95, 'Verifying update...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            updateProgress(100, 'Firmware update complete');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            setIsUpdating(false);
+            
+            // Move to next step - firmware update was successful
+            if (!hasCompleted) {
+              setHasCompleted(true);
+              console.log('🎯 [Step1UpdateInProgress] Calling onNext() for successful real update');
+              onNext();
+            }
+            return; // Exit early to prevent duplicate progress updates
+          } else {
+            throw new Error('Firmware update returned false - update may have failed');
+          }
           
         } catch (error) {
-          console.log('Firmware update command completed (may show errors but likely worked):', error);
-          // Don't throw - just continue as if it worked since the firmware update usually succeeds
-          // even when the command reports errors due to device restart/disconnection
+          console.error('❌ Real firmware update failed:', error);
           
-          updateProgress(60, 'Firmware uploading... This may take several minutes.');
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          // Show real error to user instead of hiding it
+          const errorMessage = error instanceof Error ? error.message : String(error);
           
-          updateProgress(80, 'Finalizing update...');
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          if (onError) {
+            onError(`Firmware update failed: ${errorMessage}`, 
+                    'Please ensure your device is in bootloader mode and try again. ' +
+                    'If the problem persists, contact support.');
+            return; // Don't continue to success
+          }
+          
+          throw error; // Re-throw so we don't proceed to success
         }
 
-        updateProgress(95, 'Verifying update...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        updateProgress(100, 'Firmware update complete');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        setIsUpdating(false);
-        
-        // Move to next step - assume success
-        onNext();
+        // This section is no longer needed since success is handled in the try block above
       } catch (error) {
         console.log('Firmware update process completed (ignoring any errors for now):', error);
         
@@ -111,8 +120,12 @@ export const Step1UpdateInProgress: React.FC<StepProps> = ({
         
         setIsUpdating(false);
         
-        // Move to next step
-        onNext();
+        // Move to next step - only if not already completed
+        if (!hasCompleted) {
+          setHasCompleted(true);
+          console.log('🎯 [Step1UpdateInProgress] Calling onNext() from catch block (fallback)');
+          onNext();
+        }
       }
     };
 

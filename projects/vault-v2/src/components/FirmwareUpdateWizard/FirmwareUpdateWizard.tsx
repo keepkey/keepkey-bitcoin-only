@@ -67,13 +67,34 @@ export const FirmwareUpdateWizard: React.FC<FirmwareUpdateWizardProps> = ({
   
   const { hide } = useDialog();
 
-  const currentStep = STEPS[currentStepIndex];
+  // Safety check to prevent undefined currentStep
+  const currentStep = STEPS[currentStepIndex] || STEPS[0];
+  
+  // Additional safety check and logging
+  if (!STEPS[currentStepIndex]) {
+    console.error(`🚨 [FirmwareUpdateWizard] Invalid currentStepIndex: ${currentStepIndex}, STEPS length: ${STEPS.length}`);
+    console.error(`🚨 [FirmwareUpdateWizard] Resetting to step 0`);
+    setCurrentStepIndex(0);
+  }
   
   const handleNext = useCallback(() => {
+    console.log(`🎯 [FirmwareUpdateWizard] handleNext called - currentStepIndex: ${currentStepIndex}, STEPS.length: ${STEPS.length}`);
+    
+    // Strict bounds checking to prevent step index overflow
+    if (currentStepIndex < 0 || currentStepIndex >= STEPS.length) {
+      console.error(`🚨 [FirmwareUpdateWizard] Invalid step index ${currentStepIndex}, resetting to 0`);
+      setCurrentStepIndex(0);
+      return;
+    }
+    
     if (currentStepIndex < STEPS.length - 1) {
-      setCurrentStepIndex(prev => prev + 1);
+      const nextIndex = currentStepIndex + 1;
+      console.log(`🎯 [FirmwareUpdateWizard] Moving to step ${nextIndex}`);
+      setCurrentStepIndex(nextIndex);
     } else {
-      // Final step complete
+      // Final step complete - only execute once
+      console.log(`🎯 [FirmwareUpdateWizard] Final step complete, closing wizard`);
+      
       if (onComplete) {
         onComplete(!errorInfo, deviceId);
       }
@@ -102,7 +123,36 @@ export const FirmwareUpdateWizard: React.FC<FirmwareUpdateWizardProps> = ({
     setUpdateProgress(progress);
   }, []);
 
-  const StepComponent = currentStep.component;
+  const StepComponent = currentStep?.component;
+
+  // Safety check - if no valid component, show error
+  if (!StepComponent || !currentStep) {
+    return (
+      <Box
+        w="100%"
+        maxW="600px"
+        bg="red.900" 
+        borderRadius="xl"
+        boxShadow="2xl"
+        borderWidth="1px"
+        borderColor="red.500"
+        overflow="hidden"
+        p={6}
+      >
+        <VStack gap={4}>
+          <Text fontSize="xl" fontWeight="bold" color="red.200">
+            Firmware Update Wizard Error
+          </Text>
+          <Text color="red.300">
+            Failed to load wizard step. Current step index: {currentStepIndex}
+          </Text>
+          <Button colorScheme="red" onClick={onClose}>
+            Close
+          </Button>
+        </VStack>
+      </Box>
+    );
+  }
 
   return (
     <Box

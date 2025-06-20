@@ -95,6 +95,12 @@ pub enum DeviceCmd {
         respond_to: oneshot::Sender<Result<bool>>,
         enqueued_at: Instant,
     },
+    UpdateFirmware {
+        target_version: String,
+        firmware_bytes: Vec<u8>,
+        respond_to: oneshot::Sender<Result<bool>>,
+        enqueued_at: Instant,
+    },
     Shutdown {
         respond_to: oneshot::Sender<Result<()>>,
     },
@@ -107,6 +113,7 @@ impl DeviceCmd {
             DeviceCmd::GetAddress { enqueued_at, .. } => *enqueued_at,
             DeviceCmd::SendRaw { enqueued_at, .. } => *enqueued_at,
             DeviceCmd::UpdateBootloader { enqueued_at, .. } => *enqueued_at,
+            DeviceCmd::UpdateFirmware { enqueued_at, .. } => *enqueued_at,
             DeviceCmd::Shutdown { .. } => Instant::now(),
         }
     }
@@ -117,6 +124,7 @@ impl DeviceCmd {
             DeviceCmd::GetAddress { .. } => "get_address", 
             DeviceCmd::SendRaw { .. } => "send_raw",
             DeviceCmd::UpdateBootloader { .. } => "update_bootloader",
+            DeviceCmd::UpdateFirmware { .. } => "update_firmware",
             DeviceCmd::Shutdown { .. } => "shutdown",
         }
     }
@@ -127,6 +135,7 @@ impl DeviceCmd {
             DeviceCmd::GetAddress { .. } => true,
             DeviceCmd::SendRaw { bypass_cache, .. } => !*bypass_cache,
             DeviceCmd::UpdateBootloader { .. } => false,
+            DeviceCmd::UpdateFirmware { .. } => false,
             DeviceCmd::Shutdown { .. } => false,
         }
     }
@@ -248,6 +257,10 @@ impl DeviceWorker {
             }
             DeviceCmd::UpdateBootloader { target_version, bootloader_bytes, respond_to, enqueued_at: _ } => {
                 let result = self.handle_update_bootloader(target_version, bootloader_bytes).await;
+                let _ = respond_to.send(result);
+            }
+            DeviceCmd::UpdateFirmware { target_version, firmware_bytes, respond_to, enqueued_at: _ } => {
+                let result = self.handle_update_firmware(target_version, firmware_bytes).await;
                 let _ = respond_to.send(result);
             }
             DeviceCmd::Shutdown { respond_to } => {
@@ -549,6 +562,68 @@ impl DeviceWorker {
         }
     }
     
+    /// Handle firmware update command
+    async fn handle_update_firmware(&mut self, target_version: String, firmware_bytes: Vec<u8>) -> Result<bool> {
+        use crate::messages::{FirmwareErase, FirmwareUpload, Message};
+        use sha2::{Digest, Sha256};
+        
+        info!("🔄 Starting firmware update to version {} ({} bytes)", target_version, firmware_bytes.len());
+        
+        // Clear cache for this potentially disruptive operation
+        self.cache.clear();
+        info!("🧹 Cache cleared for firmware update");
+        
+        // Get transport
+        let transport = self.ensure_transport().await?;
+        let mut handler = transport.with_standard_handler();
+        
+        // First, send FirmwareErase command to prepare device for firmware update
+        info!("🧹 Sending FirmwareErase command to prepare for firmware update...");
+        match handler.handle(FirmwareErase::default().into()) {
+            Ok(Message::Success(s)) => {
+                info!("✅ FirmwareErase successful: {}", s.message());
+            }
+            Ok(Message::Failure(f)) => {
+                error!("❌ FirmwareErase failed: {}", f.message());
+                return Err(anyhow!("Firmware erase failed: {}", f.message()));
+            }
+            Ok(other) => {
+                warn!("⚠️ Unexpected response during erase: {:?}", other);
+            }
+            Err(e) => {
+                error!("❌ Error during FirmwareErase: {}", e);
+                return Err(anyhow!("Error during firmware erase: {}", e));
+            }
+        }
+        
+        // Now send the actual firmware upload
+        info!("📤 Sending FirmwareUpload command...");
+        let payload_hash = Sha256::digest(&firmware_bytes).to_vec();
+        
+        match handler.handle(FirmwareUpload {
+            payload_hash,
+            payload: firmware_bytes,
+        }.into()) {
+            Ok(Message::Success(s)) => {
+                info!("✅ Firmware update successful: {}", s.message());
+                info!("🔄 Device may reboot. Please wait a moment.");
+                Ok(true)
+            }
+            Ok(Message::Failure(f)) => {
+                error!("❌ Firmware update failed: {}", f.message());
+                Err(anyhow!("Firmware update failed: {}", f.message()))
+            }  
+            Ok(other) => {
+                error!("❌ Unexpected response during firmware upload: {:?}", other);
+                Err(anyhow!("Unexpected response: {:?}", other))
+            }
+            Err(e) => {
+                error!("❌ Error during firmware upload: {}", e);
+                Err(anyhow!("Error during firmware upload: {}. Check device screen for prompts.", e))
+            }
+        }
+    }
+    
     /// Check if an operation is mutable and should invalidate cache
     fn is_mutable_operation(&self, response: &Message) -> bool {
         matches!(response,
@@ -667,6 +742,26 @@ impl DeviceQueueHandle {
         // Use longer timeout for firmware operations (2 minutes)
         timeout(Duration::from_secs(120), rx).await
             .map_err(|_| anyhow!("Bootloader update timed out"))?
+            .map_err(|_| anyhow!("Device worker channel closed"))?
+    }
+    
+    /// Update device firmware
+    #[instrument(level = "debug", skip(self, firmware_bytes))]
+    pub async fn update_firmware(&self, target_version: String, firmware_bytes: Vec<u8>) -> Result<bool> {
+        let (tx, rx) = oneshot::channel();
+        let cmd = DeviceCmd::UpdateFirmware {
+            target_version,
+            firmware_bytes,
+            respond_to: tx,
+            enqueued_at: Instant::now(),
+        };
+        
+        self.cmd_tx.send(cmd).await
+            .map_err(|_| anyhow!("Device worker unavailable"))?;
+            
+        // Use longer timeout for firmware operations (2 minutes)
+        timeout(Duration::from_secs(120), rx).await
+            .map_err(|_| anyhow!("Firmware update timed out"))?
             .map_err(|_| anyhow!("Device worker channel closed"))?
     }
     
