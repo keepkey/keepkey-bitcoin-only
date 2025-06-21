@@ -3464,21 +3464,51 @@ pub async fn send_pin_matrix_ack(
     // Convert positions to PIN string (positions are 1-9)
     let pin = positions.iter().map(|&p| p.to_string()).collect::<String>();
     
+    log::info!("Sending PIN matrix ACK with {} digits", pin.len());
+    
     // Get device queue handle
     let queue_manager_guard = queue_manager.lock().await;
     let queue_handle = queue_manager_guard.get(&device_id)
-        .ok_or_else(|| format!("Device not found: {}", device_id))?;
+        .ok_or_else(|| {
+            let _ = unmark_device_in_pin_flow(&device_id);
+            format!("Device not found: {}", device_id)
+        })?;
         
     // Create PinMatrixAck message
     let pin_ack = keepkey_rust::messages::PinMatrixAck { pin };
     
-    // Send the PIN response
-    match queue_handle.send_raw(pin_ack.into(), false).await {
-        Ok(_) => {
-            log::info!("Successfully sent PIN matrix ACK for device: {}", device_id);
-            // Unmark device from PIN flow as PIN has been submitted
+    // Send the PIN response and wait for device response
+    match queue_handle.send_raw(pin_ack.into(), true).await {
+        Ok(keepkey_rust::messages::Message::Success(_)) => {
+            log::info!("✅ PIN accepted! Device unlocked successfully");
+            // Unmark device from PIN flow as PIN has been accepted
             let _ = unmark_device_in_pin_flow(&device_id);
             Ok(true)
+        }
+        Ok(keepkey_rust::messages::Message::Failure(f)) => {
+            log::error!("❌ PIN rejected: {:?}", f.message);
+            // Unmark device from PIN flow on failure
+            let _ = unmark_device_in_pin_flow(&device_id);
+            
+            // Determine if it's an incorrect PIN or other error
+            let error_msg = f.message.unwrap_or_else(|| "PIN verification failed".to_string());
+            if error_msg.contains("PIN") || error_msg.contains("Invalid") {
+                Err("Incorrect PIN. Please try again.".to_string())
+            } else {
+                Err(format!("PIN verification failed: {}", error_msg))
+            }
+        }
+        Ok(other_msg) => {
+            log::warn!("Unexpected response to PIN: {:?}", other_msg.message_type());
+            let _ = unmark_device_in_pin_flow(&device_id);
+            
+            // Some devices might respond with Address or other success messages
+            if matches!(other_msg, keepkey_rust::messages::Message::Address(_)) {
+                log::info!("✅ PIN accepted (got Address response)");
+                Ok(true)
+            } else {
+                Err(format!("Unexpected response: {:?}", other_msg.message_type()))
+            }
         }
         Err(e) => {
             log::error!("Failed to send PIN matrix ACK for device {}: {}", device_id, e);
@@ -3496,6 +3526,12 @@ pub async fn trigger_pin_request(
     queue_manager: tauri::State<'_, DeviceQueueManager>,
 ) -> Result<bool, String> {
     log::info!("Triggering PIN request for device: {}", device_id);
+    
+    // Check if already in PIN flow
+    if is_device_in_pin_flow(&device_id) {
+        log::info!("Device {} is already in PIN flow, returning success", device_id);
+        return Ok(true);
+    }
     
     // Mark device as in PIN flow to prevent other operations from interfering
     mark_device_in_pin_flow(&device_id)?;
@@ -3524,6 +3560,18 @@ pub async fn trigger_pin_request(
             log::info!("Successfully triggered PIN request for device: {}", device_id);
             // Keep device marked as in PIN flow - will be unmarked when PIN is completed
             Ok(true)
+        }
+        Ok(keepkey_rust::messages::Message::Failure(f)) => {
+            // Check if this is the expected "Unknown message" failure when device is already in PIN mode
+            if f.message.as_deref() == Some("Unknown message") {
+                log::info!("Device {} appears to already be in PIN mode (got 'Unknown message')", device_id);
+                // Device is already waiting for PIN - this is success
+                Ok(true)
+            } else {
+                log::warn!("PIN trigger failed with: {:?}", f.message);
+                let _ = unmark_device_in_pin_flow(&device_id);
+                Err(format!("Failed to trigger PIN: {}", f.message.unwrap_or_default()))
+            }
         }
         Ok(other_msg) => {
             log::warn!("Unexpected response when triggering PIN request: {:?}", other_msg.message_type());

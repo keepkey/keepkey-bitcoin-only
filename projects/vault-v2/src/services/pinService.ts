@@ -88,8 +88,8 @@ export class PinService {
       return { valid: false, error: 'PIN cannot be empty' };
     }
     
-    if (positions.length > 8) {
-      return { valid: false, error: 'PIN cannot be longer than 8 digits' };
+    if (positions.length > 9) {
+      return { valid: false, error: 'PIN cannot be longer than 9 digits' };
     }
     
     for (const pos of positions) {
