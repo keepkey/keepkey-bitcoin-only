@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+  <Identity Name="KEYHODLERSLLC.KeepKeyVault" Version="0.1.0.0" Publisher="CN=37CB9E0F-75F9-4078-AA2D-34883BE2B783" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>KeepKey Vault</DisplayName>
+    <PublisherDisplayName>KEY HODLERS LLC</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>KeepKey Bitcoin-only hardware wallet vault application</Description>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22000.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <DeviceCapability Name="humaninterfacedevice">
+      <Device Id="any">
+        <Function Type="usage:f1d0 *" />
+      </Device>
+    </DeviceCapability>
+  </Capabilities>
+  <Applications>
+    <Application Id="KeepKeyVault" Executable="vault-v2.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="KeepKey Vault" Description="KeepKey Bitcoin-only hardware wallet vault" BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+</Package>
