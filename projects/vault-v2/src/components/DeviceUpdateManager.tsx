@@ -221,19 +221,39 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         features: DeviceFeatures
         status: DeviceStatus
         needsPinUnlock: boolean
-      }>('device:pin-unlock-needed', (event) => {
+      }>('device:pin-unlock-needed', async (event) => {
         console.log('🔒 DeviceUpdateManager: PIN unlock needed event received:', event.payload)
         const { status } = event.payload
         
-        // Show PIN unlock dialog instead of initialization
-        console.log('🔒 DeviceUpdateManager: Setting showPinUnlock = true')
-        setDeviceStatus(status)
-        setConnectedDeviceId(status.deviceId)
-        setShowEnterBootloaderMode(false)
-        setShowBootloaderUpdate(false)
-        setShowFirmwareUpdate(false)
-        setShowWalletCreation(false)
-        setShowPinUnlock(true)
+        // Verify device is actually ready for PIN operations before showing dialog
+        try {
+          const isPinReady = await invoke('check_device_pin_ready', { deviceId: status.deviceId })
+          
+          if (isPinReady) {
+            // Show PIN unlock dialog
+            console.log('🔒 DeviceUpdateManager: Device confirmed ready for PIN, showing unlock dialog')
+            setDeviceStatus(status)
+            setConnectedDeviceId(status.deviceId)
+            setShowEnterBootloaderMode(false)
+            setShowBootloaderUpdate(false)
+            setShowFirmwareUpdate(false)
+            setShowWalletCreation(false)
+            setShowPinUnlock(true)
+          } else {
+            console.log('🔒 DeviceUpdateManager: Device not ready for PIN unlock, waiting...')
+            // Device may not be ready yet, wait for next status update
+          }
+        } catch (error) {
+          console.error('🔒 DeviceUpdateManager: Failed to check PIN readiness:', error)
+          // Fallback to showing the dialog anyway
+          setDeviceStatus(status)
+          setConnectedDeviceId(status.deviceId)
+          setShowEnterBootloaderMode(false)
+          setShowBootloaderUpdate(false)
+          setShowFirmwareUpdate(false)
+          setShowWalletCreation(false)
+          setShowPinUnlock(true)
+        }
       })
 
       // Listen for device disconnection

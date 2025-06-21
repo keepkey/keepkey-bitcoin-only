@@ -3648,3 +3648,54 @@ pub async fn test_oob_device_status_evaluation() -> Result<String, String> {
         Err("Test failed: Unexpected evaluation result".to_string())
     }
 }
+
+/// Check if device is ready for PIN operations
+#[tauri::command]
+pub async fn check_device_pin_ready(
+    device_id: String,
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+) -> Result<bool, String> {
+    log::info!("Checking if device {} is ready for PIN operations", device_id);
+    
+    // Check if device is already in PIN flow
+    if is_device_in_pin_flow(&device_id) {
+        log::info!("Device {} is already in PIN flow", device_id);
+        return Ok(true);
+    }
+    
+    // Get device status first
+    let device_status = get_device_status(device_id.clone(), queue_manager.clone()).await?;
+    
+    match device_status {
+        Some(status) => {
+            // Device must be connected and need PIN unlock
+            if !status.connected {
+                log::info!("Device {} is not connected", device_id);
+                return Ok(false);
+            }
+            
+            if !status.needs_pin_unlock {
+                log::info!("Device {} does not need PIN unlock", device_id);
+                return Ok(false);
+            }
+            
+            // Check if we can communicate with the device
+            let queue_handle = {
+                let manager = queue_manager.lock().await;
+                manager.get(&device_id).cloned()
+            };
+            
+            if queue_handle.is_none() {
+                log::info!("No queue handle available for device {}", device_id);
+                return Ok(false);
+            }
+            
+            log::info!("Device {} is ready for PIN operations", device_id);
+            Ok(true)
+        }
+        None => {
+            log::info!("Device {} status not available", device_id);
+            Ok(false)
+        }
+    }
+}

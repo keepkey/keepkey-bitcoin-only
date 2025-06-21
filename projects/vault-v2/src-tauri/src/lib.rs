@@ -200,6 +200,7 @@ pub fn run() {
             commands::send_pin_unlock_response,
             commands::send_pin_matrix_ack,
             commands::trigger_pin_request,
+            commands::check_device_pin_ready,
             // Logging commands
             commands::get_device_log_path,
             commands::get_recent_device_logs,
