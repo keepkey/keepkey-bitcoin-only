@@ -8,6 +8,7 @@ import type { DeviceStatus, DeviceFeatures } from '../types/device'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { useWallet } from '../contexts/WalletContext'
+import { useDeviceInvalidStateDialog } from '../contexts/DialogContext'
 
 interface DeviceUpdateManagerProps {
   // Optional callback when all updates/setup is complete
@@ -27,6 +28,9 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
 
   // Get wallet context for portfolio loading
   const { refreshPortfolio, fetchedXpubs } = useWallet()
+  
+  // Get device invalid state dialog hook
+  const deviceInvalidStateDialog = useDeviceInvalidStateDialog()
 
   // Function to try getting device status via command when events fail
   const tryGetDeviceStatus = async (deviceId: string, attempt = 1) => {
@@ -215,6 +219,33 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         setConnectedDeviceId(null)
       })
 
+      // Listen for device invalid state (timeout) errors
+      const invalidStateUnsubscribe = listen<{
+        deviceId: string
+        error: string
+        errorType: string
+        status: string
+      }>('device:invalid-state', (event) => {
+        console.log('⏱️ Device invalid state detected:', event.payload)
+        
+        // Clear any existing dialogs
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(false)
+        setShowWalletCreation(false)
+        setShowEnterBootloaderMode(false)
+        setShowPinUnlock(false)
+        
+        // Show the simple invalid state dialog
+        deviceInvalidStateDialog.show({
+          deviceId: event.payload.deviceId,
+          error: event.payload.error,
+          onDialogClose: () => {
+            console.log('Invalid state dialog closed - user should reconnect device')
+            // Device status will be updated when device reconnects
+          }
+        })
+      })
+
       // Listen for PIN unlock needed events
       const pinUnlockUnsubscribe = listen<{
         deviceId: string
@@ -284,6 +315,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         if (featuresUnsubscribe) (await featuresUnsubscribe)()
         if (connectedUnsubscribe) (await connectedUnsubscribe)()
         ;(await accessErrorUnsubscribe)()
+        ;(await invalidStateUnsubscribe)()
         ;(await pinUnlockUnsubscribe)()
         ;(await disconnectedUnsubscribe)()
         if (timeoutId) clearTimeout(timeoutId)

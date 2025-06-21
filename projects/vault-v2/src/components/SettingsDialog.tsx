@@ -1,4 +1,4 @@
-import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex, Link, Stack } from '@chakra-ui/react'
+import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex, Link, Stack, Input, Textarea, Spinner } from '@chakra-ui/react'
 import { 
   DialogRoot,
   DialogContent,
@@ -7,8 +7,8 @@ import {
   DialogBody,
   DialogCloseTrigger
 } from './ui/dialog'
-import { LuSettings, LuMonitor, LuCpu, LuNetwork } from 'react-icons/lu'
-import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign } from 'react-icons/fa'
+import { LuSettings, LuMonitor, LuCpu, LuNetwork, LuFileText } from 'react-icons/lu'
+import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign, FaDownload, FaTrash, FaSyncAlt, FaSearch, FaFilter } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
 
 import { KeepKeyDeviceList } from './KeepKeyDeviceList'
@@ -25,6 +25,18 @@ interface SettingsDialogProps {
   onClose: () => void
 }
 
+interface LogEntry {
+  timestamp: string
+  direction: string
+  device_id?: string
+  request_id?: string
+  request_type?: string
+  message_type?: string
+  success?: boolean
+  data: any
+  error?: string
+}
+
 export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [showBootloaderUpdate, setShowBootloaderUpdate] = useState(false)
@@ -39,6 +51,17 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [verificationWizardOpen, setVerificationWizardOpen] = useState(false)
   const [verificationDeviceId, setVerificationDeviceId] = useState<string | null>(null)
   const [verificationDeviceLabel, setVerificationDeviceLabel] = useState<string | null>(null)
+  
+  // Log viewer state
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  const [logFilter, setLogFilter] = useState<string>('all') // 'all', 'requests', 'responses', 'errors'
+  const [searchTerm, setSearchTerm] = useState<string>('')
+  const [logLimit, setLogLimit] = useState<number>(50)
+  const [logPath, setLogPath] = useState<string>('')
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(false)
+  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null)
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   
   const firmwareWizard = useFirmwareUpdateWizard()
   const walletCreationWizard = useWalletCreationWizard()
@@ -233,6 +256,177 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
       // Fallback - could emit an event or handle differently
     }
   }
+
+  // Log viewer functions
+  const loadLogs = async () => {
+    setIsLoadingLogs(true)
+    try {
+      const recentLogs = await invoke<LogEntry[]>('get_recent_device_logs', { limit: logLimit })
+      setLogs(recentLogs)
+      
+      // Also get the log file path
+      const path = await invoke<string>('get_device_log_path')
+      setLogPath(path)
+      
+      // Update last refresh time
+      setLastRefresh(new Date())
+    } catch (error) {
+      console.error('Failed to load logs:', error)
+      setLogs([])
+    } finally {
+      setIsLoadingLogs(false)
+    }
+  }
+
+  const handleDownloadLogs = async () => {
+    try {
+      // Get the log file path
+      const path = await invoke<string>('get_device_log_path')
+      
+      // Copy the path to clipboard and notify user where to find the logs
+      await navigator.clipboard.writeText(path)
+      
+      // Show detailed information about where logs are stored
+      const fileName = path.split('/').pop() || 'device-communications.log'
+      alert(`Log file location copied to clipboard!\n\nFile: ${fileName}\nLocation: ${path}\n\nYou can navigate to this location to access your logs.`)
+    } catch (error) {
+      console.error('Failed to get log path:', error)
+      alert('Failed to get log file path')
+    }
+  }
+
+  const handleCleanupLogs = async () => {
+    try {
+      await invoke('cleanup_device_logs')
+      alert('Old logs cleaned up successfully')
+      // Reload logs after cleanup
+      await loadLogs()
+    } catch (error) {
+      console.error('Failed to cleanup logs:', error)
+      alert('Failed to cleanup old logs')
+    }
+  }
+
+  const filteredLogs = logs.filter(log => {
+    // Apply filter
+    if (logFilter === 'requests' && log.direction !== 'REQUEST' && log.direction !== 'SEND') return false
+    if (logFilter === 'responses' && log.direction !== 'RESPONSE' && log.direction !== 'RECEIVE') return false
+    if (logFilter === 'errors' && log.success !== false && !log.error) return false
+    
+    // Apply search to the formatted terminal output
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase()
+      const formattedOutput = formatLogEntry(log).toLowerCase()
+      const deviceId = (log.device_id || '').toLowerCase()
+      const requestType = (log.request_type || log.message_type || '').toLowerCase()
+      
+      return formattedOutput.includes(searchLower) || 
+             deviceId.includes(searchLower) || 
+             requestType.includes(searchLower)
+    }
+    
+    return true
+  })
+
+  const formatLogEntry = (log: LogEntry) => {
+    const timestamp = new Date(log.timestamp).toLocaleString()
+    
+    // Format logs to look like terminal output
+    if (log.direction === 'REQUEST' || log.direction === 'SEND') {
+      // Outgoing requests
+      const requestType = log.request_type || log.message_type || 'Unknown'
+      return `-> ${requestType}`
+    } else if (log.direction === 'RESPONSE' || log.direction === 'RECEIVE') {
+      // Incoming responses
+      const requestType = log.request_type || log.message_type || 'Unknown'
+      const success = log.success !== false ? '✅' : '❌'
+      
+      // Try to extract meaningful info from the response
+      let responseInfo = ''
+      if (log.data) {
+        // Handle GetFeatures responses
+        if (log.data.features && log.data.features.label) {
+          responseInfo = `Features: ${log.data.features.label} v${log.data.features.version || 'Unknown'}`
+        } else if (log.data.status && log.data.status.features && log.data.status.features.label) {
+          responseInfo = `Status: ${log.data.status.features.label} v${log.data.status.features.version || 'Unknown'}`
+        } else if (log.data.response && typeof log.data.response === 'string') {
+          // For xpub responses, show truncated version
+          if (log.data.response.startsWith('xpub') || log.data.response.startsWith('ypub') || log.data.response.startsWith('zpub')) {
+            responseInfo = `${log.data.response.substring(0, 16)}...`
+          } else {
+            responseInfo = log.data.response
+          }
+        } else if (requestType === 'GetFeatures' && log.data.operation) {
+          responseInfo = 'Features received'
+        } else {
+          responseInfo = requestType.replace('Get', '').replace('Request', '')
+        }
+      }
+      
+      return `<- ${responseInfo} ${success}`
+    } else {
+      // Other log types (like status messages)
+      const deviceShort = log.device_id ? log.device_id.substring(log.device_id.length - 8) : 'system'
+      
+      // Handle different operation types
+      if (log.data && log.data.operation) {
+        const operation = log.data.operation
+        if (operation === 'get_device_status') {
+          return `Getting device status for: ${log.device_id}`
+        } else if (operation === 'get_features_for_device') {
+          return `📡 Fetching device features for: ${deviceShort}`
+        } else if (log.data.status) {
+          const status = log.data.status
+          if (status.bootloaderCheck) {
+            return `🔧 Bootloader check: ${status.bootloaderCheck.currentVersion} -> needs update: ${status.bootloaderCheck.needsUpdate} (bootloader_mode: ${status.features?.bootloader_mode || false})`
+          } else if (status.firmwareCheck) {
+            return `🔧 Firmware check: ${status.firmwareCheck.currentVersion} vs ${status.firmwareCheck.latestVersion} -> needs update: ${status.firmwareCheck.needsUpdate} (bootloader_mode: ${status.features?.bootloader_mode || false})`
+          } else if (status.initializationCheck) {
+            return `🔧 Initialization check: initialized=${status.initializationCheck.initialized}, needs_setup=${status.initializationCheck.needsSetup}, has_pin_protection=${status.features?.pin_protection || false}, pin_cached=${status.features?.pin_cached || false}`
+          }
+        }
+        return `${operation.replace(/_/g, ' ')}: ${deviceShort}`
+      }
+      
+      return `${log.direction}: ${JSON.stringify(log.data).substring(0, 100)}...`
+    }
+  }
+
+  // Load logs when the dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      loadLogs()
+    }
+  }, [isOpen, logLimit])
+
+  // Auto-refresh functionality
+  useEffect(() => {
+    if (autoRefresh && isOpen) {
+      const interval = setInterval(() => {
+        loadLogs()
+      }, 2000) // Refresh every 2 seconds
+      setRefreshInterval(interval)
+      
+      return () => {
+        clearInterval(interval)
+      }
+    } else {
+      if (refreshInterval) {
+        clearInterval(refreshInterval)
+        setRefreshInterval(null)
+      }
+    }
+  }, [autoRefresh, isOpen, logLimit])
+
+  // Auto-scroll to bottom when new logs arrive (if auto-refresh is on)
+  useEffect(() => {
+    if (autoRefresh && logs.length > 0) {
+      const logContainer = document.getElementById('log-container')
+      if (logContainer) {
+        logContainer.scrollTop = logContainer.scrollHeight
+      }
+    }
+  }, [logs, autoRefresh])
   
   return (
     <>
@@ -301,6 +495,17 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                 >
                   <LuCpu size={16} />
                   KeepKey
+                </Tabs.Trigger>
+                <Tabs.Trigger 
+                  value="logs"
+                  flex="1"
+                  gap={2}
+                  color="gray.400"
+                  _selected={{ bg: "gray.700", color: "white" }}
+                  _hover={{ color: "white" }}
+                >
+                  <LuFileText size={16} />
+                  Logs
                 </Tabs.Trigger>
                 <Tabs.Trigger 
                   value="mcp"
@@ -405,6 +610,215 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     onCreateWallet={handleCreateWallet}
                     onVerifySeed={handleVerifySeed}
                   />
+                </VStack>
+              </Tabs.Content>
+
+              <Tabs.Content value="logs" minHeight="400px" overflowY="auto">
+                <VStack align="stretch" gap={4}>
+                                      <HStack justify="space-between" align="center">
+                      <Text color="white" fontSize="lg" fontWeight="semibold">Device Communication Logs</Text>
+                      <HStack gap={2}>
+                        <Button
+                          size="sm"
+                          colorScheme={autoRefresh ? "orange" : "blue"}
+                          onClick={() => setAutoRefresh(!autoRefresh)}
+                        >
+                          <HStack gap={1}>
+                            <FaSyncAlt />
+                            <Text>{autoRefresh ? 'Stop Auto' : 'Auto Refresh'}</Text>
+                          </HStack>
+                        </Button>
+                        <Button
+                          size="sm"
+                          colorScheme="blue"
+                          onClick={loadLogs}
+                          loading={isLoadingLogs}
+                          disabled={autoRefresh}
+                        >
+                          <HStack gap={1}>
+                            <FaSyncAlt />
+                            <Text>{isLoadingLogs ? 'Loading...' : 'Refresh'}</Text>
+                          </HStack>
+                        </Button>
+                        <Button
+                          size="sm"
+                          colorScheme="green"
+                          onClick={handleDownloadLogs}
+                        >
+                          <HStack gap={1}>
+                            <FaDownload />
+                            <Text>Download</Text>
+                          </HStack>
+                        </Button>
+                        <Button
+                          size="sm"
+                          colorScheme="red"
+                          onClick={handleCleanupLogs}
+                        >
+                          <HStack gap={1}>
+                            <FaTrash />
+                            <Text>Cleanup</Text>
+                          </HStack>
+                        </Button>
+                      </HStack>
+                    </HStack>
+
+                  {/* Log Controls */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                    <VStack align="stretch" gap={3}>
+                      <HStack gap={4} wrap="wrap">
+                        <HStack flex="1" minW="200px">
+                          <FaSearch color="gray.400" />
+                          <Input
+                            placeholder="Search logs..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            bg="gray.900"
+                            border="1px solid"
+                            borderColor="gray.600"
+                            color="white"
+                            _placeholder={{ color: "gray.400" }}
+                            size="sm"
+                          />
+                        </HStack>
+                        <HStack>
+                          <FaFilter color="gray.400" />
+                          <select
+                            value={logFilter}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setLogFilter(e.target.value)}
+                            style={{
+                              backgroundColor: 'var(--chakra-colors-gray-900)',
+                              border: '1px solid var(--chakra-colors-gray-600)',
+                              color: 'white',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              minWidth: '120px'
+                            }}
+                          >
+                            <option value="all">All</option>
+                            <option value="requests">Requests</option>
+                            <option value="responses">Responses</option>
+                            <option value="errors">Errors</option>
+                          </select>
+                        </HStack>
+                        <HStack>
+                          <Text color="gray.400" fontSize="sm">Limit:</Text>
+                          <select
+                            value={logLimit.toString()}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setLogLimit(parseInt(e.target.value))}
+                            style={{
+                              backgroundColor: 'var(--chakra-colors-gray-900)',
+                              border: '1px solid var(--chakra-colors-gray-600)',
+                              color: 'white',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              minWidth: '80px'
+                            }}
+                          >
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                          </select>
+                        </HStack>
+                      </HStack>
+                      
+                      {logPath && (
+                        <HStack gap={2}>
+                          <Text color="gray.400" fontSize="xs">Log file:</Text>
+                          <Text color="blue.300" fontSize="xs" fontFamily="mono" wordBreak="break-all">
+                            {logPath}
+                          </Text>
+                        </HStack>
+                      )}
+                    </VStack>
+                  </Box>
+
+                                    {/* Terminal-style Log Display */}
+                  <Box 
+                    id="log-container"
+                    bg="black" 
+                    borderRadius="md" 
+                    border="1px solid" 
+                    borderColor="gray.600" 
+                    maxH="400px" 
+                    overflowY="auto"
+                    p={4}
+                    position="relative"
+                  >
+                    {autoRefresh && (
+                      <Box
+                        position="absolute"
+                        top={2}
+                        right={2}
+                        bg="orange.600"
+                        color="white"
+                        px={2}
+                        py={1}
+                        fontSize="xs"
+                        borderRadius="sm"
+                        fontWeight="bold"
+                        zIndex={1}
+                      >
+                        LIVE
+                      </Box>
+                    )}
+                    {isLoadingLogs ? (
+                      <Flex justify="center" align="center" p={8}>
+                        <VStack gap={2}>
+                          <Spinner color="green.400" />
+                          <Text color="green.400" fontFamily="mono">Loading logs...</Text>
+                        </VStack>
+                      </Flex>
+                    ) : filteredLogs.length === 0 ? (
+                      <Flex justify="center" align="center" p={8}>
+                        <Text color="green.400" fontFamily="mono">No logs found matching current filters</Text>
+                      </Flex>
+                    ) : (
+                      <VStack align="stretch" gap={1}>
+                        {filteredLogs.map((log, index) => {
+                          const formatted = formatLogEntry(log)
+                          const timestamp = new Date(log.timestamp).toLocaleString()
+                          
+                          // Color coding based on log type
+                          let color = "green.300"
+                          if (formatted.startsWith('->')) {
+                            color = "blue.300" // Outgoing requests
+                          } else if (formatted.startsWith('<-')) {
+                            color = formatted.includes('❌') ? "red.300" : "green.300" // Responses
+                          } else if (formatted.includes('🔧')) {
+                            color = "yellow.300" // System checks
+                          } else if (formatted.includes('📡')) {
+                            color = "cyan.300" // Network/communication
+                          }
+                          
+                          return (
+                            <HStack key={index} gap={4} align="start" fontSize="sm" fontFamily="mono">
+                              <Text color="gray.500" fontSize="xs" minW="140px" flexShrink={0}>
+                                {timestamp}
+                              </Text>
+                              <Text color={color} wordBreak="break-word">
+                                {formatted}
+                              </Text>
+                            </HStack>
+                          )
+                        })}
+                      </VStack>
+                    )}
+                  </Box>
+
+                  {/* Log Stats */}
+                  <HStack justify="space-between" align="center" color="gray.400" fontSize="sm" wrap="wrap">
+                    <Text>Showing {filteredLogs.length} of {logs.length} log entries</Text>
+                    <HStack gap={4}>
+                      {lastRefresh && (
+                        <Text>Last updated: {lastRefresh.toLocaleTimeString()}</Text>
+                      )}
+                      {autoRefresh && (
+                        <Text color="orange.400" fontWeight="bold">Auto-refreshing every 2s</Text>
+                      )}
+                    </HStack>
+                  </HStack>
                 </VStack>
               </Tabs.Content>
 
