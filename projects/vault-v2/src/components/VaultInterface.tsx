@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react';
 import { FaTh, FaGlobe, FaWallet, FaCog, FaQuestionCircle } from 'react-icons/fa';
 import { listen } from '@tauri-apps/api/event';
@@ -6,11 +6,12 @@ import { invoke } from '@tauri-apps/api/core';
 import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
 import { AppsView, BrowserView, PairingsView, VaultView, AssetView } from './views';
-import { WalletProvider } from '../contexts/WalletContext';
+import { WalletProvider, useWallet } from '../contexts/WalletContext';
 import Send from './Send';
 import Receive from './Receive';
+import { useDialog } from '../contexts/DialogContext';
 
-type ViewType = 'apps' | 'browser' | 'pairings' | 'vault' | 'assets' | 'send' | 'receive';
+type ViewType = 'apps' | 'browser' | 'pairings' | 'vault' | 'assets' | 'send' | 'receive' | 'portfolio';
 
 interface NavItem {
   id: ViewType | 'settings' | 'support';
@@ -20,8 +21,17 @@ interface NavItem {
 }
 
 export const VaultInterface = () => {
-  const [currentView, setCurrentView] = useState<ViewType>('vault');
+  const [currentView, setCurrentView] = useState<ViewType>('portfolio');
   const { open: isSettingsOpen, onOpen: openSettings, onClose: closeSettings } = useDisclosure();
+  const [isRecoveryWizardOpen, setIsRecoveryWizardOpen] = useState(false);
+  const { refreshPortfolio } = useWallet();
+  const { hideAll } = useDialog();
+
+  // Clear any stuck dialogs when component mounts
+  useEffect(() => {
+    console.log('🏦 VaultInterface mounted - clearing any stuck dialogs');
+    hideAll();
+  }, [hideAll]);
 
   const handleViewChange = async (view: ViewType) => {
     try {
@@ -122,10 +132,16 @@ export const VaultInterface = () => {
         return <Send onBack={() => setCurrentView('vault')} />;
       case 'receive':
         return <Receive onBack={() => setCurrentView('vault')} />;
+      case 'portfolio':
+        return <VaultView onNavigate={navigateToSendReceive} />;
       default:
         return <VaultView onNavigate={navigateToSendReceive} />;
     }
   };
+
+  const handleRecoveryComplete = useCallback(async (success: boolean) => {
+    // ... existing code ...
+  }, []);
 
   return (
     <WalletProvider>

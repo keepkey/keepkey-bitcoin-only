@@ -8,7 +8,7 @@ import {
   DialogCloseTrigger
 } from './ui/dialog'
 import { LuSettings, LuMonitor, LuCpu, LuNetwork, LuFileText } from 'react-icons/lu'
-import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign, FaDownload, FaTrash, FaSyncAlt, FaSearch, FaFilter } from 'react-icons/fa'
+import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign, FaDownload, FaTrash, FaSyncAlt, FaSearch, FaFilter, FaFolder } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
 
 import { KeepKeyDeviceList } from './KeepKeyDeviceList'
@@ -62,6 +62,14 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [autoRefresh, setAutoRefresh] = useState<boolean>(false)
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  
+  // Toast notification state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info'; visible: boolean }>({
+    message: '',
+    type: 'info',
+    visible: false
+  })
+  const [isDownloading, setIsDownloading] = useState(false)
   
   const firmwareWizard = useFirmwareUpdateWizard()
   const walletCreationWizard = useWalletCreationWizard()
@@ -279,31 +287,49 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   }
 
   const handleDownloadLogs = async () => {
+    setIsDownloading(true)
     try {
       // Get the log file path
       const path = await invoke<string>('get_device_log_path')
       
-      // Copy the path to clipboard and notify user where to find the logs
+      // Copy the path to clipboard
       await navigator.clipboard.writeText(path)
       
-      // Show detailed information about where logs are stored
+      // Extract filename and directory
       const fileName = path.split('/').pop() || 'device-communications.log'
-      alert(`Log file location copied to clipboard!\n\nFile: ${fileName}\nLocation: ${path}\n\nYou can navigate to this location to access your logs.`)
+      const directory = path.substring(0, path.lastIndexOf('/'))
+      
+      // Show success toast
+      showToast(`Log path copied to clipboard! File: ${fileName}`, 'success')
+      
+      // Try to open the folder in file explorer
+      // TODO: Re-enable when shell plugin is properly configured
+      /*
+      try {
+        const shell = await import('@tauri-apps/api/shell')
+        await shell.open(directory)
+      } catch (err) {
+        console.log('Could not open folder:', err)
+        // If we can't open the folder, at least the path is copied
+      }
+      */
     } catch (error) {
       console.error('Failed to get log path:', error)
-      alert('Failed to get log file path')
+      showToast('Failed to get log file path', 'error')
+    } finally {
+      setIsDownloading(false)
     }
   }
 
   const handleCleanupLogs = async () => {
     try {
       await invoke('cleanup_device_logs')
-      alert('Old logs cleaned up successfully')
+      showToast('Old logs cleaned up successfully', 'success')
       // Reload logs after cleanup
       await loadLogs()
     } catch (error) {
       console.error('Failed to cleanup logs:', error)
-      alert('Failed to cleanup old logs')
+      showToast('Failed to cleanup old logs', 'error')
     }
   }
 
@@ -329,8 +355,6 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   })
 
   const formatLogEntry = (log: LogEntry) => {
-    const timestamp = new Date(log.timestamp).toLocaleString()
-    
     // Format logs to look like terminal output
     if (log.direction === 'REQUEST' || log.direction === 'SEND') {
       // Outgoing requests
@@ -346,9 +370,9 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
       if (log.data) {
         // Handle GetFeatures responses
         if (log.data.features && log.data.features.label) {
-          responseInfo = `Features: ${log.data.features.label} v${log.data.features.version || 'Unknown'}`
+          responseInfo = `${log.data.features.label} v${log.data.features.version || 'Unknown'}`
         } else if (log.data.status && log.data.status.features && log.data.status.features.label) {
-          responseInfo = `Status: ${log.data.status.features.label} v${log.data.status.features.version || 'Unknown'}`
+          responseInfo = `${log.data.status.features.label} v${log.data.status.features.version || 'Unknown'}`
         } else if (log.data.response && typeof log.data.response === 'string') {
           // For xpub responses, show truncated version
           if (log.data.response.startsWith('xpub') || log.data.response.startsWith('ypub') || log.data.response.startsWith('zpub')) {
@@ -427,6 +451,12 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
       }
     }
   }, [logs, autoRefresh])
+  
+  // Show toast notification
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type, visible: true })
+    setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 4000)
+  }
   
   return (
     <>
@@ -613,7 +643,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                 </VStack>
               </Tabs.Content>
 
-              <Tabs.Content value="logs" minHeight="400px" overflowY="auto">
+              <Tabs.Content value="logs" minHeight="400px">
                 <VStack align="stretch" gap={4}>
                                       <HStack justify="space-between" align="center">
                       <Text color="white" fontSize="lg" fontWeight="semibold">Device Communication Logs</Text>
@@ -644,10 +674,16 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                           size="sm"
                           colorScheme="green"
                           onClick={handleDownloadLogs}
+                          loading={isDownloading}
+                          disabled={isDownloading}
                         >
                           <HStack gap={1}>
-                            <FaDownload />
-                            <Text>Download</Text>
+                            {isDownloading ? (
+                              <Spinner size="xs" />
+                            ) : (
+                              <FaDownload />
+                            )}
+                            <Text>{isDownloading ? 'Copying...' : 'Download'}</Text>
                           </HStack>
                         </Button>
                         <Button
@@ -778,7 +814,13 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                       <VStack align="stretch" gap={1}>
                         {filteredLogs.map((log, index) => {
                           const formatted = formatLogEntry(log)
-                          const timestamp = new Date(log.timestamp).toLocaleString()
+                          // Show only time (HH:MM:SS) without date
+                          const timestamp = new Date(log.timestamp).toLocaleTimeString('en-US', { 
+                            hour12: false,
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          })
                           
                           // Color coding based on log type
                           let color = "green.300"
@@ -793,11 +835,11 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                           }
                           
                           return (
-                            <HStack key={index} gap={4} align="start" fontSize="sm" fontFamily="mono">
-                              <Text color="gray.500" fontSize="xs" minW="140px" flexShrink={0}>
+                            <HStack key={index} gap={2} align="start" fontSize="sm" fontFamily="mono">
+                              <Text color="gray.500" fontSize="xs" minW="70px" flexShrink={0}>
                                 {timestamp}
                               </Text>
-                              <Text color={color} wordBreak="break-word">
+                              <Text color={color} wordBreak="break-word" flex={1}>
                                 {formatted}
                               </Text>
                             </HStack>
@@ -964,6 +1006,46 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
             </Tabs.Root>
           </DialogBody>
         </DialogContent>
+        
+        {/* Toast Notification */}
+        {toast.visible && (
+          <Box
+            position="fixed"
+            bottom={4}
+            right={4}
+            bg={
+              toast.type === 'success' ? 'green.600' :
+              toast.type === 'error' ? 'red.600' : 'blue.600'
+            }
+            color="white"
+            px={4}
+            py={3}
+            borderRadius="md"
+            boxShadow="lg"
+            zIndex={9999}
+            maxW="400px"
+            css={{
+              animation: 'slideIn 0.3s ease-out',
+              '@keyframes slideIn': {
+                '0%': {
+                  transform: 'translateX(100%)',
+                  opacity: 0
+                },
+                '100%': {
+                  transform: 'translateX(0)',
+                  opacity: 1
+                }
+              }
+            }}
+          >
+            <HStack gap={2}>
+              {toast.type === 'success' && <FaCheck />}
+              {toast.type === 'error' && <FaTimes />}
+              {toast.type === 'info' && <FaFolder />}
+              <Text fontSize="sm">{toast.message}</Text>
+            </HStack>
+          </Box>
+        )}
       </DialogRoot>
 
       {/* Update Dialogs - Only shown when settings dialog is closed */}

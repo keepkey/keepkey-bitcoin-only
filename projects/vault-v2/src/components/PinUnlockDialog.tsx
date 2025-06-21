@@ -25,6 +25,14 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
   const [retryCount, setRetryCount] = useState(0)
   const [deviceReadyStatus, setDeviceReadyStatus] = useState<string>('Checking device...')
 
+  // Debug component lifecycle
+  useEffect(() => {
+    console.log('🔒 PinUnlockDialog mounted, isOpen:', isOpen)
+    return () => {
+      console.log('🔒 PinUnlockDialog unmounting')
+    }
+  }, [])
+
   // Reset state when dialog opens/closes
   useEffect(() => {
     if (isOpen) {
@@ -162,6 +170,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
         
         // Auto-close after brief success display
         setTimeout(() => {
+          console.log('🔒 PIN dialog auto-closing after success')
           onUnlocked()
         }, 1000)
       } else {

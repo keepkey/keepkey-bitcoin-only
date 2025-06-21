@@ -384,6 +384,13 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
 
   const handlePinUnlocked = async () => {
     console.log('🔒 PIN unlock successful, device is now unlocked')
+    console.log('🔒 Current dialog states:', {
+      showPinUnlock,
+      showBootloaderUpdate,
+      showFirmwareUpdate,
+      showWalletCreation,
+      showEnterBootloaderMode
+    })
     setShowPinUnlock(false)
     
     // Automatically start portfolio loading after PIN unlock
@@ -401,6 +408,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     }
     
     // Device should now be ready to use
+    console.log('🔒 Calling onComplete after PIN unlock')
     onComplete?.()
   }
 

@@ -14,6 +14,7 @@ import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
 import { VaultInterface } from './components/VaultInterface';
 import { useWallet } from './contexts/WalletContext';
+import { DialogProvider, useDialog } from './contexts/DialogContext'
 
 // Define the expected structure of DeviceFeatures from Rust
 interface DeviceFeatures {
@@ -51,321 +52,351 @@ interface ApplicationState {
 }
 
 function App() {
-    // We're tracking application state from backend events
-    const [loadingStatus, setLoadingStatus] = useState<string>('Starting...');
-    const [deviceConnected, setDeviceConnected] = useState<boolean>(false);
-    const [, setDeviceInfo] = useState<DeviceInfoState | null>(null);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [isRestarting, setIsRestarting] = useState(false);
-    const [deviceUpdateComplete, setDeviceUpdateComplete] = useState(false);
-    const [onboardingActive, setOnboardingActive] = useState(false);
-    const { showOnboarding, showError } = useCommonDialogs();
-    const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
-    
-    // Function to show device access error dialog
-    const showDeviceAccessError = (errorMessage: string) => {
-        showError("KeepKey Device Access Error", errorMessage);
-    };
-    
-    // Function to restart backend startup process
-    const { reinitialize } = useWallet();
-    const handleLogoClick = async () => {
-        if (isRestarting) return; // Prevent multiple clicks
+    // AppContent is an inner component with access to DialogContext
+    const AppContent = () => {
+        // We're tracking application state from backend events
+        const [loadingStatus, setLoadingStatus] = useState<string>('Starting...');
+        const [deviceConnected, setDeviceConnected] = useState<boolean>(false);
+        const [, setDeviceInfo] = useState<DeviceInfoState | null>(null);
+        const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+        const [isRestarting, setIsRestarting] = useState(false);
+        const [deviceUpdateComplete, setDeviceUpdateComplete] = useState(false);
+        const [onboardingActive, setOnboardingActive] = useState(false);
+        const { showOnboarding, showError } = useCommonDialogs();
+        const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
+        const { hideAll, activeDialog, getQueue } = useDialog();
         
-        setIsRestarting(true);
-        try {
-            console.log("Logo clicked - restarting backend startup process");
-            await invoke('restart_backend_startup');
-            console.log("Backend restart initiated successfully");
-            // Re-run wallet initialization to resubscribe device state after backend restart
-            reinitialize();
-        } catch (error) {
-            console.error("Failed to restart backend startup:", error);
-        } finally {
-            // Reset the restarting flag after a delay
-            setTimeout(() => setIsRestarting(false), 2000);
-        }
-    };
-
-    // Check onboarding status on startup
-    useEffect(() => {
-        if (onboardingLoading) {
-            console.log("App.tsx: Onboarding state still loading...");
-            return;
-        }
-
-        console.log(`App.tsx: Should show onboarding: ${shouldShowOnboarding}`);
+        // Debug log active dialogs
+        useEffect(() => {
+            const queue = getQueue();
+            if (activeDialog || queue.length > 0) {
+                console.log('📱 [App] Active dialog:', activeDialog?.id);
+                console.log('📱 [App] Dialog queue:', queue.map(d => d.id));
+            }
+        }, [activeDialog, getQueue]);
         
-        if (shouldShowOnboarding) {
-            console.log("App.tsx: Showing onboarding wizard");
-            setOnboardingActive(true);
-            // Add a small delay to ensure the dialog system is ready
-            setTimeout(() => {
-                showOnboarding({
-                    onComplete: () => {
-                        console.log("App.tsx: Onboarding completed callback");
-                        clearCache(); // Clear the cache after completion
-                        setOnboardingActive(false);
-                    }
-                });
-            }, 1000);
-        } else {
-            console.log("App.tsx: Onboarding not needed, user is already onboarded");
-        }
-    }, [shouldShowOnboarding, onboardingLoading, showOnboarding, clearCache]);
-
-    useEffect(() => {
-        let unlistenStatusUpdate: (() => void) | undefined;
-        let unlistenDeviceReady: (() => void) | undefined;
-
-        const setupEventListeners = async () => {
-            try {
-                console.log('🎯 Setting up event listeners...');
-                
-                // Signal backend that frontend is ready to receive events FIRST
-                try {
-                    console.log('🎯 Signaling backend that frontend is ready...');
-                    await invoke('frontend_ready');
-                    console.log('✅ Frontend ready signal sent successfully');
-                } catch (error) {
-                    console.log('DeviceUpdateManager: frontend_ready command failed:', error);
+        // Clear any stuck dialogs when showing VaultInterface
+        useEffect(() => {
+            if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
+                const queue = getQueue();
+                if (queue.length > 0) {
+                    console.warn('📱 [App] Clearing stuck dialogs before showing VaultInterface:', queue.map(d => d.id));
+                    hideAll();
                 }
-                
-                // Listen for status updates from backend
-                console.log('🎯 Setting up status:update listener...');
-                unlistenStatusUpdate = await listen('status:update', (event) => {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    const payload = event.payload as any;
-                    console.log('🎯 Frontend received status update:', payload);
-                    
-                    if (payload.status) {
-                        console.log('🎯 Setting loading status to:', payload.status);
-                        setLoadingStatus(payload.status);
-                    } else {
-                        console.log('❌ No status field in payload:', payload);
-                    }
-                });
-
-                // Listen for device ready events (device with features loaded and fully ready)
-                unlistenDeviceReady = await listen('device:ready', (event) => {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    const payload = event.payload as any;
-                    console.log('Device ready event received:', payload);
-                    
-                    if (payload.device && payload.features) {
-                        setDeviceConnected(true);
-                        setDeviceInfo({ features: payload.features, error: null });
-                        setDeviceUpdateComplete(true);
-                        console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
-                    }
-                });
-
-                // Listen for device features-updated events (includes status evaluation for DeviceUpdateManager)
-                const unlistenFeaturesUpdated = await listen('device:features-updated', (event) => {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    const payload = event.payload as any;
-                    console.log('Device features-updated event received:', payload);
-                    
-                    if (payload.features) {
-                        setDeviceConnected(true);
-                        setDeviceInfo({ features: payload.features, error: null });
-                        // Reset update completion state for new device connections
-                        setDeviceUpdateComplete(false);
-                    }
-                });
-
-                // Listen for device access errors from backend
-                const unlistenAccessError = await listen('device:access-error', (event) => {
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    const errorData = event.payload as any;
-                    console.log('Device access error event received:', errorData);
-                    
-                    showDeviceAccessError(errorData.error);
-                    setLoadingStatus('Device busy');
-                });
-
-                // Listen for device disconnection events
-                const unlistenDeviceDisconnected = await listen('device:disconnected', (event) => {
-                    console.log('Device disconnected event received:', event.payload);
-                    setDeviceConnected(false);
-                    setDeviceInfo(null);
-                    setDeviceUpdateComplete(false);
-                });
-
-                console.log('✅ All event listeners set up successfully');
-                
-                // Return cleanup function that removes all listeners
-                return () => {
-                    console.log('🧹 Cleaning up event listeners...');
-                    if (unlistenStatusUpdate) unlistenStatusUpdate();
-                    if (unlistenDeviceReady) unlistenDeviceReady();
-                    if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
-                    if (unlistenAccessError) unlistenAccessError();
-                    if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
-                };
-                
+            }
+        }, [loadingStatus, deviceConnected, deviceUpdateComplete, getQueue, hideAll]);
+        
+        // Function to show device access error dialog
+        const showDeviceAccessError = (errorMessage: string) => {
+            showError("KeepKey Device Access Error", errorMessage);
+        };
+        
+        // Function to restart backend startup process
+        const { reinitialize } = useWallet();
+        const handleLogoClick = async () => {
+            if (isRestarting) return; // Prevent multiple clicks
+            
+            setIsRestarting(true);
+            try {
+                console.log("Logo clicked - restarting backend startup process");
+                await invoke('restart_backend_startup');
+                console.log("Backend restart initiated successfully");
+                // Re-run wallet initialization to resubscribe device state after backend restart
+                reinitialize();
             } catch (error) {
-                console.error("Failed to set up event listeners:", error);
+                console.error("Failed to restart backend startup:", error);
+            } finally {
+                // Reset the restarting flag after a delay
+                setTimeout(() => setIsRestarting(false), 2000);
             }
         };
 
-        setupEventListeners();
+        // Check onboarding status on startup
+        useEffect(() => {
+            if (onboardingLoading) {
+                console.log("App.tsx: Onboarding state still loading...");
+                return;
+            }
 
-        return () => {
-            if (unlistenStatusUpdate) unlistenStatusUpdate();
-            if (unlistenDeviceReady) unlistenDeviceReady();
+            console.log(`App.tsx: Should show onboarding: ${shouldShowOnboarding}`);
+            
+            if (shouldShowOnboarding) {
+                console.log("App.tsx: Showing onboarding wizard");
+                setOnboardingActive(true);
+                // Add a small delay to ensure the dialog system is ready
+                setTimeout(() => {
+                    showOnboarding({
+                        onComplete: () => {
+                            console.log("App.tsx: Onboarding completed callback");
+                            clearCache(); // Clear the cache after completion
+                            setOnboardingActive(false);
+                        }
+                    });
+                }, 1000);
+            } else {
+                console.log("App.tsx: Onboarding not needed, user is already onboarded");
+            }
+        }, [shouldShowOnboarding, onboardingLoading, showOnboarding, clearCache]);
+
+        useEffect(() => {
+            let unlistenStatusUpdate: (() => void) | undefined;
+            let unlistenDeviceReady: (() => void) | undefined;
+
+            const setupEventListeners = async () => {
+                try {
+                    console.log('🎯 Setting up event listeners...');
+                    
+                    // Signal backend that frontend is ready to receive events FIRST
+                    try {
+                        console.log('🎯 Signaling backend that frontend is ready...');
+                        await invoke('frontend_ready');
+                        console.log('✅ Frontend ready signal sent successfully');
+                    } catch (error) {
+                        console.log('DeviceUpdateManager: frontend_ready command failed:', error);
+                    }
+                    
+                    // Listen for status updates from backend
+                    console.log('🎯 Setting up status:update listener...');
+                    unlistenStatusUpdate = await listen('status:update', (event) => {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        const payload = event.payload as any;
+                        console.log('🎯 Frontend received status update:', payload);
+                        
+                        if (payload.status) {
+                            console.log('🎯 Setting loading status to:', payload.status);
+                            setLoadingStatus(payload.status);
+                        } else {
+                            console.log('❌ No status field in payload:', payload);
+                        }
+                    });
+
+                    // Listen for device ready events (device with features loaded and fully ready)
+                    unlistenDeviceReady = await listen('device:ready', (event) => {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        const payload = event.payload as any;
+                        console.log('Device ready event received:', payload);
+                        
+                        if (payload.device && payload.features) {
+                            setDeviceConnected(true);
+                            setDeviceInfo({ features: payload.features, error: null });
+                            setDeviceUpdateComplete(true);
+                            console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
+                        }
+                    });
+
+                    // Listen for device features-updated events (includes status evaluation for DeviceUpdateManager)
+                    const unlistenFeaturesUpdated = await listen('device:features-updated', (event) => {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        const payload = event.payload as any;
+                        console.log('Device features-updated event received:', payload);
+                        
+                        if (payload.features) {
+                            setDeviceConnected(true);
+                            setDeviceInfo({ features: payload.features, error: null });
+                            // Reset update completion state for new device connections
+                            setDeviceUpdateComplete(false);
+                        }
+                    });
+
+                    // Listen for device access errors from backend
+                    const unlistenAccessError = await listen('device:access-error', (event) => {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        const errorData = event.payload as any;
+                        console.log('Device access error event received:', errorData);
+                        
+                        showDeviceAccessError(errorData.error);
+                        setLoadingStatus('Device busy');
+                    });
+
+                    // Listen for device disconnection events
+                    const unlistenDeviceDisconnected = await listen('device:disconnected', (event) => {
+                        console.log('Device disconnected event received:', event.payload);
+                        setDeviceConnected(false);
+                        setDeviceInfo(null);
+                        setDeviceUpdateComplete(false);
+                    });
+
+                    console.log('✅ All event listeners set up successfully');
+                    
+                    // Return cleanup function that removes all listeners
+                    return () => {
+                        console.log('🧹 Cleaning up event listeners...');
+                        if (unlistenStatusUpdate) unlistenStatusUpdate();
+                        if (unlistenDeviceReady) unlistenDeviceReady();
+                        if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
+                        if (unlistenAccessError) unlistenAccessError();
+                        if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
+                    };
+                    
+                } catch (error) {
+                    console.error("Failed to set up event listeners:", error);
+                }
+            };
+
+            setupEventListeners();
+
+            return () => {
+                if (unlistenStatusUpdate) unlistenStatusUpdate();
+                if (unlistenDeviceReady) unlistenDeviceReady();
+            };
+        }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
+
+        const mcpUrl = "http://127.0.0.1:1646/mcp";
+        const [hasCopied, setHasCopied] = useState(false);
+        
+        const handleCopy = () => {
+          navigator.clipboard.writeText(mcpUrl);
+          setHasCopied(true);
+          setTimeout(() => setHasCopied(false), 2000);
         };
-    }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
 
-    const mcpUrl = "http://127.0.0.1:1646/mcp";
-    const [hasCopied, setHasCopied] = useState(false);
-    
-    const handleCopy = () => {
-      navigator.clipboard.writeText(mcpUrl);
-      setHasCopied(true);
-      setTimeout(() => setHasCopied(false), 2000);
+        // Show the main vault interface ONLY when device is ready AND updates are complete
+        if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
+            return <VaultInterface />;
+        }
+
+        // Show splash screen while connecting
+        return (
+          <Box
+            height="100vh"
+            width="100vw"
+            position="relative"
+            backgroundImage={`url(${splashBg})`}
+            backgroundSize="cover"
+            backgroundPosition="center"
+          >
+            <Flex 
+              height="100%"
+              width="100%"
+              direction="column"
+              alignItems="center"
+              justifyContent="center"
+            >
+              {/* Clickable Logo in the center */}
+              {!onboardingActive && (
+                <Logo 
+                width="100px" 
+                onClick={handleLogoClick}
+                style={{
+                  filter: isRestarting ? 'brightness(1.3)' : 'none',
+                  transition: 'filter 0.2s ease'
+                  }}
+                />
+              )}
+              
+              
+              {/* Clickable hint */}
+              <Text 
+                fontSize="xs" 
+                color="gray.400" 
+                mt={2} 
+                textAlign="center"
+                opacity={isRestarting ? 0.5 : 0.7}
+                transition="opacity 0.2s ease"
+              >
+                {isRestarting ? "Restarting..." : ""}
+              </Text>
+              
+              {/* Loading text at the bottom */}
+                <Box
+                    position="absolute"
+                    bottom="40px"
+                    textAlign="center"
+                    width="auto"
+                    px={3}
+                    py={1}
+                    borderRadius="md"
+                    bg="rgba(0, 0, 0, 0.5)"
+                >
+                    <Flex gap="2" justifyContent="center" alignItems="center">
+                        <Spinner size="xs" color={deviceConnected ? "green.400" : "gray.400"} />
+                        <Text fontSize="xs" color="gray.300">
+                            {loadingStatus}
+                        </Text>
+                        <EllipsisDots interval={300} /> {/* ⟵ no layout shift */}
+                    </Flex>
+                </Box>
+
+              {/* Settings button in bottom left */}
+              <SettingsButton onClick={() => setIsSettingsOpen(true)} />
+
+              {/* Settings dialog */}
+              <SettingsDialog 
+                isOpen={isSettingsOpen} 
+                onClose={() => setIsSettingsOpen(false)} 
+              />
+
+              {/* Device update manager - handles bootloader/firmware updates and wallet creation */}
+              <DeviceUpdateManager 
+                onComplete={() => {
+                  console.log('Device update/initialization complete');
+                  setDeviceUpdateComplete(true);
+                  setLoadingStatus('Device ready');
+                }}
+              />
+
+              {/* REST and MCP links in bottom right corner */}
+              {/*<Box*/}
+              {/*  position="absolute"*/}
+              {/*  bottom="20px"*/}
+              {/*  right="20px"*/}
+              {/*  background="rgba(0, 0, 0, 0.7)"*/}
+              {/*  borderRadius="md"*/}
+              {/*  boxShadow="md"*/}
+              {/*  padding={2}*/}
+              {/*  border="1px solid rgba(100, 255, 100, 0.3)"*/}
+              {/*>*/}
+              {/*  <Flex direction="column" gap={1}>*/}
+              {/*    <Stack direction="row" gap={2} align="center">*/}
+              {/*      <Text fontSize="2xs" color="gray.300">REST:</Text>*/}
+              {/*      <Link */}
+              {/*        href="http://127.0.0.1:1646/docs" */}
+              {/*        target="_blank" */}
+              {/*        fontSize="xs" */}
+              {/*        color="blue.300"*/}
+              {/*        _hover={{ color: "blue.200", textDecoration: "underline" }}*/}
+              {/*      >*/}
+              {/*        http://127.0.0.1:1646/docs*/}
+              {/*      </Link>*/}
+              {/*    </Stack>*/}
+              {/*    <Stack direction="row" gap={2} align="center">*/}
+              {/*      <Text fontSize="2xs" color="gray.300">MCP:</Text>*/}
+              {/*      <Link */}
+              {/*        href="http://127.0.0.1:1646/mcp" */}
+              {/*        target="_blank" */}
+              {/*        fontSize="xs" */}
+              {/*        color="blue.300"*/}
+              {/*        _hover={{ color: "blue.200", textDecoration: "underline" }}*/}
+              {/*      >*/}
+              {/*        http://127.0.0.1:1646/mcp*/}
+              {/*      </Link>*/}
+              {/*      <Box position="relative">*/}
+              {/*        <Button*/}
+              {/*          size="xs"*/}
+              {/*          variant="ghost"*/}
+              {/*          colorScheme={hasCopied ? "green" : "blue"}*/}
+              {/*          aria-label="Copy MCP URL to clipboard"*/}
+              {/*          title={hasCopied ? "Copied!" : "Copy to clipboard"}*/}
+              {/*          onClick={handleCopy}*/}
+              {/*          p={1}*/}
+              {/*          minW={0}*/}
+              {/*          height="16px"*/}
+              {/*        >*/}
+              {/*          {hasCopied ? <FaCheck size="10px" /> : <FaCopy size="10px" />}*/}
+              {/*        </Button>*/}
+              {/*      </Box>*/}
+              {/*    </Stack>*/}
+              {/*  </Flex>*/}
+              {/*</Box>*/}
+            </Flex>
+          </Box>
+        );
     };
 
-    // Show the main vault interface ONLY when device is ready AND updates are complete
-    if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
-        return <VaultInterface />;
-    }
-
-    // Show splash screen while connecting
     return (
-      <Box
-        height="100vh"
-        width="100vw"
-        position="relative"
-        backgroundImage={`url(${splashBg})`}
-        backgroundSize="cover"
-        backgroundPosition="center"
-      >
-        <Flex 
-          height="100%"
-          width="100%"
-          direction="column"
-          alignItems="center"
-          justifyContent="center"
-        >
-          {/* Clickable Logo in the center */}
-          {!onboardingActive && (
-            <Logo 
-            width="100px" 
-            onClick={handleLogoClick}
-            style={{
-              filter: isRestarting ? 'brightness(1.3)' : 'none',
-              transition: 'filter 0.2s ease'
-              }}
-            />
-          )}
-          
-          
-          {/* Clickable hint */}
-          <Text 
-            fontSize="xs" 
-            color="gray.400" 
-            mt={2} 
-            textAlign="center"
-            opacity={isRestarting ? 0.5 : 0.7}
-            transition="opacity 0.2s ease"
-          >
-            {isRestarting ? "Restarting..." : ""}
-          </Text>
-          
-          {/* Loading text at the bottom */}
-            <Box
-                position="absolute"
-                bottom="40px"
-                textAlign="center"
-                width="auto"
-                px={3}
-                py={1}
-                borderRadius="md"
-                bg="rgba(0, 0, 0, 0.5)"
-            >
-                <Flex gap="2" justifyContent="center" alignItems="center">
-                    <Spinner size="xs" color={deviceConnected ? "green.400" : "gray.400"} />
-                    <Text fontSize="xs" color="gray.300">
-                        {loadingStatus}
-                    </Text>
-                    <EllipsisDots interval={300} /> {/* ⟵ no layout shift */}
-                </Flex>
-            </Box>
-
-          {/* Settings button in bottom left */}
-          <SettingsButton onClick={() => setIsSettingsOpen(true)} />
-
-          {/* Settings dialog */}
-          <SettingsDialog 
-            isOpen={isSettingsOpen} 
-            onClose={() => setIsSettingsOpen(false)} 
-          />
-
-          {/* Device update manager - handles bootloader/firmware updates and wallet creation */}
-          <DeviceUpdateManager 
-            onComplete={() => {
-              console.log('Device update/initialization complete');
-              setDeviceUpdateComplete(true);
-              setLoadingStatus('Device ready');
-            }}
-          />
-
-          {/* REST and MCP links in bottom right corner */}
-          {/*<Box*/}
-          {/*  position="absolute"*/}
-          {/*  bottom="20px"*/}
-          {/*  right="20px"*/}
-          {/*  background="rgba(0, 0, 0, 0.7)"*/}
-          {/*  borderRadius="md"*/}
-          {/*  boxShadow="md"*/}
-          {/*  padding={2}*/}
-          {/*  border="1px solid rgba(100, 255, 100, 0.3)"*/}
-          {/*>*/}
-          {/*  <Flex direction="column" gap={1}>*/}
-          {/*    <Stack direction="row" gap={2} align="center">*/}
-          {/*      <Text fontSize="2xs" color="gray.300">REST:</Text>*/}
-          {/*      <Link */}
-          {/*        href="http://127.0.0.1:1646/docs" */}
-          {/*        target="_blank" */}
-          {/*        fontSize="xs" */}
-          {/*        color="blue.300"*/}
-          {/*        _hover={{ color: "blue.200", textDecoration: "underline" }}*/}
-          {/*      >*/}
-          {/*        http://127.0.0.1:1646/docs*/}
-          {/*      </Link>*/}
-          {/*    </Stack>*/}
-          {/*    <Stack direction="row" gap={2} align="center">*/}
-          {/*      <Text fontSize="2xs" color="gray.300">MCP:</Text>*/}
-          {/*      <Link */}
-          {/*        href="http://127.0.0.1:1646/mcp" */}
-          {/*        target="_blank" */}
-          {/*        fontSize="xs" */}
-          {/*        color="blue.300"*/}
-          {/*        _hover={{ color: "blue.200", textDecoration: "underline" }}*/}
-          {/*      >*/}
-          {/*        http://127.0.0.1:1646/mcp*/}
-          {/*      </Link>*/}
-          {/*      <Box position="relative">*/}
-          {/*        <Button*/}
-          {/*          size="xs"*/}
-          {/*          variant="ghost"*/}
-          {/*          colorScheme={hasCopied ? "green" : "blue"}*/}
-          {/*          aria-label="Copy MCP URL to clipboard"*/}
-          {/*          title={hasCopied ? "Copied!" : "Copy to clipboard"}*/}
-          {/*          onClick={handleCopy}*/}
-          {/*          p={1}*/}
-          {/*          minW={0}*/}
-          {/*          height="16px"*/}
-          {/*        >*/}
-          {/*          {hasCopied ? <FaCheck size="10px" /> : <FaCopy size="10px" />}*/}
-          {/*        </Button>*/}
-          {/*      </Box>*/}
-          {/*    </Stack>*/}
-          {/*  </Flex>*/}
-          {/*</Box>*/}
-        </Flex>
-      </Box>
+        <DialogProvider>
+            <AppContent />
+        </DialogProvider>
     );
 }
 
