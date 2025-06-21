@@ -85,6 +85,15 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
       
       const errorStr = String(err).toLowerCase()
       
+      // Check if device is already showing PIN matrix (expected "failure")
+      if (errorStr.includes('unknown message') || errorStr.includes('failure: unknown message')) {
+        console.log('🔐 Device is already in PIN mode (expected behavior), proceeding to PIN entry')
+        setStep('enter')
+        setDeviceReadyStatus('PIN matrix ready')
+        setError(null)
+        return
+      }
+      
       // Check if this is a device communication issue
       if (errorStr.includes('device not found') || errorStr.includes('not connected')) {
         setError('Device disconnected. Please reconnect your KeepKey and try again.')
