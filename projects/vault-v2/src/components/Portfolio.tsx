@@ -18,8 +18,37 @@ interface PortfolioProps {
 
 export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   const { portfolio, loading, error, refreshPortfolio } = useWallet();
+  const [showStartButton, setShowStartButton] = React.useState(false);
+  const [syncingTime, setSyncingTime] = React.useState(0);
 
   console.log('portfolio: ', portfolio);
+
+  // Timer to show the start button after 15 seconds
+  React.useEffect(() => {
+    let timer: NodeJS.Timeout;
+    let intervalTimer: NodeJS.Timeout;
+    
+    if (!portfolio && !loading && !error) {
+      // Start counting sync time
+      intervalTimer = setInterval(() => {
+        setSyncingTime(prev => prev + 1);
+      }, 1000);
+      
+      // Show start button after 15 seconds
+      timer = setTimeout(() => {
+        setShowStartButton(true);
+      }, 15000);
+    } else {
+      // Reset when portfolio loads or error occurs
+      setShowStartButton(false);
+      setSyncingTime(0);
+    }
+    
+    return () => {
+      clearTimeout(timer);
+      clearInterval(intervalTimer);
+    };
+  }, [portfolio, loading, error]);
 
   // Format USD value
   const formatUsd = (value: number | string) => {
@@ -90,21 +119,58 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
     return (
       <Box height="100%" display="flex" alignItems="center" justifyContent="center" bg="transparent">
         <VStack 
-          gap={4}
+          gap={6}
           bg="rgba(26, 32, 44, 0.9)" 
-          p={8} 
+          p={10} 
           borderRadius="xl" 
           backdropFilter="blur(20px)"
           border="1px solid rgba(255, 255, 255, 0.1)"
+          minW="340px"
+          textAlign="center"
         >
-          <Text color="gray.400" textAlign="center">No portfolio data available</Text>
-          <Button 
-            colorScheme="blue" 
-            size="sm" 
-            onClick={refreshPortfolio}
-          >
-            Load Portfolio
-          </Button>
+          {!showStartButton ? (
+            <>
+              <Spinner size="xl" color="blue.400" />
+              <VStack gap={2}>
+                <Text color="white" fontSize="xl" fontWeight="semibold">
+                  Syncing with your KeepKey
+                </Text>
+                <Text color="gray.400" fontSize="md">
+                  Please make sure your device is unlocked
+                </Text>
+                {syncingTime > 5 && (
+                  <Text color="gray.500" fontSize="sm" mt={2}>
+                    This is taking longer than usual...
+                  </Text>
+                )}
+              </VStack>
+            </>
+          ) : (
+            <>
+              <Box color="orange.400" fontSize="4xl">
+                <SiBitcoin />
+              </Box>
+              <VStack gap={3}>
+                <Text color="white" fontSize="xl" fontWeight="semibold">
+                  Ready to get started?
+                </Text>
+                <Text color="gray.400" fontSize="md" maxW="280px">
+                  Make sure your KeepKey is connected and unlocked
+                </Text>
+              </VStack>
+              <Button 
+                colorScheme="blue" 
+                size="lg" 
+                onClick={refreshPortfolio}
+                _hover={{ transform: 'scale(1.05)' }}
+                transition="all 0.2s"
+                fontWeight="bold"
+                px={8}
+              >
+                Press here to start! 🚀
+              </Button>
+            </>
+          )}
         </VStack>
       </Box>
     );
