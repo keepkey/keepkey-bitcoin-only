@@ -8,6 +8,7 @@ mod event_controller;
 mod logging;
 mod slip132;
 mod embedded_firmware;
+mod server;
 
 // Re-export commonly used types
 
@@ -149,6 +150,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // Initialize device logging system
             if let Err(e) = logging::init_device_logger() {
@@ -167,7 +169,7 @@ pub fn run() {
                 std::collections::HashMap::<String, commands::DeviceResponse>::new()
             ));
             
-            app.manage(device_queue_manager);
+            app.manage(device_queue_manager.clone());
             app.manage(last_responses);
             
             // Start event controller with proper management
@@ -181,6 +183,37 @@ pub fn run() {
                     if let Err(e) = logging::get_device_logger().cleanup_old_logs().await {
                         eprintln!("Failed to cleanup old logs: {}", e);
                     }
+                }
+            });
+            
+            // Start REST/MCP server in background (only if enabled in preferences)
+            let server_handle = app.handle().clone();
+            let server_queue_manager = device_queue_manager.clone();
+            tauri::async_runtime::spawn(async move {
+                // Add a small delay to ensure config system is ready
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                
+                // Check if API is enabled in preferences
+                let api_enabled = match commands::get_api_enabled().await {
+                    Ok(enabled) => enabled,
+                    Err(e) => {
+                        log::debug!("Could not check API status: {} - defaulting to disabled", e);
+                        false // Default to disabled if error
+                    }
+                };
+                
+                if api_enabled {
+                    log::info!("🚀 API is enabled in preferences, starting server...");
+                    
+                    if let Err(e) = server::start_server(server_queue_manager).await {
+                        log::error!("❌ Server error: {}", e);
+                        // Optionally emit error event to frontend
+                        let _ = server_handle.emit("server:error", serde_json::json!({
+                            "error": format!("Server failed to start: {}", e)
+                        }));
+                    }
+                } else {
+                    log::info!("🔒 API is disabled in preferences, skipping server startup");
                 }
             });
             
@@ -222,6 +255,7 @@ pub fn run() {
             commands::send_pin_unlock_response,
             commands::send_pin_matrix_ack,
             commands::trigger_pin_request,
+            commands::check_device_pin_ready,
             // Logging commands
             commands::get_device_log_path,
             commands::get_recent_device_logs,
@@ -233,6 +267,11 @@ pub fn run() {
             commands::get_preference,
             commands::set_preference,
             commands::debug_onboarding_state,
+            // API control commands
+            commands::get_api_enabled,
+            commands::set_api_enabled,
+            commands::get_api_status,
+            commands::restart_app,
             // Test commands
             commands::test_device_queue,
             commands::test_status_emission,

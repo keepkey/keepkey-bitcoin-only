@@ -160,6 +160,83 @@ pub async fn add_to_device_queue(
         return Err(format!("Device cannot process requests until {} is completed.", reason_str));
     }
 
+    // Automatically trigger PIN entry for authenticated requests if device needs PIN unlock (except GetFeatures)
+    // This ensures PIN entry is prompted immediately for all commands that need authentication
+    if raw_features_opt.is_some() && status.needs_pin_unlock && request_type != "GetFeatures" {
+        println!("🔒 Device is locked and needs PIN unlock for {request_type} request");
+        
+        // Check if device is already in PIN flow to avoid conflicts
+        if !crate::commands::is_device_in_pin_flow(&request.device_id) {
+            println!("🔑 Automatically triggering PIN entry for authenticated request");
+            
+            // Mark device as in PIN flow to prevent other operations from interfering
+            if let Err(e) = crate::commands::mark_device_in_pin_flow(&request.device_id) {
+                println!("⚠️ Failed to mark device in PIN flow: {}", e);
+            }
+            
+            // Create a simple request that will trigger PIN on locked device
+            let get_address = keepkey_rust::messages::GetAddress {
+                address_n: vec![44, 0, 0, 0, 0], // m/44'/0'/0'/0/0
+                coin_name: Some("Bitcoin".to_string()),
+                script_type: Some(0), // SPENDADDRESS
+                show_display: Some(false),
+                ..Default::default()
+            };
+            
+            // Send the PIN trigger request - this will prompt for PIN
+            match queue_handle.send_raw(get_address.into(), false).await {
+                Ok(keepkey_rust::messages::Message::PinMatrixRequest(_)) => {
+                    println!("✅ Successfully triggered PIN request for device: {}", request.device_id);
+                    
+                    // Emit PIN request event to frontend
+                    let pin_event_payload = serde_json::json!({
+                        "deviceId": request.device_id,
+                        "requestType": request_type,
+                        "needsPinEntry": true
+                    });
+                    
+                    if let Err(e) = app.emit("device:pin-request-triggered", &pin_event_payload) {
+                        println!("❌ Failed to emit PIN request event: {}", e);
+                    } else {
+                        println!("📡 Emitted device:pin-request-triggered event");
+                    }
+                    
+                    // Return error indicating PIN is needed, but it's now been triggered
+                    return Err("PIN entry required. PIN request has been triggered - please enter your PIN and then retry the request.".to_string());
+                }
+                Ok(keepkey_rust::messages::Message::Failure(f)) => {
+                    // Clean up PIN flow marking on failure
+                    let _ = crate::commands::unmark_device_in_pin_flow(&request.device_id);
+                    
+                    // Check if this is the expected "Unknown message" failure when device is already in PIN mode
+                    if f.message.as_deref() == Some("Unknown message") {
+                        println!("✅ Device {} appears to already be in PIN mode", request.device_id);
+                        return Err("Device is already waiting for PIN entry. Please enter your PIN.".to_string());
+                    } else {
+                        println!("⚠️ PIN trigger failed with: {:?}", f.message);
+                        return Err(format!("Failed to trigger PIN entry: {}", f.message.unwrap_or_default()));
+                    }
+                }
+                Ok(other_msg) => {
+                    // Clean up PIN flow marking on unexpected response
+                    let _ = crate::commands::unmark_device_in_pin_flow(&request.device_id);
+                    println!("⚠️ Unexpected response when triggering PIN request: {:?}", other_msg.message_type());
+                    return Err("Unexpected response when triggering PIN entry.".to_string());
+                }
+                Err(e) => {
+                    // Clean up PIN flow marking on error
+                    let _ = crate::commands::unmark_device_in_pin_flow(&request.device_id);
+                    println!("❌ Failed to trigger PIN request: {}", e);
+                    return Err(format!("Failed to trigger PIN entry: {}", e));
+                }
+            }
+        } else {
+            // Device is already in PIN flow
+            println!("🔑 Device is already in PIN flow - PIN entry should be in progress");
+            return Err("Device is already waiting for PIN entry. Please enter your PIN.".to_string());
+        }
+    }
+
 
     // Process the request based on type
     let result = match request.request {

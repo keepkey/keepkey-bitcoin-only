@@ -23,6 +23,7 @@ interface DialogContextType {
   show: (config: DialogConfig) => void;
   hide: (id: string) => void;
   hideAll: () => void;
+  hideAllExcept: (id: string) => void;
   
   // Queue management
   getQueue: () => DialogConfig[];
@@ -61,6 +62,12 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
     
+    // First check if there's a PIN dialog - it always has highest priority
+    const pinDialog = queue.find(d => d.id.includes('pin-unlock'));
+    if (pinDialog) {
+      return pinDialog;
+    }
+    
     // Sort by priority (highest first)
     const sorted = [...queue].sort((a, b) => {
       const priorityA = PRIORITY_ORDER[a.priority || 'normal'];
@@ -77,6 +84,9 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     console.log(`🎯 [DialogContext] Current queue before:`, state.queue.map(d => d.id));
     console.log(`🎯 [DialogContext] Current active before:`, state.active?.id);
     
+    // Special handling for PIN dialog - it should always take priority when device is ready
+    const isPinDialog = config.id.includes('pin-unlock');
+    
     // Use startTransition to avoid synchronous suspense issues with lazy components
     startTransition(() => {
       setState((prevState) => {
@@ -87,8 +97,41 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           return prevState;
         }
         
-        const newQueue = [...prevState.queue, config];
-        const newActive = processQueue(newQueue);
+        // If this is a critical dialog or PIN dialog, remove lower priority dialogs
+        let newQueue = [...prevState.queue];
+        if (config.priority === 'critical' || isPinDialog) {
+          // Remove non-critical dialogs except for PIN dialogs
+          newQueue = newQueue.filter(d => {
+            const dialogPriority = PRIORITY_ORDER[d.priority || 'normal'];
+            const configPriority = PRIORITY_ORDER[config.priority || 'normal'];
+            const isDialogPin = d.id.includes('pin-unlock');
+            
+            // Keep dialog if:
+            // 1. It's a PIN dialog (PIN dialogs are always kept)
+            // 2. It has equal or higher priority than the new dialog
+            return isDialogPin || dialogPriority >= configPriority;
+          });
+          
+          // Call onClose for removed dialogs
+          prevState.queue.forEach(dialog => {
+            if (!newQueue.some(d => d.id === dialog.id) && dialog.onClose) {
+              console.log(`🎯 [DialogContext] Closing lower priority dialog:`, dialog.id);
+              dialog.onClose();
+            }
+          });
+        }
+        
+        // Add the new dialog
+        newQueue.push(config);
+        
+        // Process queue with special PIN handling
+        let newActive = processQueue(newQueue);
+        
+        // If a PIN dialog is in the queue and device is ready, it should always be active
+        const pinDialog = newQueue.find(d => d.id.includes('pin-unlock'));
+        if (pinDialog && (isPinDialog || !prevState.active?.id.includes('pin-unlock'))) {
+          newActive = pinDialog;
+        }
         
         console.log(`🎯 [DialogContext] New queue:`, newQueue.map(d => d.id));
         console.log(`🎯 [DialogContext] New active:`, newActive?.id);
@@ -153,6 +196,29 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Hide all dialogs except a specific one
+  const hideAllExcept = useCallback((id: string) => {
+    setState((prevState) => {
+      const dialogToKeep = prevState.queue.find(d => d.id === id);
+      if (!dialogToKeep) {
+        return prevState;
+      }
+      
+      // Call onClose for all other dialogs
+      prevState.queue.forEach(dialog => {
+        if (dialog.id !== id && dialog.onClose) {
+          dialog.onClose();
+        }
+      });
+      
+      return {
+        ...prevState,
+        queue: [dialogToKeep],
+        active: dialogToKeep,
+      };
+    });
+  }, []);
+
   // Get current queue
   const getQueue = useCallback(() => {
     return state.queue;
@@ -198,6 +264,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     show,
     hide,
     hideAll,
+    hideAllExcept,
     getQueue,
     isShowing,
     activeDialog: state.active,
@@ -210,28 +277,31 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     <DialogContext.Provider value={value}>
       {children}
       {/* Render active dialog */}
-      {state.active && (
-        <div 
-          style={{ 
-            position: 'fixed', 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            bottom: 0, 
-            zIndex: 9999,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'auto'
-          }}
-        >
-          <DialogRenderer
-            dialog={state.active}
-            onClose={() => hide(state.active!.id)}
-          />
-        </div>
-      )}
+      {state.active && (() => {
+        console.log('🎭 [DialogContext] Rendering active dialog:', state.active.id, 'Component:', state.active.component);
+        return (
+          <div 
+            style={{ 
+              position: 'fixed', 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0, 
+              zIndex: state.active.id.includes('pin-unlock') ? 99999 : 9999,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'auto'
+            }}
+          >
+            <DialogRenderer
+              dialog={state.active}
+              onClose={() => hide(state.active!.id)}
+            />
+          </div>
+        );
+      })()}
     </DialogContext.Provider>
   );
 }
@@ -505,5 +575,38 @@ export function useWalletCreationWizard() {
     },
     hide: (deviceId: string) => hide(`wallet-creation-wizard-${deviceId}`),
     isShowing: (deviceId: string) => isShowing(`wallet-creation-wizard-${deviceId}`),
+  };
+}
+
+// Pre-configured dialog for Device Invalid State
+export function useDeviceInvalidStateDialog() {
+  const { show, hide, isShowing } = useDialog();
+  return {
+    show: (props: {
+      deviceId: string;
+      error?: string;
+      onDialogClose?: () => void;
+    }) => {
+      const dialogId = `device-invalid-state-${props.deviceId}`;
+      
+      // Always hide any existing troubleshooting wizards first
+      hide(`troubleshooting-wizard-${props.deviceId}`);
+      
+      show({
+        id: dialogId,
+        component: React.lazy(() => import('../components/DeviceInvalidStateDialog').then(m => ({ default: m.DeviceInvalidStateDialog }))),
+        props: {
+          ...props,
+          onClose: () => {
+            if (props.onDialogClose) props.onDialogClose();
+            hide(dialogId);
+          }
+        },
+        priority: 'high', // High priority to ensure it shows above other dialogs
+        persistent: true, // User must acknowledge before closing
+      });
+    },
+    hide: (deviceId: string) => hide(`device-invalid-state-${deviceId}`),
+    isShowing: (deviceId: string) => isShowing(`device-invalid-state-${deviceId}`),
   };
 }
