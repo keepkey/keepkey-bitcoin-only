@@ -8,9 +8,11 @@ import {
   Button, 
   IconButton,
   Flex,
-  Spinner // Only if used in JSX
+  Spinner, // Only if used in JSX
+  Code,
+  Badge
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaCopy, FaCheck, FaEye } from 'react-icons/fa'; // FaEye only if used
+import { FaArrowLeft, FaCopy, FaCheck, FaEye, FaChevronDown, FaChevronUp } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si'; // Only if used in JSX
 import QRCode from 'react-qr-code';
 import { useWallet } from '../contexts/WalletContext';
@@ -20,13 +22,16 @@ interface ReceiveProps {
 }
 
 const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
-  const { portfolio, getReceiveAddress, selectAsset, loading: walletLoading, selectedAsset } = useWallet();
+  const { portfolio, getReceiveAddress, selectAsset, loading: walletLoading, selectedAsset, fetchedXpubs } = useWallet();
   
   const [address, setAddress] = useState<string>('');
   const [hasCopied, setHasCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shouldGenerate, setShouldGenerate] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [addressType, setAddressType] = useState<'legacy' | 'segwit' | 'native-segwit'>('native-segwit');
+  const [derivationPath, setDerivationPath] = useState<string>("m/84'/0'/0'/0/0");
 
   // Component lifecycle debugging
   useEffect(() => {
@@ -59,6 +64,12 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     setError(null);
     setAddress(''); // Clear any previous address before new generation
     selectAsset(btcAsset);
+    
+    // Set address type and derivation path based on selected type
+    // For now, defaulting to native segwit but this could be made configurable
+    setAddressType('native-segwit');
+    setDerivationPath("m/84'/0'/0'/0/0");
+    
     setShouldGenerate(true); // Triggers useEffect below
   };
 
@@ -114,6 +125,20 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
       console.log('[RENDER] Receive: address display branch, address:', address);
     }
   }, [loading, address]);
+
+  // Get relevant xpub for the current address type
+  const getRelevantXpub = () => {
+    if (!fetchedXpubs || fetchedXpubs.length === 0) return null;
+    
+    // Map address type to derivation path prefix
+    const pathPrefix = addressType === 'legacy' ? "m/44'/0'/0'" :
+                      addressType === 'segwit' ? "m/49'/0'/0'" :
+                      "m/84'/0'/0'"; // native-segwit
+    
+    return fetchedXpubs.find(xpub => xpub.path === pathPrefix);
+  };
+
+  const relevantXpub = getRelevantXpub();
 
   if (walletLoading) {
     return (
@@ -264,6 +289,127 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                     </Text>
                   </Box>
                 </VStack>
+
+                {/* Advanced View Toggle */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  color="gray.400"
+                  _hover={{ color: "gray.200" }}
+                  mt={2}
+                >
+                  <HStack gap={1}>
+                    <Text fontSize="xs">Advanced View</Text>
+                    {showAdvanced ? <FaChevronUp /> : <FaChevronDown />}
+                  </HStack>
+                </Button>
+
+                {/* Advanced View Content */}
+                {showAdvanced && (
+                  <VStack
+                    w="100%"
+                    gap={4}
+                    bg="gray.900"
+                    p={4}
+                    borderRadius="md"
+                    border="1px solid"
+                    borderColor="gray.700"
+                    mt={3}
+                  >
+                    <VStack align="stretch" w="100%" gap={3}>
+                      {/* Address Type */}
+                      <HStack justify="space-between">
+                        <Text color="gray.400" fontSize="xs">Address Type:</Text>
+                        <Badge colorScheme="blue" fontSize="xs">
+                          {addressType === 'legacy' ? 'Legacy (P2PKH)' :
+                           addressType === 'segwit' ? 'SegWit (P2SH-P2WPKH)' :
+                           'Native SegWit (P2WPKH)'}
+                        </Badge>
+                      </HStack>
+
+                      <Box w="100%" h="1px" bg="gray.700" />
+
+                      {/* Derivation Path */}
+                      <VStack align="stretch" gap={1}>
+                        <Text color="gray.400" fontSize="xs">Derivation Path:</Text>
+                        <Code
+                          bg="gray.800"
+                          color="blue.300"
+                          p={2}
+                          borderRadius="md"
+                          fontSize="xs"
+                        >
+                          {derivationPath}
+                        </Code>
+                      </VStack>
+
+                      <Box w="100%" h="1px" bg="gray.700" />
+
+                      {/* Extended Public Key (if available) */}
+                      {relevantXpub && (
+                        <VStack align="stretch" gap={1}>
+                          <Text color="gray.400" fontSize="xs">Account Extended Public Key:</Text>
+                          <Code
+                            bg="gray.800"
+                            color="gray.300"
+                            p={2}
+                            borderRadius="md"
+                            fontSize="xs"
+                            wordBreak="break-all"
+                          >
+                            {relevantXpub.xpub.substring(0, 50)}...
+                          </Code>
+                          <Text color="gray.500" fontSize="xs" mt={1}>
+                            Path: {relevantXpub.path}
+                          </Text>
+                        </VStack>
+                      )}
+
+                      <Box w="100%" h="1px" bg="gray.700" />
+
+                      {/* Script Type Info */}
+                      <VStack align="stretch" gap={1}>
+                        <Text color="gray.400" fontSize="xs">Script Type:</Text>
+                        <Text color="gray.300" fontSize="xs">
+                          {addressType === 'legacy' ? 'Pay-to-Public-Key-Hash (P2PKH)' :
+                           addressType === 'segwit' ? 'Pay-to-Script-Hash wrapped Witness (P2SH-P2WPKH)' :
+                           'Pay-to-Witness-Public-Key-Hash (P2WPKH)'}
+                        </Text>
+                      </VStack>
+
+                      <Box w="100%" h="1px" bg="gray.700" />
+
+                      {/* Address Format Info */}
+                      <HStack justify="space-between">
+                        <Text color="gray.400" fontSize="xs">Address Format:</Text>
+                        <Text color="gray.300" fontSize="xs">
+                          {addressType === 'legacy' ? 'Starts with 1' :
+                           addressType === 'segwit' ? 'Starts with 3' :
+                           'Starts with bc1'}
+                        </Text>
+                      </HStack>
+
+                      {/* Device Info */}
+                      <Box w="100%" h="1px" bg="gray.700" />
+                      <VStack align="stretch" gap={1}>
+                        <Text color="gray.400" fontSize="xs">Generated By:</Text>
+                        <HStack>
+                          <Badge colorScheme="green" fontSize="xs">KeepKey Device</Badge>
+                          <Text color="gray.500" fontSize="xs">Hardware Wallet</Text>
+                        </HStack>
+                      </VStack>
+                    </VStack>
+
+                    {/* Info Note */}
+                    <Box bg="blue.900" p={3} borderRadius="md" border="1px solid" borderColor="blue.700" mt={2}>
+                      <Text color="blue.200" fontSize="xs">
+                        💡 This address is derived from your hardware wallet's seed phrase using BIP44/49/84 standards. 
+                        Each address is unique and can only be spent by your KeepKey device.
+                      </Text>
+                    </Box>
+                  </VStack>
+                )}
 
                 {/* Action Buttons */}
                 <HStack gap={3} w="100%">

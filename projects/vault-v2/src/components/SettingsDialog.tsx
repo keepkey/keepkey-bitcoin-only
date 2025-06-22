@@ -343,33 +343,59 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const handleDownloadLogs = async () => {
     setIsDownloading(true)
     try {
+      // First ensure logs exist by trying to load them
+      if (logs.length === 0) {
+        await loadLogs()
+      }
+      
       // Get the log file path
       const path = await invoke<string>('get_device_log_path')
+      
+      if (!path) {
+        showToast('No log file path available', 'error')
+        return
+      }
       
       // Copy the path to clipboard
       await navigator.clipboard.writeText(path)
       
-      // Extract filename and directory
-      const fileName = path.split('/').pop() || 'device-communications.log'
-      const directory = path.substring(0, path.lastIndexOf('/'))
+      // Extract filename and directory for display
+      const parts = path.split('/')
+      const fileName = parts.pop() || 'device-communications.log'
+      const directory = parts.join('/')
       
-      // Show success toast
-      showToast(`Log path copied to clipboard! File: ${fileName}`, 'success')
+      // Update the displayed log path
+      setLogPath(path)
       
-      // Try to open the folder in file explorer
-      // TODO: Re-enable when shell plugin is properly configured
-      /*
+      // Show success toast with more helpful message
+      showToast(`Log path copied to clipboard!\nPath: ${path}`, 'success')
+      
+      // Also show console log for debugging
+      console.log('Log file path:', path)
+      console.log('Log directory:', directory)
+      console.log('Log filename:', fileName)
+      
+      // Try to open the folder in file explorer using tauri-plugin-opener
       try {
-        const shell = await import('@tauri-apps/api/shell')
-        await shell.open(directory)
+        // For file paths, we need to add file:// prefix
+        const fileUrl = directory.startsWith('/') ? `file://${directory}` : directory
+        await invoke('open_url', { url: fileUrl })
       } catch (err) {
-        console.log('Could not open folder:', err)
-        // If we can't open the folder, at least the path is copied
+        console.log('Could not open folder automatically. Path is copied to clipboard:', err)
+        // Show additional help in the toast
+        showToast(`Path copied! Open Finder and press Cmd+Shift+G to go to:\n${directory}`, 'info')
       }
-      */
-    } catch (error) {
-      console.error('Failed to get log path:', error)
-      showToast('Failed to get log file path', 'error')
+    } catch (error: any) {
+      console.error('Failed to handle log download:', error)
+      
+      // More specific error messages
+      if (error.toString().includes('not found')) {
+        showToast('No logs found. Try connecting a device first.', 'error')
+      } else if (error.toString().includes('permission')) {
+        showToast('Permission denied accessing log files', 'error')
+      } else {
+        showToast(`Failed to access log file: ${error.toString()}`, 'error')
+      }
     } finally {
       setIsDownloading(false)
     }
@@ -565,17 +591,17 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   <LuSettings size={16} />
                   General
                 </Tabs.Trigger>
-                <Tabs.Trigger 
-                  value="app"
-                  flex="1"
-                  gap={2}
-                  color="gray.400"
-                  _selected={{ bg: "gray.700", color: "white" }}
-                  _hover={{ color: "white" }}
-                >
-                  <LuMonitor size={16} />
-                  App
-                </Tabs.Trigger>
+                {/*<Tabs.Trigger */}
+                {/*  value="app"*/}
+                {/*  flex="1"*/}
+                {/*  gap={2}*/}
+                {/*  color="gray.400"*/}
+                {/*  _selected={{ bg: "gray.700", color: "white" }}*/}
+                {/*  _hover={{ color: "white" }}*/}
+                {/*>*/}
+                {/*  <LuMonitor size={16} />*/}
+                {/*  App*/}
+                {/*</Tabs.Trigger>*/}
                 <Tabs.Trigger 
                   value="keepkey"
                   flex="1"
@@ -703,59 +729,62 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
 
               <Tabs.Content value="logs" minHeight="400px">
                 <VStack align="stretch" gap={4}>
-                                      <HStack justify="space-between" align="center">
-                      <Text color="white" fontSize="lg" fontWeight="semibold">Device Communication Logs</Text>
-                      <HStack gap={2}>
-                        <Button
-                          size="sm"
-                          colorScheme={autoRefresh ? "orange" : "blue"}
-                          onClick={() => setAutoRefresh(!autoRefresh)}
-                        >
-                          <HStack gap={1}>
-                            <FaSyncAlt />
-                            <Text>{autoRefresh ? 'Stop Auto' : 'Auto Refresh'}</Text>
-                          </HStack>
-                        </Button>
-                        <Button
-                          size="sm"
-                          colorScheme="blue"
-                          onClick={loadLogs}
-                          loading={isLoadingLogs}
-                          disabled={autoRefresh}
-                        >
-                          <HStack gap={1}>
-                            <FaSyncAlt />
-                            <Text>{isLoadingLogs ? 'Loading...' : 'Refresh'}</Text>
-                          </HStack>
-                        </Button>
-                        <Button
-                          size="sm"
-                          colorScheme="green"
-                          onClick={handleDownloadLogs}
-                          loading={isDownloading}
-                          disabled={isDownloading}
-                        >
-                          <HStack gap={1}>
-                            {isDownloading ? (
-                              <Spinner size="xs" />
-                            ) : (
-                              <FaDownload />
-                            )}
-                            <Text>{isDownloading ? 'Copying...' : 'Download'}</Text>
-                          </HStack>
-                        </Button>
-                        <Button
-                          size="sm"
-                          colorScheme="red"
-                          onClick={handleCleanupLogs}
-                        >
-                          <HStack gap={1}>
-                            <FaTrash />
-                            <Text>Cleanup</Text>
-                          </HStack>
-                        </Button>
+                  {/* Title centered */}
+                  <Text color="white" fontSize="lg" fontWeight="semibold" textAlign="center">
+                    Device Communication Logs
+                  </Text>
+                  
+                  {/* Buttons centered on separate line */}
+                  <HStack gap={2} justify="center">
+                    <Button
+                      size="sm"
+                      colorScheme={autoRefresh ? "orange" : "blue"}
+                      onClick={() => setAutoRefresh(!autoRefresh)}
+                    >
+                      <HStack gap={1}>
+                        <FaSyncAlt />
+                        <Text>{autoRefresh ? 'Stop Auto' : 'Auto Refresh'}</Text>
                       </HStack>
-                    </HStack>
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="blue"
+                      onClick={loadLogs}
+                      loading={isLoadingLogs}
+                      disabled={autoRefresh}
+                    >
+                      <HStack gap={1}>
+                        <FaSyncAlt />
+                        <Text>{isLoadingLogs ? 'Loading...' : 'Refresh'}</Text>
+                      </HStack>
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="green"
+                      onClick={handleDownloadLogs}
+                      loading={isDownloading}
+                      disabled={isDownloading}
+                    >
+                      <HStack gap={1}>
+                        {isDownloading ? (
+                          <Spinner size="xs" />
+                        ) : (
+                          <FaDownload />
+                        )}
+                        <Text>{isDownloading ? 'Copying...' : 'Save Logs'}</Text>
+                      </HStack>
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="red"
+                      onClick={handleCleanupLogs}
+                    >
+                      <HStack gap={1}>
+                        <FaTrash />
+                        <Text>Cleanup</Text>
+                      </HStack>
+                    </Button>
+                  </HStack>
 
                   {/* Log Controls */}
                   <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">

@@ -72,6 +72,13 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     console.log('🔧 DeviceUpdateManager: Status needs_bootloader_update:', status.needsBootloaderUpdate)
     console.log('🔧 DeviceUpdateManager: Status needs_pin_unlock:', status.needsPinUnlock)
     
+    // CRITICAL: Always hide invalid state dialog when handling new status
+    // This ensures we don't have overlapping dialogs
+    if (deviceInvalidStateDialog.isShowing(status.deviceId)) {
+      console.log('🔧 Hiding invalid state dialog before handling new status')
+      deviceInvalidStateDialog.hide(status.deviceId)
+    }
+    
     // Check if device is in bootloader mode - handle both field formats from backend
     const isInBootloaderMode = status.features?.bootloader_mode || status.features?.bootloaderMode || false
     console.log('🔧 Bootloader mode check:', {
@@ -228,12 +235,15 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       }>('device:invalid-state', (event) => {
         console.log('⏱️ Device invalid state detected:', event.payload)
         
-        // Clear any existing dialogs
+        // CRITICAL: Clear ALL existing dialogs first
         setShowBootloaderUpdate(false)
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
         setShowEnterBootloaderMode(false)
-        setShowPinUnlock(false)
+        setShowPinUnlock(false)  // This is crucial to prevent overlapping
+        
+        // Clear device status to prevent any further state updates
+        setDeviceStatus(null)
         
         // Show the simple invalid state dialog
         deviceInvalidStateDialog.show({
@@ -255,6 +265,12 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       }>('device:pin-unlock-needed', async (event) => {
         console.log('🔒 DeviceUpdateManager: PIN unlock needed event received:', event.payload)
         const { status } = event.payload
+        
+        // CRITICAL: Hide any invalid state dialogs first - PIN has priority
+        if (deviceInvalidStateDialog.isShowing(status.deviceId)) {
+          console.log('🔒 Hiding invalid state dialog to show PIN dialog')
+          deviceInvalidStateDialog.hide(status.deviceId)
+        }
         
         // Verify device is actually ready for PIN operations before showing dialog
         try {
@@ -289,7 +305,8 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
 
       // Listen for device disconnection
       const disconnectedUnsubscribe = listen<string>('device:disconnected', (event) => {
-        console.log('Device disconnected:', event.payload)
+        const disconnectedDeviceId = event.payload;
+        console.log('Device disconnected:', disconnectedDeviceId)
         
         // Check if recovery is in progress - if so, ignore disconnection events
         if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
@@ -307,6 +324,12 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         setShowPinUnlock(false)
         setRetryCount(0)
         if (timeoutId) clearTimeout(timeoutId)
+        
+        // Also hide the invalid state dialog if it's showing for this device
+        if (deviceInvalidStateDialog.isShowing(disconnectedDeviceId)) {
+          console.log('🔌 Hiding invalid state dialog for disconnected device')
+          deviceInvalidStateDialog.hide(disconnectedDeviceId)
+        }
       })
 
       // Frontend ready signal is now sent by App.tsx during initial setup

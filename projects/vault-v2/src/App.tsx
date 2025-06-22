@@ -65,6 +65,40 @@ function App() {
         const { showOnboarding, showError } = useCommonDialogs();
         const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
         const { hideAll, activeDialog, getQueue } = useDialog();
+        const { fetchedXpubs, portfolio, isSync, reinitialize } = useWallet();
+        
+        // Check wallet context state and sync with local state
+        useEffect(() => {
+            console.log('📱 [App] Wallet context state check:', {
+                portfolioPresent: !!portfolio,
+                fetchedXpubsLength: fetchedXpubs.length,
+                isSync,
+                currentLocalState: {
+                    loadingStatus,
+                    deviceConnected,
+                    deviceUpdateComplete
+                }
+            });
+            
+            // If wallet has xpubs and portfolio, ensure we show the vault
+            if (fetchedXpubs.length > 0 && portfolio) {
+                console.log('📱 [App] Wallet is ready with xpubs and portfolio, syncing local state');
+                
+                // Only update if not already set to avoid infinite loops
+                if (!deviceConnected) {
+                    console.log('📱 [App] Setting deviceConnected to true from wallet context');
+                    setDeviceConnected(true);
+                }
+                if (!deviceUpdateComplete) {
+                    console.log('📱 [App] Setting deviceUpdateComplete to true from wallet context');
+                    setDeviceUpdateComplete(true);
+                }
+                if (loadingStatus !== 'Device ready') {
+                    console.log('📱 [App] Setting loadingStatus to "Device ready" from wallet context');
+                    setLoadingStatus('Device ready');
+                }
+            }
+        }, [fetchedXpubs, portfolio, isSync, deviceConnected, deviceUpdateComplete, loadingStatus]);
         
         // Debug log active dialogs
         useEffect(() => {
@@ -104,17 +138,37 @@ function App() {
         };
         
         // Function to restart backend startup process
-        const { reinitialize } = useWallet();
         const handleLogoClick = async () => {
             if (isRestarting) return; // Prevent multiple clicks
             
             setIsRestarting(true);
             try {
                 console.log("Logo clicked - restarting backend startup process");
+                
+                // Reset all frontend state to initial values
+                console.log("Resetting frontend state...");
+                setLoadingStatus('Starting...');
+                setDeviceConnected(false);
+                setDeviceInfo(null);
+                setDeviceUpdateComplete(false);
+                
+                // Restart backend
                 await invoke('restart_backend_startup');
                 console.log("Backend restart initiated successfully");
+                
                 // Re-run wallet initialization to resubscribe device state after backend restart
                 reinitialize();
+                
+                // Signal backend that frontend is ready again
+                setTimeout(async () => {
+                    try {
+                        console.log('🎯 Re-signaling backend that frontend is ready after restart...');
+                        await invoke('frontend_ready');
+                        console.log('✅ Frontend ready signal sent successfully after restart');
+                    } catch (error) {
+                        console.log('frontend_ready command failed after restart:', error);
+                    }
+                }, 500);
             } catch (error) {
                 console.error("Failed to restart backend startup:", error);
             } finally {
@@ -202,6 +256,8 @@ function App() {
                             setDeviceInfo({ features: payload.features, error: null });
                             console.log('📱 [App] Setting deviceUpdateComplete to true from device:ready event');
                             setDeviceUpdateComplete(true);
+                            console.log('📱 [App] Setting loadingStatus to "Device ready" from device:ready event');
+                            setLoadingStatus('Device ready');
                             console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
                         }
                     });
@@ -360,10 +416,20 @@ function App() {
               <DeviceUpdateManager 
                 onComplete={() => {
                   console.log('📱 [App] DeviceUpdateManager onComplete callback triggered');
+                  console.log('📱 [App] Current state before updates:', {
+                    deviceUpdateComplete,
+                    loadingStatus,
+                    deviceConnected
+                  });
                   console.log('📱 [App] Setting deviceUpdateComplete to true');
                   setDeviceUpdateComplete(true);
                   console.log('📱 [App] Setting loadingStatus to "Device ready"');
                   setLoadingStatus('Device ready');
+                  // Also ensure deviceConnected is true if not already
+                  if (!deviceConnected) {
+                    console.log('📱 [App] Also setting deviceConnected to true from onComplete');
+                    setDeviceConnected(true);
+                  }
                 }}
               />
 

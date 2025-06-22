@@ -8,24 +8,51 @@ import {
 } from "./ui/dialog";
 import { Button, VStack, Text, Icon, Box } from '@chakra-ui/react';
 import { FaExclamationTriangle, FaPlug } from 'react-icons/fa';
+import { useEffect } from 'react';
+import { listen } from '@tauri-apps/api/event';
 
 interface DeviceInvalidStateDialogProps {
-  isOpen: boolean;
   deviceId: string;
   error?: string;
   onClose: () => void;
 }
 
 export const DeviceInvalidStateDialog = ({
-  isOpen,
   deviceId,
   error,
   onClose
 }: DeviceInvalidStateDialogProps) => {
   
+  // Auto-close when this specific device is disconnected
+  useEffect(() => {
+    console.log(`🔌 Setting up disconnect listener for device: ${deviceId}`);
+    
+    const setupListener = async () => {
+      const unlisten = await listen<string>('device:disconnected', (event) => {
+        const disconnectedDeviceId = event.payload;
+        console.log(`🔌 Device disconnected: ${disconnectedDeviceId}, our device: ${deviceId}`);
+        
+        // Check if it's our device that was disconnected
+        if (disconnectedDeviceId === deviceId) {
+          console.log('🔌 Our device was disconnected, auto-closing dialog');
+          onClose();
+        }
+      });
+      
+      return unlisten;
+    };
+    
+    const unlistenPromise = setupListener();
+    
+    // Cleanup listener on unmount
+    return () => {
+      unlistenPromise.then(unlisten => unlisten());
+    };
+  }, [deviceId, onClose]);
+  
   return (
     <DialogRoot 
-      open={isOpen} 
+      open={true} 
       onOpenChange={({ open }) => !open && onClose()}
       placement="center"
       modal
