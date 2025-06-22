@@ -85,7 +85,7 @@ export function DevicePin({ deviceId, deviceLabel, mode, onComplete, onBack, isL
   }, []);
 
   const handlePinPress = useCallback((position: PinPosition) => {
-    if (positions.length < 8 && !isLoading && !isSubmitting) {  // Cap at 8 digits
+    if (positions.length < 9 && !isLoading && !isSubmitting) {  // Cap at 9 digits
       setPositions(prev => [...prev, position]);
     }
   }, [positions.length, isLoading, isSubmitting]);
@@ -270,19 +270,21 @@ export function DevicePin({ deviceId, deviceLabel, mode, onComplete, onBack, isL
             {/* Scrambled PIN Grid */}
             <SimpleGrid
               columns={3}
-              gap={4}
-              w="250px"
+              gap={2}
+              w="200px"
             >
               {PIN_MATRIX_LAYOUT.map((position) => (
                 <Button
                   key={position}
                   onClick={() => handlePinPress(position as PinPosition)}
-                  size="lg"
-                  h="60px"
+                  size="md"
+                  h="50px"
                   bg="gray.700"
                   borderColor="gray.600"
                   borderWidth="1px"
                   color="gray.300"
+                  fontSize="lg"
+                  fontWeight="bold"
                   _hover={{
                     bg: "gray.600",
                     borderColor: "green.500",
@@ -292,10 +294,10 @@ export function DevicePin({ deviceId, deviceLabel, mode, onComplete, onBack, isL
                     bg: "gray.500",
                     transform: "scale(0.95)",
                   }}
-                  transition="all 0.2s"
-                  disabled={isLoading || isSubmitting || positions.length >= 8}
+                  transition="all 0.15s"
+                  disabled={isLoading || isSubmitting || positions.length >= 9}
                 >
-                  <Icon as={FaCircle} boxSize={4} />
+                  <Icon as={FaCircle} boxSize={3} />
                 </Button>
               ))}
             </SimpleGrid>

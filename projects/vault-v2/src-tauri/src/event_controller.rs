@@ -265,8 +265,32 @@ impl EventController {
                                         Err(e) => {
                                             println!("❌ Failed to get features for {}: {}", device_for_task.unique_id, e);
                                             
+                                            // Check for timeout errors specifically
+                                            if e.contains("Timeout while fetching device features") {
+                                                println!("⏱️ Device timeout detected - device may be in invalid state");
+                                                println!("❌ OOPS this should never happen - device communication failed!");
+                                                
+                                                // Log detailed error for debugging
+                                                eprintln!("ERROR: Device timeout indicates invalid state - this should be prevented!");
+                                                eprintln!("Device ID: {}", device_for_task.unique_id);
+                                                eprintln!("Error: {}", e);
+                                                
+                                                // Emit device invalid state event for UI to handle
+                                                let invalid_state_payload = serde_json::json!({
+                                                    "deviceId": device_for_task.unique_id,
+                                                    "error": e,
+                                                    "errorType": "DEVICE_TIMEOUT",
+                                                    "status": "invalid_state"
+                                                });
+                                                let _ = app_for_task.emit("device:invalid-state", &invalid_state_payload);
+                                                
+                                                // Also emit status update
+                                                let _ = app_for_task.emit("status:update", serde_json::json!({
+                                                    "status": "Device timeout - please reconnect"
+                                                }));
+                                            }
                                             // Check if this is a device access error
-                                            if e.contains("Device Already In Use") || 
+                                            else if e.contains("Device Already In Use") || 
                                                e.contains("already claimed") ||
                                                e.contains("🔒") {
                                                 

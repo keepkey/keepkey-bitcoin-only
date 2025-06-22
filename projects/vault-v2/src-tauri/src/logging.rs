@@ -151,10 +151,34 @@ impl DeviceLogger {
         Ok(())
     }
     
-    /// Get the path to today's log file
+    /// Get the path to today's log file (creates it if it doesn't exist)
     pub fn get_todays_log_path(&self) -> PathBuf {
         let current_date = Self::get_current_date();
-        self.logs_dir.join(format!("device-communications-{}.log", current_date))
+        let log_path = self.logs_dir.join(format!("device-communications-{}.log", current_date));
+        
+        // Ensure the file exists by creating it if needed
+        if !log_path.exists() {
+            if let Ok(file) = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .open(&log_path)
+            {
+                // Write an initial entry to mark the file creation
+                let initial_entry = serde_json::json!({
+                    "timestamp": Utc::now().to_rfc3339(),
+                    "direction": "SYSTEM",
+                    "message": "Log file created",
+                    "version": "2.0.0"
+                });
+                
+                if let Ok(json_str) = serde_json::to_string(&initial_entry) {
+                    use std::io::Write;
+                    let _ = writeln!(&file, "{}", json_str);
+                }
+            }
+        }
+        
+        log_path
     }
     
     /// Clean up old log files (keep only last 30 days)

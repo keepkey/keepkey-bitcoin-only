@@ -1,4 +1,4 @@
-import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex, Link, Stack } from '@chakra-ui/react'
+import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex, Link, Stack, Input, Textarea, Spinner, Switch } from '@chakra-ui/react'
 import { 
   DialogRoot,
   DialogContent,
@@ -7,8 +7,8 @@ import {
   DialogBody,
   DialogCloseTrigger
 } from './ui/dialog'
-import { LuSettings, LuMonitor, LuCpu, LuNetwork } from 'react-icons/lu'
-import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign } from 'react-icons/fa'
+import { LuSettings, LuMonitor, LuCpu, LuNetwork, LuFileText } from 'react-icons/lu'
+import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign, FaDownload, FaTrash, FaSyncAlt, FaSearch, FaFilter, FaFolder } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
 
 import { KeepKeyDeviceList } from './KeepKeyDeviceList'
@@ -25,6 +25,18 @@ interface SettingsDialogProps {
   onClose: () => void
 }
 
+interface LogEntry {
+  timestamp: string
+  direction: string
+  device_id?: string
+  request_id?: string
+  request_type?: string
+  message_type?: string
+  success?: boolean
+  data: any
+  error?: string
+}
+
 export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [showBootloaderUpdate, setShowBootloaderUpdate] = useState(false)
@@ -35,13 +47,86 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [hasCopiedMcp, setHasCopiedMcp] = useState(false)
   const [hasCopiedRest, setHasCopiedRest] = useState(false)
   
+  // API enable/disable state
+  const [apiEnabled, setApiEnabled] = useState(false)
+  const [apiStatus, setApiStatus] = useState<any>(null)
+  const [isTogglingApi, setIsTogglingApi] = useState(false)
+  
   // Seed verification wizard state
   const [verificationWizardOpen, setVerificationWizardOpen] = useState(false)
   const [verificationDeviceId, setVerificationDeviceId] = useState<string | null>(null)
   const [verificationDeviceLabel, setVerificationDeviceLabel] = useState<string | null>(null)
   
+  // Log viewer state
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  const [logFilter, setLogFilter] = useState<string>('all') // 'all', 'requests', 'responses', 'errors'
+  const [searchTerm, setSearchTerm] = useState<string>('')
+  const [logLimit, setLogLimit] = useState<number>(50)
+  const [logPath, setLogPath] = useState<string>('')
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(false)
+  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null)
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  
+  // Toast notification state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info'; visible: boolean }>({
+    message: '',
+    type: 'info',
+    visible: false
+  })
+  const [isDownloading, setIsDownloading] = useState(false)
+  
   const firmwareWizard = useFirmwareUpdateWizard()
   const walletCreationWizard = useWalletCreationWizard()
+  
+  // Load API status
+  const loadApiStatus = async () => {
+    try {
+      const enabled = await invoke<boolean>('get_api_enabled')
+      const status = await invoke<any>('get_api_status')
+      setApiEnabled(enabled)
+      setApiStatus(status)
+      console.log('API Status loaded:', { enabled, status })
+    } catch (error) {
+      console.error('Failed to load API status:', error)
+    }
+  }
+  
+  // Toggle API enable/disable
+  const handleToggleApi = async (enabled: boolean) => {
+    if (isTogglingApi) return
+    
+    setIsTogglingApi(true)
+    try {
+      console.log('Toggling API to:', enabled)
+      
+      // Set the API enabled preference
+      await invoke('set_api_enabled', { enabled })
+      setApiEnabled(enabled)
+      
+      // Show toast about restart
+      const action = enabled ? 'enabled' : 'disabled'
+      showToast(`API ${action}. Restarting application...`, 'info')
+      
+      // Wait a moment for the toast to show, then restart
+      setTimeout(async () => {
+        try {
+          await invoke('restart_app')
+        } catch (error) {
+          console.error('Failed to restart app:', error)
+          // Fallback message if restart fails
+          showToast('Please restart the application manually to apply changes.', 'error')
+        }
+      }, 1000)
+      
+    } catch (error) {
+      console.error('Failed to toggle API:', error)
+      showToast(`Failed to ${enabled ? 'enable' : 'disable'} API: ${error}`, 'error')
+      // Revert the state
+      setApiEnabled(!enabled)
+      setIsTogglingApi(false)
+    }
+  }
   
   // URL copy handlers
   const handleCopyMcp = () => {
@@ -233,6 +318,232 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
       // Fallback - could emit an event or handle differently
     }
   }
+
+  // Log viewer functions
+  const loadLogs = async () => {
+    setIsLoadingLogs(true)
+    try {
+      const recentLogs = await invoke<LogEntry[]>('get_recent_device_logs', { limit: logLimit })
+      setLogs(recentLogs)
+      
+      // Also get the log file path
+      const path = await invoke<string>('get_device_log_path')
+      setLogPath(path)
+      
+      // Update last refresh time
+      setLastRefresh(new Date())
+    } catch (error) {
+      console.error('Failed to load logs:', error)
+      setLogs([])
+    } finally {
+      setIsLoadingLogs(false)
+    }
+  }
+
+  const handleDownloadLogs = async () => {
+    setIsDownloading(true)
+    try {
+      // First ensure logs exist by trying to load them
+      if (logs.length === 0) {
+        await loadLogs()
+      }
+      
+      // Get the log file path
+      const path = await invoke<string>('get_device_log_path')
+      
+      if (!path) {
+        showToast('No log file path available', 'error')
+        return
+      }
+      
+      // Copy the path to clipboard
+      await navigator.clipboard.writeText(path)
+      
+      // Extract filename and directory for display
+      const parts = path.split('/')
+      const fileName = parts.pop() || 'device-communications.log'
+      const directory = parts.join('/')
+      
+      // Update the displayed log path
+      setLogPath(path)
+      
+      // Show success toast with more helpful message
+      showToast(`Log path copied to clipboard!\nPath: ${path}`, 'success')
+      
+      // Also show console log for debugging
+      console.log('Log file path:', path)
+      console.log('Log directory:', directory)
+      console.log('Log filename:', fileName)
+      
+      // Try to open the folder in file explorer using tauri-plugin-opener
+      try {
+        // For file paths, we need to add file:// prefix
+        const fileUrl = directory.startsWith('/') ? `file://${directory}` : directory
+        await invoke('open_url', { url: fileUrl })
+      } catch (err) {
+        console.log('Could not open folder automatically. Path is copied to clipboard:', err)
+        // Show additional help in the toast
+        showToast(`Path copied! Open Finder and press Cmd+Shift+G to go to:\n${directory}`, 'info')
+      }
+    } catch (error: any) {
+      console.error('Failed to handle log download:', error)
+      
+      // More specific error messages
+      if (error.toString().includes('not found')) {
+        showToast('No logs found. Try connecting a device first.', 'error')
+      } else if (error.toString().includes('permission')) {
+        showToast('Permission denied accessing log files', 'error')
+      } else {
+        showToast(`Failed to access log file: ${error.toString()}`, 'error')
+      }
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
+  const handleCleanupLogs = async () => {
+    try {
+      await invoke('cleanup_device_logs')
+      showToast('Old logs cleaned up successfully', 'success')
+      // Reload logs after cleanup
+      await loadLogs()
+    } catch (error) {
+      console.error('Failed to cleanup logs:', error)
+      showToast('Failed to cleanup old logs', 'error')
+    }
+  }
+
+  const filteredLogs = logs.filter(log => {
+    // Apply filter
+    if (logFilter === 'requests' && log.direction !== 'REQUEST' && log.direction !== 'SEND') return false
+    if (logFilter === 'responses' && log.direction !== 'RESPONSE' && log.direction !== 'RECEIVE') return false
+    if (logFilter === 'errors' && log.success !== false && !log.error) return false
+    
+    // Apply search to the formatted terminal output
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase()
+      const formattedOutput = formatLogEntry(log).toLowerCase()
+      const deviceId = (log.device_id || '').toLowerCase()
+      const requestType = (log.request_type || log.message_type || '').toLowerCase()
+      
+      return formattedOutput.includes(searchLower) || 
+             deviceId.includes(searchLower) || 
+             requestType.includes(searchLower)
+    }
+    
+    return true
+  })
+
+  const formatLogEntry = (log: LogEntry) => {
+    // Format logs to look like terminal output
+    if (log.direction === 'REQUEST' || log.direction === 'SEND') {
+      // Outgoing requests
+      const requestType = log.request_type || log.message_type || 'Unknown'
+      return `-> ${requestType}`
+    } else if (log.direction === 'RESPONSE' || log.direction === 'RECEIVE') {
+      // Incoming responses
+      const requestType = log.request_type || log.message_type || 'Unknown'
+      const success = log.success !== false ? '✅' : '❌'
+      
+      // Try to extract meaningful info from the response
+      let responseInfo = ''
+      if (log.data) {
+        // Handle GetFeatures responses
+        if (log.data.features && log.data.features.label) {
+          responseInfo = `${log.data.features.label} v${log.data.features.version || 'Unknown'}`
+        } else if (log.data.status && log.data.status.features && log.data.status.features.label) {
+          responseInfo = `${log.data.status.features.label} v${log.data.status.features.version || 'Unknown'}`
+        } else if (log.data.response && typeof log.data.response === 'string') {
+          // For xpub responses, show truncated version
+          if (log.data.response.startsWith('xpub') || log.data.response.startsWith('ypub') || log.data.response.startsWith('zpub')) {
+            responseInfo = `${log.data.response.substring(0, 16)}...`
+          } else {
+            responseInfo = log.data.response
+          }
+        } else if (requestType === 'GetFeatures' && log.data.operation) {
+          responseInfo = 'Features received'
+        } else {
+          responseInfo = requestType.replace('Get', '').replace('Request', '')
+        }
+      }
+      
+      return `<- ${responseInfo} ${success}`
+    } else {
+      // Other log types (like status messages)
+      const deviceShort = log.device_id ? log.device_id.substring(log.device_id.length - 8) : 'system'
+      
+      // Handle different operation types
+      if (log.data && log.data.operation) {
+        const operation = log.data.operation
+        if (operation === 'get_device_status') {
+          return `Getting device status for: ${log.device_id}`
+        } else if (operation === 'get_features_for_device') {
+          return `📡 Fetching device features for: ${deviceShort}`
+        } else if (log.data.status) {
+          const status = log.data.status
+          if (status.bootloaderCheck) {
+            return `🔧 Bootloader check: ${status.bootloaderCheck.currentVersion} -> needs update: ${status.bootloaderCheck.needsUpdate} (bootloader_mode: ${status.features?.bootloader_mode || false})`
+          } else if (status.firmwareCheck) {
+            return `🔧 Firmware check: ${status.firmwareCheck.currentVersion} vs ${status.firmwareCheck.latestVersion} -> needs update: ${status.firmwareCheck.needsUpdate} (bootloader_mode: ${status.features?.bootloader_mode || false})`
+          } else if (status.initializationCheck) {
+            return `🔧 Initialization check: initialized=${status.initializationCheck.initialized}, needs_setup=${status.initializationCheck.needsSetup}, has_pin_protection=${status.features?.pin_protection || false}, pin_cached=${status.features?.pin_cached || false}`
+          }
+        }
+        return `${operation.replace(/_/g, ' ')}: ${deviceShort}`
+      }
+      
+      return `${log.direction}: ${JSON.stringify(log.data).substring(0, 100)}...`
+    }
+  }
+
+  // Load logs when the dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      loadLogs()
+    }
+  }, [isOpen, logLimit])
+  
+  // Load API status when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      loadApiStatus()
+    }
+  }, [isOpen])
+
+  // Auto-refresh functionality
+  useEffect(() => {
+    if (autoRefresh && isOpen) {
+      const interval = setInterval(() => {
+        loadLogs()
+      }, 2000) // Refresh every 2 seconds
+      setRefreshInterval(interval)
+      
+      return () => {
+        clearInterval(interval)
+      }
+    } else {
+      if (refreshInterval) {
+        clearInterval(refreshInterval)
+        setRefreshInterval(null)
+      }
+    }
+  }, [autoRefresh, isOpen, logLimit])
+
+  // Auto-scroll to bottom when new logs arrive (if auto-refresh is on)
+  useEffect(() => {
+    if (autoRefresh && logs.length > 0) {
+      const logContainer = document.getElementById('log-container')
+      if (logContainer) {
+        logContainer.scrollTop = logContainer.scrollHeight
+      }
+    }
+  }, [logs, autoRefresh])
+  
+  // Show toast notification
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type, visible: true })
+    setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 4000)
+  }
   
   return (
     <>
@@ -280,17 +591,17 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   <LuSettings size={16} />
                   General
                 </Tabs.Trigger>
-                <Tabs.Trigger 
-                  value="app"
-                  flex="1"
-                  gap={2}
-                  color="gray.400"
-                  _selected={{ bg: "gray.700", color: "white" }}
-                  _hover={{ color: "white" }}
-                >
-                  <LuMonitor size={16} />
-                  App
-                </Tabs.Trigger>
+                {/*<Tabs.Trigger */}
+                {/*  value="app"*/}
+                {/*  flex="1"*/}
+                {/*  gap={2}*/}
+                {/*  color="gray.400"*/}
+                {/*  _selected={{ bg: "gray.700", color: "white" }}*/}
+                {/*  _hover={{ color: "white" }}*/}
+                {/*>*/}
+                {/*  <LuMonitor size={16} />*/}
+                {/*  App*/}
+                {/*</Tabs.Trigger>*/}
                 <Tabs.Trigger 
                   value="keepkey"
                   flex="1"
@@ -303,17 +614,25 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   KeepKey
                 </Tabs.Trigger>
                 <Tabs.Trigger 
+                  value="logs"
+                  flex="1"
+                  gap={2}
+                  color="gray.400"
+                  _selected={{ bg: "gray.700", color: "white" }}
+                  _hover={{ color: "white" }}
+                >
+                  <LuFileText size={16} />
+                  Logs
+                </Tabs.Trigger>
+                <Tabs.Trigger 
                   value="mcp"
                   flex="1"
                   gap={2}
-                  color="gray.600"
-                  opacity={0.5}
-                  cursor="not-allowed"
-                  _selected={{ bg: "gray.800", color: "gray.500" }}
-                  _hover={{ color: "gray.600" }}
-                  disabled
+                  color="gray.400"
+                  _selected={{ bg: "gray.700", color: "white" }}
+                  _hover={{ color: "white" }}
                 >
-                  <FaLock size={14} />
+                  <FaGlobe size={16} />
                   MCP
                 </Tabs.Trigger>
               </Tabs.List>
@@ -408,22 +727,291 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                 </VStack>
               </Tabs.Content>
 
+              <Tabs.Content value="logs" minHeight="400px">
+                <VStack align="stretch" gap={4}>
+                  {/* Title centered */}
+                  <Text color="white" fontSize="lg" fontWeight="semibold" textAlign="center">
+                    Device Communication Logs
+                  </Text>
+                  
+                  {/* Buttons centered on separate line */}
+                  <HStack gap={2} justify="center">
+                    <Button
+                      size="sm"
+                      colorScheme={autoRefresh ? "orange" : "blue"}
+                      onClick={() => setAutoRefresh(!autoRefresh)}
+                    >
+                      <HStack gap={1}>
+                        <FaSyncAlt />
+                        <Text>{autoRefresh ? 'Stop Auto' : 'Auto Refresh'}</Text>
+                      </HStack>
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="blue"
+                      onClick={loadLogs}
+                      loading={isLoadingLogs}
+                      disabled={autoRefresh}
+                    >
+                      <HStack gap={1}>
+                        <FaSyncAlt />
+                        <Text>{isLoadingLogs ? 'Loading...' : 'Refresh'}</Text>
+                      </HStack>
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="green"
+                      onClick={handleDownloadLogs}
+                      loading={isDownloading}
+                      disabled={isDownloading}
+                    >
+                      <HStack gap={1}>
+                        {isDownloading ? (
+                          <Spinner size="xs" />
+                        ) : (
+                          <FaDownload />
+                        )}
+                        <Text>{isDownloading ? 'Copying...' : 'Save Logs'}</Text>
+                      </HStack>
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="red"
+                      onClick={handleCleanupLogs}
+                    >
+                      <HStack gap={1}>
+                        <FaTrash />
+                        <Text>Cleanup</Text>
+                      </HStack>
+                    </Button>
+                  </HStack>
+
+                  {/* Log Controls */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                    <VStack align="stretch" gap={3}>
+                      <HStack gap={4} wrap="wrap">
+                        <HStack flex="1" minW="200px">
+                          <FaSearch color="gray.400" />
+                          <Input
+                            placeholder="Search logs..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            bg="gray.900"
+                            border="1px solid"
+                            borderColor="gray.600"
+                            color="white"
+                            _placeholder={{ color: "gray.400" }}
+                            size="sm"
+                          />
+                        </HStack>
+                        <HStack>
+                          <FaFilter color="gray.400" />
+                          <select
+                            value={logFilter}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setLogFilter(e.target.value)}
+                            style={{
+                              backgroundColor: 'var(--chakra-colors-gray-900)',
+                              border: '1px solid var(--chakra-colors-gray-600)',
+                              color: 'white',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              minWidth: '120px'
+                            }}
+                          >
+                            <option value="all">All</option>
+                            <option value="requests">Requests</option>
+                            <option value="responses">Responses</option>
+                            <option value="errors">Errors</option>
+                          </select>
+                        </HStack>
+                        <HStack>
+                          <Text color="gray.400" fontSize="sm">Limit:</Text>
+                          <select
+                            value={logLimit.toString()}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setLogLimit(parseInt(e.target.value))}
+                            style={{
+                              backgroundColor: 'var(--chakra-colors-gray-900)',
+                              border: '1px solid var(--chakra-colors-gray-600)',
+                              color: 'white',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              minWidth: '80px'
+                            }}
+                          >
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                          </select>
+                        </HStack>
+                      </HStack>
+                      
+                      {logPath && (
+                        <HStack gap={2}>
+                          <Text color="gray.400" fontSize="xs">Log file:</Text>
+                          <Text color="blue.300" fontSize="xs" fontFamily="mono" wordBreak="break-all">
+                            {logPath}
+                          </Text>
+                        </HStack>
+                      )}
+                    </VStack>
+                  </Box>
+
+                                    {/* Terminal-style Log Display */}
+                  <Box 
+                    id="log-container"
+                    bg="black" 
+                    borderRadius="md" 
+                    border="1px solid" 
+                    borderColor="gray.600" 
+                    maxH="400px" 
+                    overflowY="auto"
+                    p={4}
+                    position="relative"
+                  >
+                    {autoRefresh && (
+                      <Box
+                        position="absolute"
+                        top={2}
+                        right={2}
+                        bg="orange.600"
+                        color="white"
+                        px={2}
+                        py={1}
+                        fontSize="xs"
+                        borderRadius="sm"
+                        fontWeight="bold"
+                        zIndex={1}
+                      >
+                        LIVE
+                      </Box>
+                    )}
+                    {isLoadingLogs ? (
+                      <Flex justify="center" align="center" p={8}>
+                        <VStack gap={2}>
+                          <Spinner color="green.400" />
+                          <Text color="green.400" fontFamily="mono">Loading logs...</Text>
+                        </VStack>
+                      </Flex>
+                    ) : filteredLogs.length === 0 ? (
+                      <Flex justify="center" align="center" p={8}>
+                        <Text color="green.400" fontFamily="mono">No logs found matching current filters</Text>
+                      </Flex>
+                    ) : (
+                      <VStack align="stretch" gap={1}>
+                        {filteredLogs.map((log, index) => {
+                          const formatted = formatLogEntry(log)
+                          // Show only time (HH:MM:SS) without date
+                          const timestamp = new Date(log.timestamp).toLocaleTimeString('en-US', { 
+                            hour12: false,
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          })
+                          
+                          // Color coding based on log type
+                          let color = "green.300"
+                          if (formatted.startsWith('->')) {
+                            color = "blue.300" // Outgoing requests
+                          } else if (formatted.startsWith('<-')) {
+                            color = formatted.includes('❌') ? "red.300" : "green.300" // Responses
+                          } else if (formatted.includes('🔧')) {
+                            color = "yellow.300" // System checks
+                          } else if (formatted.includes('📡')) {
+                            color = "cyan.300" // Network/communication
+                          }
+                          
+                          return (
+                            <HStack key={index} gap={2} align="start" fontSize="sm" fontFamily="mono">
+                              <Text color="gray.500" fontSize="xs" minW="70px" flexShrink={0}>
+                                {timestamp}
+                              </Text>
+                              <Text color={color} wordBreak="break-word" flex={1}>
+                                {formatted}
+                              </Text>
+                            </HStack>
+                          )
+                        })}
+                      </VStack>
+                    )}
+                  </Box>
+
+                  {/* Log Stats */}
+                  <HStack justify="space-between" align="center" color="gray.400" fontSize="sm" wrap="wrap">
+                    <Text>Showing {filteredLogs.length} of {logs.length} log entries</Text>
+                    <HStack gap={4}>
+                      {lastRefresh && (
+                        <Text>Last updated: {lastRefresh.toLocaleTimeString()}</Text>
+                      )}
+                      {autoRefresh && (
+                        <Text color="orange.400" fontWeight="bold">Auto-refreshing every 2s</Text>
+                      )}
+                    </HStack>
+                  </HStack>
+                </VStack>
+              </Tabs.Content>
+
               <Tabs.Content value="mcp" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
-                  <HStack gap={2}>
-                    <FaLock color="gray.500" />
-                    <Text color="gray.500" fontSize="lg" fontWeight="semibold">MCP & API Access</Text>
-                    <Text color="red.400" fontSize="sm" fontWeight="medium">(Disabled)</Text>
-                  </HStack>
+                  <Text color="white" fontSize="lg" fontWeight="semibold">MCP & API Access</Text>
+                  
+                  {/* API Enable/Disable Section */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                    <VStack align="stretch" gap={3}>
+                      <VStack align="start" gap={1}>
+                        <Text color="white" fontWeight="medium" fontSize="lg">Enable REST & MCP APIs</Text>
+                        <Text color="gray.400" fontSize="sm">
+                          Allow external applications and AI assistants to connect
+                        </Text>
+                      </VStack>
+                      <HStack justify="space-between" align="center">
+                        <HStack gap={2}>
+                          <Box w={2} h={2} bg={apiStatus?.running ? "green.400" : "gray.500"} borderRadius="full" />
+                          <Text 
+                            color={apiStatus?.running ? "green.400" : "gray.500"} 
+                            fontSize="sm" 
+                            fontWeight="medium"
+                          >
+                            {apiStatus?.running ? "Running" : "Stopped"}
+                          </Text>
+                        </HStack>
+                        <Button
+                          size="sm"
+                          colorScheme={apiEnabled ? "red" : "green"}
+                          onClick={() => handleToggleApi(!apiEnabled)}
+                          loading={isTogglingApi}
+                          disabled={isTogglingApi}
+                          minW="80px"
+                        >
+                          {apiEnabled ? "Disable" : "Enable"}
+                        </Button>
+                      </HStack>
+                    </VStack>
+                  </Box>
                   
                   {/* API URLs Section */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.5}>
-                    <VStack align="stretch" gap={4}>
-                      <HStack gap={2}>
-                        <FaLock color="gray.500" size={14} />
-                        <Text color="gray.400" fontWeight="medium">API Endpoints</Text>
-                        <Text color="red.400" fontSize="xs">(Disabled)</Text>
+                  <Box 
+                    bg="gray.800" 
+                    p={4} 
+                    borderRadius="md" 
+                    border="1px solid" 
+                    borderColor="gray.700"
+                    opacity={apiEnabled ? 1 : 0.5}
+                    position="relative"
+                  >
+                    {!apiEnabled && (
+                      <HStack 
+                        position="absolute"
+                        top={4}
+                        right={4}
+                        gap={1}
+                      >
+                        <FaLock size={12} color="gray.500" />
+                        <Text color="gray.500" fontSize="xs" fontWeight="medium">Locked</Text>
                       </HStack>
+                    )}
+                    <VStack align="stretch" gap={4}>
+                      <Text color="white" fontWeight="medium">API Endpoints</Text>
                       
                       {/* REST API */}
                       <Box bg="gray.900" p={3} borderRadius="md">
@@ -437,6 +1025,8 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                               color="blue.300"
                               _hover={{ color: "blue.200", textDecoration: "underline" }}
                               flex="1"
+                              opacity={apiEnabled ? 1 : 0.5}
+                              pointerEvents={apiEnabled ? "auto" : "none"}
                             >
                               http://127.0.0.1:1646/docs
                             </Link>
@@ -447,6 +1037,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                               aria-label="Copy REST URL to clipboard"
                               onClick={handleCopyRest}
                               minW="60px"
+                              disabled={!apiEnabled}
                             >
                               {hasCopiedRest ? (
                                 <HStack gap={1}>
@@ -479,6 +1070,8 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                               color="blue.300"
                               _hover={{ color: "blue.200", textDecoration: "underline" }}
                               flex="1"
+                              opacity={apiEnabled ? 1 : 0.5}
+                              pointerEvents={apiEnabled ? "auto" : "none"}
                             >
                               http://127.0.0.1:1646/mcp
                             </Link>
@@ -489,6 +1082,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                               aria-label="Copy MCP URL to clipboard"
                               onClick={handleCopyMcp}
                               minW="60px"
+                              disabled={!apiEnabled}
                             >
                               {hasCopiedMcp ? (
                                 <HStack gap={1}>
@@ -512,36 +1106,45 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   </Box>
 
                   {/* Status Section */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
+                  <Box 
+                    bg="gray.800" 
+                    p={4} 
+                    borderRadius="md" 
+                    border="1px solid" 
+                    borderColor="gray.700"
+                    opacity={apiEnabled ? 1 : 0.5}
+                  >
                     <VStack align="stretch" gap={3}>
-                      <HStack gap={2}>
-                        <FaLock color="gray.500" size={14} />
-                        <Text color="gray.400" fontWeight="medium">Service Status</Text>
-                      </HStack>
+                      <Text color="white" fontWeight="medium">Service Status</Text>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">Backend Server</Text>
+                        <Text color="gray.300" fontSize="sm">API Server</Text>
                         <HStack gap={2}>
-                          <Box w={2} h={2} bg="gray.500" borderRadius="full" />
-                          <Text color="gray.500" fontSize="sm" fontWeight="medium">Offline</Text>
+                          <Box w={2} h={2} bg={apiStatus?.running ? "green.400" : "gray.500"} borderRadius="full" />
+                          <Text 
+                            color={apiStatus?.running ? "green.400" : "gray.500"} 
+                            fontSize="sm" 
+                            fontWeight="medium"
+                          >
+                            {apiStatus?.running ? "Running" : "Stopped"}
+                          </Text>
                         </HStack>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">API Access</Text>
-                        <Text color="gray.500" fontSize="sm" fontFamily="mono">Locked</Text>
+                        <Text color="gray.300" fontSize="sm">API Port</Text>
+                        <Text color="gray.300" fontSize="sm" fontFamily="mono">
+                          {apiStatus?.port || 1646}
+                        </Text>
                       </HStack>
                     </VStack>
                   </Box>
 
                   {/* Information Section */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.4}>
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={2}>
-                      <HStack gap={2}>
-                        <FaLock color="gray.500" size={12} />
-                        <Text color="gray.400" fontSize="sm" fontWeight="medium">About MCP</Text>
-                      </HStack>
-                      <Text color="gray.500" fontSize="xs">
-                        The Model Context Protocol (MCP) would enable AI assistants like Claude to securely interact with your KeepKey device. 
-                        This feature is currently disabled and will be available in a future update.
+                      <Text color="gray.300" fontSize="sm" fontWeight="medium">About MCP & REST API</Text>
+                      <Text color="gray.400" fontSize="xs">
+                        When enabled, the REST API provides programmatic access to your KeepKey device, while the Model Context Protocol (MCP) 
+                        allows AI assistants to help you manage your Bitcoin. The server runs locally on port 1646 and requires a restart after changing settings.
                       </Text>
                     </VStack>
                   </Box>
@@ -550,6 +1153,46 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
             </Tabs.Root>
           </DialogBody>
         </DialogContent>
+        
+        {/* Toast Notification */}
+        {toast.visible && (
+          <Box
+            position="fixed"
+            bottom={4}
+            right={4}
+            bg={
+              toast.type === 'success' ? 'green.600' :
+              toast.type === 'error' ? 'red.600' : 'blue.600'
+            }
+            color="white"
+            px={4}
+            py={3}
+            borderRadius="md"
+            boxShadow="lg"
+            zIndex={9999}
+            maxW="400px"
+            css={{
+              animation: 'slideIn 0.3s ease-out',
+              '@keyframes slideIn': {
+                '0%': {
+                  transform: 'translateX(100%)',
+                  opacity: 0
+                },
+                '100%': {
+                  transform: 'translateX(0)',
+                  opacity: 1
+                }
+              }
+            }}
+          >
+            <HStack gap={2}>
+              {toast.type === 'success' && <FaCheck />}
+              {toast.type === 'error' && <FaTimes />}
+              {toast.type === 'info' && <FaFolder />}
+              <Text fontSize="sm">{toast.message}</Text>
+            </HStack>
+          </Box>
+        )}
       </DialogRoot>
 
       {/* Update Dialogs - Only shown when settings dialog is closed */}
