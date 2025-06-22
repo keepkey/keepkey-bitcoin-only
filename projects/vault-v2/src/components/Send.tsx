@@ -13,7 +13,7 @@ import {
   Badge,
   Code
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaQrcode, FaPaperPlane, FaEye, FaSignature, FaCheck, FaChevronUp, FaChevronDown } from 'react-icons/fa';
+import { FaArrowLeft, FaQrcode, FaPaperPlane, FaEye, FaSignature, FaCheck, FaChevronUp, FaChevronDown, FaExclamationTriangle } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
 import { PioneerAPI, DeviceQueueAPI } from '../lib/api';
@@ -64,6 +64,10 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const [isMaxSend, setIsMaxSend] = useState(false);
   const [isShowingHex, setIsShowingHex] = useState(false); // Hex collapsed by default
   
+  // Signing lock state - prevents UI from reacting to device events during signing
+  const [isSigningLocked, setIsSigningLocked] = useState(false);
+  const [deviceDisconnectedDuringSigning, setDeviceDisconnectedDuringSigning] = useState(false);
+  
   // Broadcast state
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
@@ -95,6 +99,30 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
   
   // Get first BTC asset for price info (they should all have same price)
   const btcAsset = btcAssets[0] || null;
+
+  // Listen for device disconnection events during signing
+  useEffect(() => {
+    if (!isSigningLocked) return;
+
+    let unlistenDisconnect: (() => void) | undefined;
+
+    const setupListener = async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      
+      unlistenDisconnect = await listen('device:disconnected', (event) => {
+        console.log('🔌 [Send] Device disconnected while signing is locked:', event);
+        // Just track that device was disconnected, but don't change UI state
+        setDeviceDisconnectedDuringSigning(true);
+        setError('Device disconnected. Please reconnect and try again.');
+      });
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlistenDisconnect) unlistenDisconnect();
+    };
+  }, [isSigningLocked]);
 
   // Load fee rates from Pioneer API
   useEffect(() => {
@@ -296,9 +324,13 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       setLoading(true);
       setError(null);
       
+      // Lock the UI to prevent state changes from device events
+      setIsSigningLocked(true);
+      setDeviceDisconnectedDuringSigning(false);
+      
       setCurrentStep('sign');
       
-            console.log('🔐 Building and signing real Bitcoin transaction with proper UTXO selection...');
+      console.log('🔐 Building and signing real Bitcoin transaction with proper UTXO selection...');
       
       // Get the connected device
       const connectedDevices = await DeviceQueueAPI.getConnectedDevices();
@@ -452,9 +484,15 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
     } catch (error) {
       console.error('Error signing transaction:', error);
       setError(error instanceof Error ? error.message : 'Failed to sign transaction');
-      setCurrentStep('review'); // Go back to review on error
+      
+      // Only go back to review if device wasn't disconnected during signing
+      if (!deviceDisconnectedDuringSigning) {
+        setCurrentStep('review');
+      }
+      // If device was disconnected, stay on sign step to allow retry
     } finally {
       setLoading(false);
+      setIsSigningLocked(false); // Release the lock
     }
   };
 
@@ -838,16 +876,38 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
       <VStack gap={6} align="center">
         <Box bg="gray.800" p={8} borderRadius="lg" textAlign="center">
           <VStack gap={4}>
-            <Box color="blue.400" fontSize="4xl">
-              <FaSignature />
+            <Box color={deviceDisconnectedDuringSigning ? "orange.400" : "blue.400"} fontSize="4xl">
+              {deviceDisconnectedDuringSigning ? <FaExclamationTriangle /> : <FaSignature />}
             </Box>
-            <Heading size="md" color="white">Signing Transaction</Heading>
+            <Heading size="md" color="white">
+              {deviceDisconnectedDuringSigning ? 'Device Disconnected' : 'Signing Transaction'}
+            </Heading>
             <Text color="gray.400" textAlign="center">
-              Please confirm the transaction on your KeepKey device
+              {deviceDisconnectedDuringSigning 
+                ? 'Your KeepKey was disconnected. Please reconnect and try again.'
+                : 'Please confirm the transaction on your KeepKey device'
+              }
             </Text>
-            <Spinner size="lg" color="blue.400" />
+            {!deviceDisconnectedDuringSigning && <Spinner size="lg" color="blue.400" />}
           </VStack>
         </Box>
+
+        {deviceDisconnectedDuringSigning && (
+          <Button
+            colorScheme="blue"
+            size="lg"
+            onClick={() => {
+              setDeviceDisconnectedDuringSigning(false);
+              setError(null);
+              handleSignTransaction(); // Retry signing
+            }}
+          >
+            <HStack gap={2}>
+              <FaSignature />
+              <Text>Retry Signing</Text>
+            </HStack>
+          </Button>
+        )}
 
         {error && (
           <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600" w="100%">

@@ -26,6 +26,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   
   const [address, setAddress] = useState<string>('');
   const [hasCopied, setHasCopied] = useState(false);
+  const [hasCopiedXpub, setHasCopiedXpub] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shouldGenerate, setShouldGenerate] = useState(false);
@@ -110,6 +111,13 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     }
   };
 
+  // Copy xpub to clipboard
+  const onCopyXpub = (xpub: string) => {
+    navigator.clipboard.writeText(xpub);
+    setHasCopiedXpub(true);
+    setTimeout(() => setHasCopiedXpub(false), 2000);
+  };
+
   // Monitor address state changes
   useEffect(() => {
     console.log('📍 Address state changed:', address);
@@ -154,7 +162,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   return (
     <Box height="100%" bg="transparent" display="flex" alignItems="center" justifyContent="center" p={6}>
       <Box 
-        maxW="500px" 
+        maxW={showAdvanced && address ? "800px" : "500px"} 
         w="100%"
         bg="rgba(26, 32, 44, 0.95)" 
         p={6} 
@@ -162,6 +170,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
         backdropFilter="blur(20px)"
         border="1px solid rgba(255, 255, 255, 0.1)"
         boxShadow="2xl"
+        transition="max-width 0.3s ease"
       >
         <VStack align="stretch" gap={6}>
           {/* Header */}
@@ -234,220 +243,244 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
               </VStack>
             ) : (
               /* Address Display View */
-              <VStack gap={4} w="100%">
-                {/* Success Header */}
-                <VStack gap={2} textAlign="center">
-                  <Text color="green.300" fontSize="lg" fontWeight="bold">
-                    ✅ Receive Address Generated
-                  </Text>
-                  <Text color="gray.400" fontSize="sm">
-                    Use this address to receive Bitcoin payments
-                  </Text>
-                </VStack>
+              <>
+                <HStack gap={6} w="100%" align="start" justify="center">
+                  {/* Left side - QR code and address */}
+                  <VStack gap={4} flex={showAdvanced ? "0 0 auto" : "1"} maxW="400px">
+                    {/* Success Header */}
+                    <VStack gap={2} textAlign="center">
+                      <Text color="green.400" fontSize="lg" fontWeight="bold">
+                        ✅ Receive Address Generated
+                      </Text>
+                      <Text color="gray.400" fontSize="sm">
+                        Use this address to receive Bitcoin payments
+                      </Text>
+                    </VStack>
 
-                {/* QR Code */}
-                <Box
-                  w="200px"
-                  h="200px"
-                  bg="white"
-                  borderRadius="md"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  mx="auto"
-                  p={2}
-                >
-                  <QRCode
-                    value={address}
-                    size={184}
-                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                    viewBox={`0 0 184 184`}
-                  />
-                </Box>
-
-                {/* Address String */}
-                <VStack w="100%" gap={2}>
-                  <Text color="gray.300" fontSize="sm" fontWeight="medium">
-                    Bitcoin Address
-                  </Text>
-                  <Box
-                    w="100%"
-                    bg="gray.700"
-                    p={3}
-                    borderRadius="md"
-                    border="1px solid"
-                    borderColor="gray.600"
-                  >
-                    <Text
-                      color="white"
-                      fontSize="sm"
-                      fontFamily="mono"
-                      wordBreak="break-all"
-                      textAlign="center"
+                    {/* QR Code */}
+                    <Box
+                      w="220px"
+                      h="220px"
+                      bg="white"
+                      borderRadius="lg"
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      mx="auto"
+                      p={3}
+                      boxShadow="lg"
                     >
-                      {address}
-                    </Text>
-                  </Box>
-                </VStack>
+                      <QRCode
+                        value={address}
+                        size={196}
+                        style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                        viewBox={`0 0 196 196`}
+                      />
+                    </Box>
 
-                {/* Advanced View Toggle */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  color="gray.400"
-                  _hover={{ color: "gray.200" }}
-                  mt={2}
-                >
-                  <HStack gap={1}>
-                    <Text fontSize="xs">Advanced View</Text>
-                    {showAdvanced ? <FaChevronUp /> : <FaChevronDown />}
-                  </HStack>
-                </Button>
+                    {/* Address String */}
+                    <VStack w="100%" gap={2}>
+                      <Text color="gray.300" fontSize="sm" fontWeight="medium">
+                        Bitcoin Address
+                      </Text>
+                      <Box
+                        w="100%"
+                        bg="gray.700"
+                        p={3}
+                        borderRadius="md"
+                        border="1px solid"
+                        borderColor="gray.600"
+                        _hover={{ borderColor: "gray.500" }}
+                        transition="border-color 0.2s"
+                      >
+                        <Text
+                          color="white"
+                          fontSize="sm"
+                          fontFamily="mono"
+                          wordBreak="break-all"
+                          textAlign="center"
+                          userSelect="all"
+                        >
+                          {address}
+                        </Text>
+                      </Box>
+                    </VStack>
 
-                {/* Advanced View Content */}
-                {showAdvanced && (
-                  <VStack
-                    w="100%"
-                    gap={4}
-                    bg="gray.900"
-                    p={4}
-                    borderRadius="md"
-                    border="1px solid"
-                    borderColor="gray.700"
-                    mt={3}
-                  >
-                    <VStack align="stretch" w="100%" gap={3}>
+                    {/* Action Buttons */}
+                    <HStack gap={3} w="100%">
+                      <Button
+                        colorScheme="blue"
+                        size="lg"
+                        onClick={onCopy}
+                        flex="1"
+                        bg={hasCopied ? "green.600" : "blue.600"}
+                        _hover={{ bg: hasCopied ? "green.500" : "blue.500" }}
+                      >
+                        <HStack gap={2}>
+                          {hasCopied ? <FaCheck /> : <FaCopy />}
+                          <Text>{hasCopied ? 'Copied!' : 'Copy Address'}</Text>
+                        </HStack>
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        colorScheme="gray"
+                        size="lg"
+                        onClick={() => {
+                          setAddress('');
+                          setError(null);
+                        }}
+                        flex="1"
+                      >
+                        Generate New
+                      </Button>
+                    </HStack>
+                  </VStack>
+
+                  {/* Right side - Advanced info (shows when toggled) */}
+                  {showAdvanced && (
+                    <VStack 
+                      align="stretch" 
+                      w="320px"
+                      bg="gray.900" 
+                      p={5} 
+                      borderRadius="lg"
+                      border="1px solid"
+                      borderColor="gray.700"
+                      gap={4}
+                      boxShadow="md"
+                    >
+                      <Text color="white" fontSize="md" fontWeight="bold">
+                        Advanced Details
+                      </Text>
+                      
                       {/* Address Type */}
                       <HStack justify="space-between">
-                        <Text color="gray.400" fontSize="xs">Address Type:</Text>
-                        <Badge colorScheme="blue" fontSize="xs">
-                          {addressType === 'legacy' ? 'Legacy (P2PKH)' :
-                           addressType === 'segwit' ? 'SegWit (P2SH-P2WPKH)' :
-                           'Native SegWit (P2WPKH)'}
+                        <Text color="gray.400" fontSize="sm">Address Type</Text>
+                        <Badge colorScheme="blue" fontSize="sm" px={3} py={1}>
+                          {addressType === 'legacy' ? 'Legacy' :
+                           addressType === 'segwit' ? 'SegWit' :
+                           'Native SegWit'}
                         </Badge>
                       </HStack>
 
-                      <Box w="100%" h="1px" bg="gray.700" />
+                      {/* Script Type */}
+                      <HStack justify="space-between">
+                        <Text color="gray.400" fontSize="sm">Script Type</Text>
+                        <Text color="white" fontSize="sm" fontWeight="medium">
+                          {addressType === 'legacy' ? 'P2PKH' :
+                           addressType === 'segwit' ? 'P2SH-P2WPKH' :
+                           'P2WPKH'}
+                        </Text>
+                      </HStack>
+
+                      {/* Address Format */}
+                      <HStack justify="space-between">
+                        <Text color="gray.400" fontSize="sm">Format</Text>
+                        <Text color="white" fontSize="sm" fontWeight="medium">
+                          Starts with {addressType === 'legacy' ? '1' :
+                                     addressType === 'segwit' ? '3' :
+                                     'bc1'}
+                        </Text>
+                      </HStack>
 
                       {/* Derivation Path */}
-                      <VStack align="stretch" gap={1}>
-                        <Text color="gray.400" fontSize="xs">Derivation Path:</Text>
+                      <Box>
+                        <Text color="gray.400" fontSize="sm" mb={2}>Derivation Path</Text>
                         <Code
                           bg="gray.800"
                           color="blue.300"
                           p={2}
                           borderRadius="md"
-                          fontSize="xs"
+                          fontSize="sm"
+                          w="100%"
+                          display="block"
                         >
                           {derivationPath}
                         </Code>
-                      </VStack>
-
-                      <Box w="100%" h="1px" bg="gray.700" />
-
-                      {/* Extended Public Key (if available) */}
-                      {relevantXpub && (
-                        <VStack align="stretch" gap={1}>
-                          <Text color="gray.400" fontSize="xs">Account Extended Public Key:</Text>
-                          <Code
-                            bg="gray.800"
-                            color="gray.300"
-                            p={2}
-                            borderRadius="md"
-                            fontSize="xs"
-                            wordBreak="break-all"
-                          >
-                            {relevantXpub.xpub.substring(0, 50)}...
-                          </Code>
-                          <Text color="gray.500" fontSize="xs" mt={1}>
-                            Path: {relevantXpub.path}
-                          </Text>
-                        </VStack>
-                      )}
-
-                      <Box w="100%" h="1px" bg="gray.700" />
-
-                      {/* Script Type Info */}
-                      <VStack align="stretch" gap={1}>
-                        <Text color="gray.400" fontSize="xs">Script Type:</Text>
-                        <Text color="gray.300" fontSize="xs">
-                          {addressType === 'legacy' ? 'Pay-to-Public-Key-Hash (P2PKH)' :
-                           addressType === 'segwit' ? 'Pay-to-Script-Hash wrapped Witness (P2SH-P2WPKH)' :
-                           'Pay-to-Witness-Public-Key-Hash (P2WPKH)'}
-                        </Text>
-                      </VStack>
-
-                      <Box w="100%" h="1px" bg="gray.700" />
-
-                      {/* Address Format Info */}
-                      <HStack justify="space-between">
-                        <Text color="gray.400" fontSize="xs">Address Format:</Text>
-                        <Text color="gray.300" fontSize="xs">
-                          {addressType === 'legacy' ? 'Starts with 1' :
-                           addressType === 'segwit' ? 'Starts with 3' :
-                           'Starts with bc1'}
-                        </Text>
-                      </HStack>
+                      </Box>
 
                       {/* Device Info */}
-                      <Box w="100%" h="1px" bg="gray.700" />
-                      <VStack align="stretch" gap={1}>
-                        <Text color="gray.400" fontSize="xs">Generated By:</Text>
-                        <HStack>
-                          <Badge colorScheme="green" fontSize="xs">KeepKey Device</Badge>
-                          <Text color="gray.500" fontSize="xs">Hardware Wallet</Text>
-                        </HStack>
-                      </VStack>
+                      <HStack justify="space-between">
+                        <Text color="gray.400" fontSize="sm">Generated By</Text>
+                        <Badge colorScheme="green" fontSize="sm" px={3} py={1}>
+                          KeepKey
+                        </Badge>
+                      </HStack>
+
+                      {/* Extended Public Key */}
+                      {relevantXpub && (
+                        <Box borderTop="1px solid" borderColor="gray.700" pt={4}>
+                          <HStack justify="space-between" mb={2}>
+                            <Text color="gray.400" fontSize="sm">xPub ({relevantXpub.path})</Text>
+                            <IconButton
+                              aria-label="Copy xPub"
+                              size="xs"
+                              variant="ghost"
+                              colorScheme={hasCopiedXpub ? "green" : "gray"}
+                              onClick={() => onCopyXpub(relevantXpub.xpub)}
+                            >
+                              {hasCopiedXpub ? <FaCheck /> : <FaCopy />}
+                            </IconButton>
+                          </HStack>
+                          <Box
+                            bg="gray.800"
+                            p={2}
+                            borderRadius="md"
+                            cursor="pointer"
+                            onClick={() => onCopyXpub(relevantXpub.xpub)}
+                            _hover={{ bg: "gray.750" }}
+                            transition="background 0.2s"
+                          >
+                            <Text
+                              color="gray.300"
+                              fontSize="xs"
+                              wordBreak="break-all"
+                              fontFamily="mono"
+                              userSelect="all"
+                            >
+                              {relevantXpub.xpub}
+                            </Text>
+                          </Box>
+                        </Box>
+                      )}
                     </VStack>
-
-                    {/* Info Note */}
-                    <Box bg="blue.900" p={3} borderRadius="md" border="1px solid" borderColor="blue.700" mt={2}>
-                      <Text color="blue.200" fontSize="xs">
-                        💡 This address is derived from your hardware wallet's seed phrase using BIP44/49/84 standards. 
-                        Each address is unique and can only be spent by your KeepKey device.
-                      </Text>
-                    </Box>
-                  </VStack>
-                )}
-
-                {/* Action Buttons */}
-                <HStack gap={3} w="100%">
-                  <Button
-                    colorScheme="blue"
-                    size="lg"
-                    onClick={onCopy}
-                    flex="1"
-                    bg={hasCopied ? "green.600" : "blue.600"}
-                    _hover={{ bg: hasCopied ? "green.500" : "blue.500" }}
-                  >
-                    <HStack gap={2}>
-                      {hasCopied ? <FaCheck /> : <FaCopy />}
-                      <Text>{hasCopied ? 'Copied!' : 'Copy Address'}</Text>
-                    </HStack>
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    colorScheme="gray"
-                    size="lg"
-                    onClick={() => {
-                      setAddress('');
-                      setError(null);
-                    }}
-                    flex="1"
-                  >
-                    Generate New
-                  </Button>
+                  )}
                 </HStack>
 
+                {/* Advanced View Toggle - centered below */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  color="gray.400"
+                  _hover={{ color: "white", bg: "gray.700" }}
+                  alignSelf="center"
+                  mt={2}
+                >
+                  <HStack gap={1}>
+                    <Text>{showAdvanced ? 'Hide' : 'Show'} Advanced</Text>
+                    {showAdvanced ? <FaChevronUp /> : <FaChevronDown />}
+                  </HStack>
+                </Button>
+
                 {/* Security Notice */}
-                <Box bg="blue.900" p={3} borderRadius="md" border="1px solid" borderColor="blue.600">
-                  <Text color="blue.200" fontSize="xs" textAlign="center">
-                    🔒 This address was generated by your KeepKey device and is safe to use for receiving Bitcoin.
-                  </Text>
+                <Box 
+                  bg="blue.900" 
+                  p={3} 
+                  borderRadius="md" 
+                  border="1px solid" 
+                  borderColor="blue.700"
+                  mt={4}
+                >
+                  <HStack justify="center" gap={2}>
+                    <Text fontSize="lg">🔒</Text>
+                    <Text color="blue.200" fontSize="xs" textAlign="center">
+                      This address was generated by your KeepKey device and is safe to use for receiving Bitcoin.
+                    </Text>
+                  </HStack>
                 </Box>
-              </VStack>
+              </>
             )}
           </VStack>
 
