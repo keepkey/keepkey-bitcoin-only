@@ -77,11 +77,23 @@ function App() {
         
         // Clear any stuck dialogs when showing VaultInterface
         useEffect(() => {
+            console.log('📱 [App] Dialog cleanup effect triggered with:', {
+                loadingStatus,
+                deviceConnected,
+                deviceUpdateComplete,
+                expectedLoadingStatus: "Device ready",
+                statusMatches: loadingStatus === "Device ready",
+                allConditionsMet: loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete
+            });
+            
             if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
                 const queue = getQueue();
+                console.log('📱 [App] All conditions met! Dialog queue length:', queue.length);
                 if (queue.length > 0) {
                     console.warn('📱 [App] Clearing stuck dialogs before showing VaultInterface:', queue.map(d => d.id));
                     hideAll();
+                } else {
+                    console.log('📱 [App] No stuck dialogs to clear');
                 }
             }
         }, [loadingStatus, deviceConnected, deviceUpdateComplete, getQueue, hideAll]);
@@ -160,11 +172,19 @@ function App() {
                     unlistenStatusUpdate = await listen('status:update', (event) => {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const payload = event.payload as any;
-                        console.log('🎯 Frontend received status update:', payload);
+                        console.log('📱 [App] Frontend received status update:', payload);
                         
                         if (payload.status) {
-                            console.log('🎯 Setting loading status to:', payload.status);
+                            console.log('📱 [App] Setting loading status from', loadingStatus, 'to:', payload.status);
                             setLoadingStatus(payload.status);
+                            
+                            // Special check for "Device ready" status
+                            if (payload.status === "Device ready") {
+                                console.log('📱 [App] Received "Device ready" status! Current state:', {
+                                    deviceConnected,
+                                    deviceUpdateComplete
+                                });
+                            }
                         } else {
                             console.log('❌ No status field in payload:', payload);
                         }
@@ -174,11 +194,13 @@ function App() {
                     unlistenDeviceReady = await listen('device:ready', (event) => {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const payload = event.payload as any;
-                        console.log('Device ready event received:', payload);
+                        console.log('📱 [App] Device ready event received:', payload);
                         
                         if (payload.device && payload.features) {
+                            console.log('📱 [App] Setting deviceConnected to true from device:ready event');
                             setDeviceConnected(true);
                             setDeviceInfo({ features: payload.features, error: null });
+                            console.log('📱 [App] Setting deviceUpdateComplete to true from device:ready event');
                             setDeviceUpdateComplete(true);
                             console.log(`✅ Device ready: ${payload.features.label || 'Unlabeled'} v${payload.features.version}`);
                         }
@@ -251,7 +273,15 @@ function App() {
         };
 
         // Show the main vault interface ONLY when device is ready AND updates are complete
+        console.log('📱 [App] Checking if should show VaultInterface:', {
+            loadingStatus,
+            deviceConnected,
+            deviceUpdateComplete,
+            shouldShow: loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete
+        });
+        
         if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
+            console.log('📱 [App] ✅ All conditions met - showing VaultInterface!');
             return <VaultInterface />;
         }
 
@@ -329,8 +359,10 @@ function App() {
               {/* Device update manager - handles bootloader/firmware updates and wallet creation */}
               <DeviceUpdateManager 
                 onComplete={() => {
-                  console.log('Device update/initialization complete');
+                  console.log('📱 [App] DeviceUpdateManager onComplete callback triggered');
+                  console.log('📱 [App] Setting deviceUpdateComplete to true');
                   setDeviceUpdateComplete(true);
+                  console.log('📱 [App] Setting loadingStatus to "Device ready"');
                   setLoadingStatus('Device ready');
                 }}
               />

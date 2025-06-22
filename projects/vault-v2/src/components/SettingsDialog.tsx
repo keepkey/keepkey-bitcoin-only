@@ -1,4 +1,4 @@
-import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex, Link, Stack, Input, Textarea, Spinner } from '@chakra-ui/react'
+import { Tabs, VStack, Text, Button, Icon, Box, HStack, Flex, Link, Stack, Input, Textarea, Spinner, Switch } from '@chakra-ui/react'
 import { 
   DialogRoot,
   DialogContent,
@@ -47,6 +47,11 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [hasCopiedMcp, setHasCopiedMcp] = useState(false)
   const [hasCopiedRest, setHasCopiedRest] = useState(false)
   
+  // API enable/disable state
+  const [apiEnabled, setApiEnabled] = useState(false)
+  const [apiStatus, setApiStatus] = useState<any>(null)
+  const [isTogglingApi, setIsTogglingApi] = useState(false)
+  
   // Seed verification wizard state
   const [verificationWizardOpen, setVerificationWizardOpen] = useState(false)
   const [verificationDeviceId, setVerificationDeviceId] = useState<string | null>(null)
@@ -73,6 +78,55 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   
   const firmwareWizard = useFirmwareUpdateWizard()
   const walletCreationWizard = useWalletCreationWizard()
+  
+  // Load API status
+  const loadApiStatus = async () => {
+    try {
+      const enabled = await invoke<boolean>('get_api_enabled')
+      const status = await invoke<any>('get_api_status')
+      setApiEnabled(enabled)
+      setApiStatus(status)
+      console.log('API Status loaded:', { enabled, status })
+    } catch (error) {
+      console.error('Failed to load API status:', error)
+    }
+  }
+  
+  // Toggle API enable/disable
+  const handleToggleApi = async (enabled: boolean) => {
+    if (isTogglingApi) return
+    
+    setIsTogglingApi(true)
+    try {
+      console.log('Toggling API to:', enabled)
+      
+      // Set the API enabled preference
+      await invoke('set_api_enabled', { enabled })
+      setApiEnabled(enabled)
+      
+      // Show toast about restart
+      const action = enabled ? 'enabled' : 'disabled'
+      showToast(`API ${action}. Restarting application...`, 'info')
+      
+      // Wait a moment for the toast to show, then restart
+      setTimeout(async () => {
+        try {
+          await invoke('restart_app')
+        } catch (error) {
+          console.error('Failed to restart app:', error)
+          // Fallback message if restart fails
+          showToast('Please restart the application manually to apply changes.', 'error')
+        }
+      }, 1000)
+      
+    } catch (error) {
+      console.error('Failed to toggle API:', error)
+      showToast(`Failed to ${enabled ? 'enable' : 'disable'} API: ${error}`, 'error')
+      // Revert the state
+      setApiEnabled(!enabled)
+      setIsTogglingApi(false)
+    }
+  }
   
   // URL copy handlers
   const handleCopyMcp = () => {
@@ -422,6 +476,13 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
       loadLogs()
     }
   }, [isOpen, logLimit])
+  
+  // Load API status when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      loadApiStatus()
+    }
+  }, [isOpen])
 
   // Auto-refresh functionality
   useEffect(() => {
@@ -541,14 +602,11 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   value="mcp"
                   flex="1"
                   gap={2}
-                  color="gray.600"
-                  opacity={0.5}
-                  cursor="not-allowed"
-                  _selected={{ bg: "gray.800", color: "gray.500" }}
-                  _hover={{ color: "gray.600" }}
-                  disabled
+                  color="gray.400"
+                  _selected={{ bg: "gray.700", color: "white" }}
+                  _hover={{ color: "white" }}
                 >
-                  <FaLock size={14} />
+                  <FaGlobe size={16} />
                   MCP
                 </Tabs.Trigger>
               </Tabs.List>
@@ -866,20 +924,65 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
 
               <Tabs.Content value="mcp" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
-                  <HStack gap={2}>
-                    <FaLock color="gray.500" />
-                    <Text color="gray.500" fontSize="lg" fontWeight="semibold">MCP & API Access</Text>
-                    <Text color="red.400" fontSize="sm" fontWeight="medium">(Disabled)</Text>
-                  </HStack>
+                  <Text color="white" fontSize="lg" fontWeight="semibold">MCP & API Access</Text>
+                  
+                  {/* API Enable/Disable Section */}
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                    <VStack align="stretch" gap={3}>
+                      <VStack align="start" gap={1}>
+                        <Text color="white" fontWeight="medium" fontSize="lg">Enable REST & MCP APIs</Text>
+                        <Text color="gray.400" fontSize="sm">
+                          Allow external applications and AI assistants to connect
+                        </Text>
+                      </VStack>
+                      <HStack justify="space-between" align="center">
+                        <HStack gap={2}>
+                          <Box w={2} h={2} bg={apiStatus?.running ? "green.400" : "gray.500"} borderRadius="full" />
+                          <Text 
+                            color={apiStatus?.running ? "green.400" : "gray.500"} 
+                            fontSize="sm" 
+                            fontWeight="medium"
+                          >
+                            {apiStatus?.running ? "Running" : "Stopped"}
+                          </Text>
+                        </HStack>
+                        <Button
+                          size="sm"
+                          colorScheme={apiEnabled ? "red" : "green"}
+                          onClick={() => handleToggleApi(!apiEnabled)}
+                          loading={isTogglingApi}
+                          disabled={isTogglingApi}
+                          minW="80px"
+                        >
+                          {apiEnabled ? "Disable" : "Enable"}
+                        </Button>
+                      </HStack>
+                    </VStack>
+                  </Box>
                   
                   {/* API URLs Section */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.5}>
-                    <VStack align="stretch" gap={4}>
-                      <HStack gap={2}>
-                        <FaLock color="gray.500" size={14} />
-                        <Text color="gray.400" fontWeight="medium">API Endpoints</Text>
-                        <Text color="red.400" fontSize="xs">(Disabled)</Text>
+                  <Box 
+                    bg="gray.800" 
+                    p={4} 
+                    borderRadius="md" 
+                    border="1px solid" 
+                    borderColor="gray.700"
+                    opacity={apiEnabled ? 1 : 0.5}
+                    position="relative"
+                  >
+                    {!apiEnabled && (
+                      <HStack 
+                        position="absolute"
+                        top={4}
+                        right={4}
+                        gap={1}
+                      >
+                        <FaLock size={12} color="gray.500" />
+                        <Text color="gray.500" fontSize="xs" fontWeight="medium">Locked</Text>
                       </HStack>
+                    )}
+                    <VStack align="stretch" gap={4}>
+                      <Text color="white" fontWeight="medium">API Endpoints</Text>
                       
                       {/* REST API */}
                       <Box bg="gray.900" p={3} borderRadius="md">
@@ -893,6 +996,8 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                               color="blue.300"
                               _hover={{ color: "blue.200", textDecoration: "underline" }}
                               flex="1"
+                              opacity={apiEnabled ? 1 : 0.5}
+                              pointerEvents={apiEnabled ? "auto" : "none"}
                             >
                               http://127.0.0.1:1646/docs
                             </Link>
@@ -903,6 +1008,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                               aria-label="Copy REST URL to clipboard"
                               onClick={handleCopyRest}
                               minW="60px"
+                              disabled={!apiEnabled}
                             >
                               {hasCopiedRest ? (
                                 <HStack gap={1}>
@@ -935,6 +1041,8 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                               color="blue.300"
                               _hover={{ color: "blue.200", textDecoration: "underline" }}
                               flex="1"
+                              opacity={apiEnabled ? 1 : 0.5}
+                              pointerEvents={apiEnabled ? "auto" : "none"}
                             >
                               http://127.0.0.1:1646/mcp
                             </Link>
@@ -945,6 +1053,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                               aria-label="Copy MCP URL to clipboard"
                               onClick={handleCopyMcp}
                               minW="60px"
+                              disabled={!apiEnabled}
                             >
                               {hasCopiedMcp ? (
                                 <HStack gap={1}>
@@ -968,36 +1077,45 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   </Box>
 
                   {/* Status Section */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
+                  <Box 
+                    bg="gray.800" 
+                    p={4} 
+                    borderRadius="md" 
+                    border="1px solid" 
+                    borderColor="gray.700"
+                    opacity={apiEnabled ? 1 : 0.5}
+                  >
                     <VStack align="stretch" gap={3}>
-                      <HStack gap={2}>
-                        <FaLock color="gray.500" size={14} />
-                        <Text color="gray.400" fontWeight="medium">Service Status</Text>
-                      </HStack>
+                      <Text color="white" fontWeight="medium">Service Status</Text>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">Backend Server</Text>
+                        <Text color="gray.300" fontSize="sm">API Server</Text>
                         <HStack gap={2}>
-                          <Box w={2} h={2} bg="gray.500" borderRadius="full" />
-                          <Text color="gray.500" fontSize="sm" fontWeight="medium">Offline</Text>
+                          <Box w={2} h={2} bg={apiStatus?.running ? "green.400" : "gray.500"} borderRadius="full" />
+                          <Text 
+                            color={apiStatus?.running ? "green.400" : "gray.500"} 
+                            fontSize="sm" 
+                            fontWeight="medium"
+                          >
+                            {apiStatus?.running ? "Running" : "Stopped"}
+                          </Text>
                         </HStack>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">API Access</Text>
-                        <Text color="gray.500" fontSize="sm" fontFamily="mono">Locked</Text>
+                        <Text color="gray.300" fontSize="sm">API Port</Text>
+                        <Text color="gray.300" fontSize="sm" fontFamily="mono">
+                          {apiStatus?.port || 1646}
+                        </Text>
                       </HStack>
                     </VStack>
                   </Box>
 
                   {/* Information Section */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.4}>
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={2}>
-                      <HStack gap={2}>
-                        <FaLock color="gray.500" size={12} />
-                        <Text color="gray.400" fontSize="sm" fontWeight="medium">About MCP</Text>
-                      </HStack>
-                      <Text color="gray.500" fontSize="xs">
-                        The Model Context Protocol (MCP) would enable AI assistants like Claude to securely interact with your KeepKey device. 
-                        This feature is currently disabled and will be available in a future update.
+                      <Text color="gray.300" fontSize="sm" fontWeight="medium">About MCP & REST API</Text>
+                      <Text color="gray.400" fontSize="xs">
+                        When enabled, the REST API provides programmatic access to your KeepKey device, while the Model Context Protocol (MCP) 
+                        allows AI assistants to help you manage your Bitcoin. The server runs locally on port 1646 and requires a restart after changing settings.
                       </Text>
                     </VStack>
                   </Box>

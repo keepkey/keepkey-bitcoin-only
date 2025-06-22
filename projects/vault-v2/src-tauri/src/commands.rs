@@ -1686,6 +1686,78 @@ pub async fn debug_onboarding_state() -> Result<String, String> {
     Ok(format!("Config: {}", serde_json::to_string_pretty(&config).unwrap_or_else(|_| "Unable to serialize".to_string())))
 }
 
+/// Restart the application
+#[tauri::command]
+pub async fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    log::info!("Restarting application...");
+    app.restart();
+    Ok(())
+}
+
+/// Get API enable status
+#[tauri::command]
+pub async fn get_api_enabled() -> Result<bool, String> {
+    log::debug!("Getting API enabled status");
+    let config = load_config()?;
+    let enabled = config.get("api_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false); // Default to false (disabled) if not set
+    log::debug!("API enabled status: {}", enabled);
+    Ok(enabled)
+}
+
+/// Set API enable status
+#[tauri::command]
+pub async fn set_api_enabled(enabled: bool) -> Result<(), String> {
+    log::info!("Setting API enabled status: {}", enabled);
+    let mut config = load_config()?;
+    
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("api_enabled".to_string(), serde_json::Value::Bool(enabled));
+    }
+    
+    save_config(&config)?;
+    log::info!("API enabled status saved: {}", enabled);
+    Ok(())
+}
+
+/// Get API status (running or not)
+#[tauri::command]
+pub async fn get_api_status() -> Result<serde_json::Value, String> {
+    log::debug!("Getting API status");
+    let config = load_config()?;
+    let enabled = config.get("api_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    
+    // Check if server is actually running by trying to connect to it
+    let is_running = if enabled {
+        // Simple check - try to connect to the port
+        match std::net::TcpStream::connect_timeout(
+            &"127.0.0.1:1646".parse().unwrap(),
+            std::time::Duration::from_millis(100)
+        ) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
+    
+    let status = serde_json::json!({
+        "enabled": enabled,
+        "running": is_running,
+        "port": 1646,
+        "endpoints": {
+            "rest_docs": "http://127.0.0.1:1646/docs",
+            "mcp": "http://127.0.0.1:1646/mcp"
+        }
+    });
+    
+    log::debug!("API status: {}", status);
+    Ok(status)
+}
+
 // Bootloader and firmware update functions have been moved to device/updates.rs for better organization
 
 // PIN Creation Flow Types and Commands
