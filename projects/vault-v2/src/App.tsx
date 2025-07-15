@@ -2,8 +2,7 @@ import { useState, useEffect } from "react";
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import "./App.css";
-import { Box, Text, Flex, Link, Stack, Button, Spinner } from "@chakra-ui/react";
-import { FaCopy, FaCheck } from "react-icons/fa";
+import { Box, Text, Flex, Spinner } from "@chakra-ui/react";
 
 import { Logo } from './components/logo/logo';
 import splashBg from './assets/splash-bg.png'
@@ -43,12 +42,6 @@ interface DeviceFeatures {
 interface DeviceInfoState {
     features: DeviceFeatures | null;
     error: string | null;
-}
-
-interface ApplicationState {
-    status: string;
-    connected: boolean;
-    features: DeviceFeatures | null;
 }
 
 function App() {
@@ -320,13 +313,6 @@ function App() {
         }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
 
         const mcpUrl = "http://127.0.0.1:1646/mcp";
-        const [hasCopied, setHasCopied] = useState(false);
-        
-        const handleCopy = () => {
-          navigator.clipboard.writeText(mcpUrl);
-          setHasCopied(true);
-          setTimeout(() => setHasCopied(false), 2000);
-        };
 
         // Show the main vault interface ONLY when device is ready AND updates are complete
         console.log('📱 [App] Checking if should show VaultInterface:', {
