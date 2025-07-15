@@ -158,7 +158,7 @@ jobs:
     - name: Rust cache
       uses: swatinem/rust-cache@v2
       with:
-        workspaces: './projects/keepkey-vault/src-tauri -> target'
+        workspaces: './projects/vault-v2/src-tauri -> target'
         cache-on-failure: true
 
     - name: Install Bun
@@ -167,7 +167,7 @@ jobs:
         bun-version: latest
 
     - name: Install frontend dependencies
-      working-directory: ./projects/keepkey-vault
+      working-directory: ./projects/vault-v2
       shell: bash
       run: |
         echo "📁 Current directory: $(pwd)"
@@ -175,7 +175,7 @@ jobs:
         bun install
 
     - name: Debug build environment
-      working-directory: ./projects/keepkey-usb
+      working-directory: ./projects/vault-v2
       shell: bash
       run: |
         echo "🔍 Debugging build environment..."
@@ -208,7 +208,7 @@ jobs:
         MACOS_CERTIFICATE_BASE64: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_BASE64 || '' }}
         MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
       with:
-        projectPath: ./projects/keepkey-vault
+        projectPath: ./projects/vault-v2
         tagName: v__VERSION__ # the action automatically replaces __VERSION__ with the app version
         releaseName: 'KeepKey Vault v__VERSION__'
         args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin' || '' }}
@@ -238,7 +238,7 @@ jobs:
       with:
         name: ${{ matrix.platform }}-artifacts
         path: |
-          projects/keepkey-vault/src-tauri/target/release/bundle/
+          projects/vault-v2/src-tauri/target/release/bundle/
         retention-days: 7
 
     - name: Upload build logs
@@ -247,7 +247,7 @@ jobs:
       with:
         name: ${{ matrix.platform }}-build-logs
         path: |
-          projects/keepkey-vault/src-tauri/target/release/build/
+          projects/vault-v2/src-tauri/target/release/build/
         retention-days: 3
 
     - name: Build summary

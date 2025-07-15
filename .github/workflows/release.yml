@@ -133,7 +133,7 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install app dependencies
-        working-directory: ./projects/keepkey-vault
+        working-directory: ./projects/vault-v2
         run: bun install
 
       - name: Build Tauri app
@@ -154,7 +154,7 @@ jobs:
           MACOS_CERTIFICATE_BASE64: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_BASE64 || '' }}
           MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
         with:
-          projectPath: ./projects/keepkey-vault
+          projectPath: ./projects/vault-v2
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
@@ -164,7 +164,7 @@ jobs:
         with:
           name: ${{ matrix.name }}-artifacts
           path: |
-            projects/keepkey-vault/src-tauri/target/release/bundle/
+            projects/vault-v2/src-tauri/target/release/bundle/
           retention-days: 7
 
       - name: Build summary

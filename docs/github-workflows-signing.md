@@ -20,7 +20,7 @@ The GitHub workflows have been updated to gracefully handle missing signing cred
 - Manual workflow dispatch
 
 **Features:**
-- Builds the app for all platforms (macOS, Linux, Windows)
+- Builds the Vault v2 app for all platforms (macOS, Linux, Windows)
 - Checks for signing credentials before building
 - Creates draft releases with appropriate security warnings
 - Provides clear feedback about signing status
