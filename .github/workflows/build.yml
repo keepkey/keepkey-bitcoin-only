@@ -14,6 +14,103 @@ permissions:
   pull-requests: read
 
 jobs:
+  build-kkcli:
+    name: Build kkcli
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            name: kkcli-macos-x86_64
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            name: kkcli-macos-aarch64
+          - platform: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            name: kkcli-linux-x86_64
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: kkcli-linux-x86_64-ubuntu22
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: kkcli-windows-x86_64
+
+    runs-on: ${{ matrix.platform }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Install dependencies (Ubuntu/Debian)
+      if: startsWith(matrix.platform, 'ubuntu-')
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libusb-1.0-0-dev libudev-dev protobuf-compiler
+        
+        # Verify protoc installation
+        protoc --version || (echo "❌ protoc installation failed" && exit 1)
+
+    - name: Install dependencies (macOS)
+      if: matrix.platform == 'macos-latest'
+      run: |
+        echo "Installing macOS dependencies..."
+        # Install protobuf compiler
+        brew install protobuf
+        
+        # Verify protoc installation
+        protoc --version || (echo "❌ protoc installation failed" && exit 1)
+
+    - name: Install dependencies (Windows)
+      if: matrix.platform == 'windows-latest'
+      shell: powershell
+      run: |
+        echo "Installing Windows dependencies..."
+        # Install protobuf compiler
+        choco install protoc --yes
+        
+        # Verify protoc installation
+        protoc --version
+        if ($LASTEXITCODE -ne 0) {
+          echo "❌ protoc installation failed"
+          exit 1
+        }
+
+    - name: Build kkcli
+      working-directory: ./projects/kkcli
+      run: |
+        echo "🔨 Building kkcli for ${{ matrix.target }}..."
+        cargo build --release --target ${{ matrix.target }}
+
+    - name: Package kkcli binary
+      shell: bash
+      run: |
+        echo "📦 Packaging kkcli binary..."
+        cd projects/kkcli/target/${{ matrix.target }}/release
+        
+        if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+          # Windows executable
+          cp kkcli.exe kkcli-${{ matrix.target }}.exe
+          echo "BINARY_NAME=kkcli-${{ matrix.target }}.exe" >> $GITHUB_ENV
+                 else
+           # Unix executable
+           cp kkcli kkcli-${{ matrix.target }}
+           echo "BINARY_NAME=kkcli-${{ matrix.target }}" >> $GITHUB_ENV
+         fi
+
+    - name: Upload kkcli binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}
+        path: projects/kkcli/target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}
+        retention-days: 7
+
   build:
     strategy:
       fail-fast: false
@@ -35,35 +132,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
-        fetch-depth: 0  # Full history for better submodule handling
-
-    - name: Log system information
-      shell: bash
-      run: |
-        echo "🚀 Building KeepKey Vault v5"
-        echo "📦 Platform: ${{ matrix.platform }}"
-        echo "🏃 Runner: ${{ matrix.runner }}"
-        echo "🔧 Node version: 20"
-        echo "🦀 Rust: stable"
-        echo "📁 Working directory: $(pwd)"
-        echo "💾 Available disk space:"
-        df -h || echo "df command not available"
-        echo "🧠 Memory info:"
-        if [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
-          free -h
-          nproc
-        elif [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
-          sysctl -n hw.memsize | awk '{print $1/1024/1024/1024 " GB"}' || echo "Memory info not available"
-          sysctl -n hw.ncpu || echo "CPU info not available"
-        elif [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-          echo "Windows system detected"
-          systeminfo | findstr "Total Physical Memory" || echo "Memory info not available"
-          echo "CPU cores: $NUMBER_OF_PROCESSORS"
-        fi
 
     - name: Check signing credentials
       id: check-signing
@@ -80,13 +151,19 @@ jobs:
           echo "has_tauri_signing=false" >> $GITHUB_OUTPUT
         fi
         
+        if [ -n "${{ secrets.TAURI_KEY_PASSWORD }}" ]; then
+          echo "✅ TAURI_KEY_PASSWORD is set"
+        else
+          echo "⚠️  TAURI_KEY_PASSWORD is NOT set"
+        fi
+        
         # Check for Apple signing credentials (macOS only)
         if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
           if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
             echo "✅ Apple notarization credentials are set"
             echo "has_apple_notarization=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️  Apple notarization credentials are NOT set - will build without notarization"
+            echo "⚠️  Apple notarization credentials are NOT set"
             echo "has_apple_notarization=false" >> $GITHUB_OUTPUT
           fi
           
@@ -94,7 +171,7 @@ jobs:
             echo "✅ Apple code signing credentials are set"
             echo "has_apple_codesigning=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️  Apple code signing credentials are NOT set - will build without code signing"
+            echo "⚠️  Apple code signing credentials are NOT set"
             echo "has_apple_codesigning=false" >> $GITHUB_OUTPUT
           fi
         else
@@ -102,38 +179,51 @@ jobs:
           echo "has_apple_codesigning=false" >> $GITHUB_OUTPUT
         fi
         
+        # Summary
         echo ""
-        echo "📝 To enable signing, add these secrets to your repository:"
-        echo "   - TAURI_PRIVATE_KEY: base64-encoded Tauri signing key"
-        echo "   - TAURI_KEY_PASSWORD: password for the Tauri signing key"
+        echo "🔒 Signing Summary:"
+        echo "   - Tauri Signing: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && '✅ Available' || '❌ Missing' }}"
         if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
-          echo "   - APPLE_ID: Apple developer account email"
-          echo "   - APPLE_PASSWORD: Apple app-specific password"
-          echo "   - APPLE_TEAM_ID: Apple developer team ID"
-          echo "   - MACOS_CERTIFICATE_BASE64: base64-encoded Apple certificate"
-          echo "   - MACOS_CERTIFICATE_PASSWORD: Apple certificate password"
+          echo "   - Apple Code Signing: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && '✅ Available' || '❌ Missing' }}"
+          echo "   - Apple Notarization: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && '✅ Available' || '❌ Missing' }}"
+        fi
+        echo ""
+        
+        if [[ "${{ steps.check-signing.outputs.has_tauri_signing }}" == "false" ]]; then
+          echo "⚠️  Warning: Building without signing - suitable for development only"
+          echo ""
+          echo "To enable signing, add these secrets to your repository:"
+          echo "   - TAURI_PRIVATE_KEY: Your Tauri signing private key"
+          echo "   - TAURI_KEY_PASSWORD: Password for your Tauri signing key"
+          
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            echo "   - APPLE_ID: Apple developer account email"
+            echo "   - APPLE_PASSWORD: Apple app-specific password"
+            echo "   - APPLE_TEAM_ID: Apple developer team ID"
+            echo "   - MACOS_CERTIFICATE_BASE64: base64-encoded Apple certificate"
+            echo "   - MACOS_CERTIFICATE_PASSWORD: Apple certificate password"
+            echo "   - CODESIGN_IDENTITY: Apple code signing identity"
+            echo "   - KEYCHAIN_NAME: macOS keychain name"
+            echo "   - KEYCHAIN_PASSWORD: macOS keychain password"
+          fi
         fi
 
-    - name: Verify submodules
-      shell: bash
-      run: |
-        echo "📋 Checking submodule status..."
-        git submodule status
-        echo "📁 Checking device-protocol directory..."
-        ls -la device-protocol/ || echo "⚠️ device-protocol directory not found"
-        if [ -f "device-protocol/types.proto" ]; then
-          echo "✅ types.proto found"
-        else
-          echo "❌ types.proto NOT found"
-          echo "📁 Contents of device-protocol:"
-          ls -la device-protocol/ || echo "Directory doesn't exist"
-        fi
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
     - name: Install dependencies (Ubuntu/Debian)
       if: startsWith(matrix.platform, 'ubuntu-')
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libudev-dev pkg-config protobuf-compiler
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+          libayatana-appindicator3-dev librsvg2-dev patchelf protobuf-compiler
         
         # Verify protoc installation
         protoc --version || (echo "❌ protoc installation failed" && exit 1)
@@ -143,34 +233,7 @@ jobs:
         lsb_release -a || echo "lsb_release not available"
         uname -a
 
-    - name: Install dependencies (Windows only)
-      if: matrix.platform == 'windows-latest'
-      shell: powershell
-      run: |
-        echo "Installing Windows dependencies..."
-        # Install WebView2 Runtime if needed
-        $webview2Url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
-        $webview2Path = "$env:TEMP\MicrosoftEdgeWebview2Setup.exe"
-        try {
-          Invoke-WebRequest -Uri $webview2Url -OutFile $webview2Path -ErrorAction Stop
-          Start-Process -FilePath $webview2Path -ArgumentList "/silent", "/install" -Wait -ErrorAction Stop
-          echo "✅ WebView2 Runtime installed"
-        } catch {
-          echo "⚠️ WebView2 installation failed or already installed: $_"
-        }
-        
-        # Install protobuf compiler
-        echo "Installing protobuf compiler..."
-        choco install protoc --yes
-        
-        # Verify protoc installation
-        protoc --version
-        if ($LASTEXITCODE -ne 0) {
-          echo "❌ protoc installation failed"
-          exit 1
-        }
-
-    - name: Install dependencies (macOS only)
+    - name: Install dependencies (macOS)
       if: matrix.platform == 'macos-latest'
       run: |
         echo "Installing macOS dependencies..."
@@ -180,31 +243,26 @@ jobs:
         # Verify protoc installation
         protoc --version || (echo "❌ protoc installation failed" && exit 1)
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
-        targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-    - name: Rust cache
-      uses: swatinem/rust-cache@v2
-      with:
-        workspaces: './projects/vault-v2/src-tauri -> target'
-        cache-on-failure: true
+    - name: Install dependencies (Windows)
+      if: matrix.platform == 'windows-latest'
+      shell: powershell
+      run: |
+        echo "Installing Windows dependencies..."
+        # Install protobuf compiler
+        choco install protoc --yes
+        
+        # Verify protoc installation
+        protoc --version
+        if ($LASTEXITCODE -ne 0) {
+          echo "❌ protoc installation failed"
+          exit 1
+        }
 
     - name: Install Bun
       uses: oven-sh/setup-bun@v2
-      with:
-        bun-version: latest
 
-    - name: Install frontend dependencies
+    - name: Install app dependencies
       working-directory: ./projects/vault-v2
-      shell: bash
       run: |
         echo "📁 Current directory: $(pwd)"
         echo "📦 Installing dependencies..."
@@ -279,7 +337,7 @@ jobs:
 
     - name: Upload build logs
       uses: actions/upload-artifact@v4
-      if: failure()  # Upload logs only on failure
+      if: failure()
       with:
         name: ${{ matrix.name }}-build-logs
         path: |
