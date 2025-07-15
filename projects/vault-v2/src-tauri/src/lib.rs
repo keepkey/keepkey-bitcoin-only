@@ -153,7 +153,7 @@ pub fn run() {
             let _event_controller = event_controller::spawn_event_controller(&app.handle());
             
             // Start background log cleanup task
-            let app_handle = app.handle().clone();
+            let _app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(86400)); // 24 hours
                 loop {

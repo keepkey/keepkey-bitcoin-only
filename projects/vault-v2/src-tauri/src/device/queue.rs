@@ -16,6 +16,7 @@ lazy_static::lazy_static! {
 struct DeviceStateCache {
     is_oob_bootloader: bool,
     last_features: Option<keepkey_rust::messages::Features>,
+    #[allow(dead_code)]
     last_update: std::time::Instant,
 }
 
@@ -121,7 +122,7 @@ pub async fn add_to_device_queue(
     };
 
     // Special handling for devices that might be in OOB bootloader mode
-    let is_likely_oob_bootloader = raw_features_opt.is_none() && request_type != "GetFeatures";
+    let _is_likely_oob_bootloader = raw_features_opt.is_none() && request_type != "GetFeatures";
     
     // If we couldn't fetch features AND this isn't a plain GetFeatures request
     if raw_features_opt.is_none() && request_type != "GetFeatures" {

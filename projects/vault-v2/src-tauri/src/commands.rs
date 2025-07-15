@@ -20,6 +20,7 @@ use log;
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
 
 // Change the response storage to use request_id as key instead of device_id
+#[allow(dead_code)]
 type LastResponsesMap = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>;
 
 // Add frontend readiness state and queued events
@@ -195,6 +196,7 @@ pub struct InitializationCheck {
 
 /// Unified device queue command - all device operations go through this
 #[tauri::command]
+#[allow(dead_code)]
 pub async fn reset_device_queue(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,

@@ -64,6 +64,7 @@ pub async fn set_context(payload: axum::Json<SetContextRequest>) -> axum::http::
 }
 
 /// Clear the current device context
+#[allow(dead_code)]
 pub async fn clear_context() -> axum::http::StatusCode {
     let mut context = DEVICE_CONTEXT.lock().unwrap();
     *context = None;
@@ -71,11 +72,13 @@ pub async fn clear_context() -> axum::http::StatusCode {
 }
 
 /// Get the current device ID from context
+#[allow(dead_code)]
 pub fn get_current_device_id() -> Option<String> {
     DEVICE_CONTEXT.lock().unwrap().as_ref().map(|c| c.device_id.clone())
 }
 
 /// Get the current Bitcoin address from context
+#[allow(dead_code)]
 pub fn get_current_btc_address() -> Option<String> {
     DEVICE_CONTEXT.lock().unwrap().as_ref().and_then(|c| c.btc_address.clone())
 }

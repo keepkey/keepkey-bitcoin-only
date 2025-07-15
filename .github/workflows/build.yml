@@ -20,11 +20,17 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            runner: macos-latest  # Use standard runner for now
+            runner: macos-latest
+            name: macOS-universal
+          - platform: ubuntu-24.04
+            runner: ubuntu-24.04
+            name: Ubuntu-24.04-LTS
           - platform: ubuntu-22.04
-            runner: ubuntu-latest  # Use standard runner for now
+            runner: ubuntu-22.04
+            name: Ubuntu-22.04-LTS
           - platform: windows-latest
-            runner: windows-latest  # Use standard runner for now
+            runner: windows-latest
+            name: Windows-x64
 
     runs-on: ${{ matrix.runner }}
     
@@ -123,11 +129,19 @@ jobs:
           ls -la device-protocol/ || echo "Directory doesn't exist"
         fi
 
-    - name: Install dependencies (Ubuntu only)
-      if: matrix.platform == 'ubuntu-22.04'
+    - name: Install dependencies (Ubuntu/Debian)
+      if: startsWith(matrix.platform, 'ubuntu-')
       run: |
         sudo apt-get update
         sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libudev-dev pkg-config protobuf-compiler
+        
+        # Verify protoc installation
+        protoc --version || (echo "❌ protoc installation failed" && exit 1)
+        
+        # Log distribution info for debugging
+        echo "📋 Distribution Info:"
+        lsb_release -a || echo "lsb_release not available"
+        uname -a
 
     - name: Install dependencies (Windows only)
       if: matrix.platform == 'windows-latest'
@@ -148,6 +162,13 @@ jobs:
         # Install protobuf compiler
         echo "Installing protobuf compiler..."
         choco install protoc --yes
+        
+        # Verify protoc installation
+        protoc --version
+        if ($LASTEXITCODE -ne 0) {
+          echo "❌ protoc installation failed"
+          exit 1
+        }
 
     - name: Install dependencies (macOS only)
       if: matrix.platform == 'macos-latest'
@@ -155,6 +176,9 @@ jobs:
         echo "Installing macOS dependencies..."
         # Install protobuf compiler
         brew install protobuf
+        
+        # Verify protoc installation
+        protoc --version || (echo "❌ protoc installation failed" && exit 1)
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -165,6 +189,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt, clippy
+        targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
     - name: Rust cache
       uses: swatinem/rust-cache@v2
@@ -247,7 +272,7 @@ jobs:
       uses: actions/upload-artifact@v4
       if: always()  # Upload even if build fails for debugging
       with:
-        name: ${{ matrix.platform }}-artifacts
+        name: ${{ matrix.name }}-artifacts
         path: |
           projects/vault-v2/src-tauri/target/release/bundle/
         retention-days: 7
@@ -256,7 +281,7 @@ jobs:
       uses: actions/upload-artifact@v4
       if: failure()  # Upload logs only on failure
       with:
-        name: ${{ matrix.platform }}-build-logs
+        name: ${{ matrix.name }}-build-logs
         path: |
           projects/vault-v2/src-tauri/target/release/build/
         retention-days: 3
@@ -264,7 +289,7 @@ jobs:
     - name: Build summary
       shell: bash
       run: |
-        echo "## 📦 Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## 📦 Build Summary - ${{ matrix.name }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Platform**: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Tauri Signing**: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
         if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then

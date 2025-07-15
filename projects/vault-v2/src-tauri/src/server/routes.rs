@@ -97,6 +97,7 @@ pub async fn health_check() -> Json<HealthResponse> {
     ),
     tag = "device"
 )]
+#[allow(dead_code)]
 pub async fn api_get_context() -> Json<context::ContextResponse> {
     context::get_context().await
 }
@@ -111,6 +112,7 @@ pub async fn api_get_context() -> Json<context::ContextResponse> {
     ),
     tag = "device"
 )]
+#[allow(dead_code)]
 pub async fn api_set_context(payload: Json<context::SetContextRequest>) -> StatusCode {
     context::set_context(payload).await
 }
@@ -124,6 +126,7 @@ pub async fn api_set_context(payload: Json<context::SetContextRequest>) -> Statu
     ),
     tag = "device"
 )]
+#[allow(dead_code)]
 pub async fn api_clear_context() -> StatusCode {
     context::clear_context().await
 }

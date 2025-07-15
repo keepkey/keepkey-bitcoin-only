@@ -219,25 +219,18 @@ impl DeviceLogger {
 }
 
 /// Global device logger instance
-static mut DEVICE_LOGGER: Option<DeviceLogger> = None;
-static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
+static DEVICE_LOGGER: std::sync::OnceLock<DeviceLogger> = std::sync::OnceLock::new();
 
 /// Initialize the global device logger
 pub fn init_device_logger() -> Result<(), String> {
-    LOGGER_INIT.call_once(|| {
-        let logger = DeviceLogger::new().expect("Failed to initialize device logger");
-        unsafe {
-            DEVICE_LOGGER = Some(logger);
-        }
-    });
+    let logger = DeviceLogger::new()?;
+    DEVICE_LOGGER.set(logger).map_err(|_| "Device logger already initialized".to_string())?;
     Ok(())
 }
 
 /// Get the global device logger instance
 pub fn get_device_logger() -> &'static DeviceLogger {
-    unsafe {
-        DEVICE_LOGGER.as_ref().expect("Device logger not initialized")
-    }
+    DEVICE_LOGGER.get().expect("Device logger not initialized")
 }
 
 /// Helper function to log a device request

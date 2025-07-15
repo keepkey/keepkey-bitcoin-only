@@ -4,7 +4,7 @@ pub mod context;
 use axum::{
     Router,
     serve,
-    routing::{get, post, delete},
+    routing::{get, post},
 };
 
 use tokio::net::TcpListener;

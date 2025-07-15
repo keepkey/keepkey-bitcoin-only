@@ -41,12 +41,15 @@ jobs:
           - platform: 'macos-latest'
             args: '--target universal-apple-darwin'
             name: 'macOS-universal'
+          - platform: 'ubuntu-24.04'
+            args: ''
+            name: 'Ubuntu-24.04-LTS'
           - platform: 'ubuntu-22.04'
             args: ''
-            name: 'linux-x64'
+            name: 'Ubuntu-22.04-LTS'
           - platform: 'windows-latest'
             args: ''
-            name: 'windows-x64'
+            name: 'Windows-x64'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -122,12 +125,20 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: Install dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Install dependencies (Ubuntu/Debian)
+        if: startsWith(matrix.platform, 'ubuntu-')
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf protobuf-compiler
+          
+          # Verify protoc installation
+          protoc --version || (echo "❌ protoc installation failed" && exit 1)
+          
+          # Log distribution info for debugging
+          echo "📋 Distribution Info:"
+          lsb_release -a || echo "lsb_release not available"
+          uname -a
 
       - name: Install dependencies (macOS)
         if: matrix.platform == 'macos-latest'
@@ -135,6 +146,9 @@ jobs:
           echo "Installing macOS dependencies..."
           # Install protobuf compiler
           brew install protobuf
+          
+          # Verify protoc installation
+          protoc --version || (echo "❌ protoc installation failed" && exit 1)
 
       - name: Install dependencies (Windows)
         if: matrix.platform == 'windows-latest'
@@ -143,6 +157,13 @@ jobs:
           echo "Installing Windows dependencies..."
           # Install protobuf compiler
           choco install protoc --yes
+          
+          # Verify protoc installation
+          protoc --version
+          if ($LASTEXITCODE -ne 0) {
+            echo "❌ protoc installation failed"
+            exit 1
+          }
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
