@@ -127,7 +127,7 @@ jobs:
       if: matrix.platform == 'ubuntu-22.04'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libudev-dev pkg-config
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libudev-dev pkg-config protobuf-compiler
 
     - name: Install dependencies (Windows only)
       if: matrix.platform == 'windows-latest'
@@ -144,6 +144,17 @@ jobs:
         } catch {
           echo "⚠️ WebView2 installation failed or already installed: $_"
         }
+        
+        # Install protobuf compiler
+        echo "Installing protobuf compiler..."
+        choco install protoc --yes
+
+    - name: Install dependencies (macOS only)
+      if: matrix.platform == 'macos-latest'
+      run: |
+        echo "Installing macOS dependencies..."
+        # Install protobuf compiler
+        brew install protobuf
 
     - name: Setup Node.js
       uses: actions/setup-node@v4

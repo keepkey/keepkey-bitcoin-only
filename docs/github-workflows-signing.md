@@ -21,6 +21,7 @@ The GitHub workflows have been updated to gracefully handle missing signing cred
 
 **Features:**
 - Builds the Vault v2 app for all platforms (macOS, Linux, Windows)
+- Installs required dependencies including Protocol Buffers compiler
 - Checks for signing credentials before building
 - Creates draft releases with appropriate security warnings
 - Provides clear feedback about signing status
@@ -116,6 +117,11 @@ Releases automatically include:
 - Provide user confidence
 
 ## Troubleshooting
+
+### Build Fails Due to Missing Dependencies
+- **Protocol Buffers Error**: The workflows automatically install `protoc` (Protocol Buffers compiler)
+- **Platform-specific dependencies**: Each platform installs its required dependencies automatically
+- Check the dependency installation steps in the workflow logs if builds fail
 
 ### Build Fails Due to Missing Credentials
 - Check the "Check signing credentials" step in the workflow logs
