@@ -27,7 +27,7 @@ semver = "1.0"
 kkcli_derive = { path = "./kkcli_derive" }
 lazy_static = "1.4.0"
 mode = "0.4.1"
-passterm = "1.1.6"
+rpassword = "7.4"
 prost = { version = "0.12", default-features = false, features = ["prost-derive"] }
 prost-types = { version = "0.12", default-features = false }
 rand = "0.8.5"

@@ -59,7 +59,7 @@ pub fn standard_message_handler(msg: &Message) -> Result<Option<Message>> {
         Message::PassphraseRequest(_) => {
             eprint!("Enter BIP-39 passphrase: ");
             stdout().flush().unwrap();
-            let passphrase = passterm::read_password()?;
+            let passphrase = rpassword::read_password()?;
             Some(messages::PassphraseAck { passphrase }.into())
         }
         Message::Failure(x) => bail!("Failure: {}", x.message()),
