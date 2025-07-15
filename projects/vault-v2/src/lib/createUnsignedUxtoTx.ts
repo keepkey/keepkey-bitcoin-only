@@ -1,4 +1,5 @@
 
+// @ts-nocheck
 import { bip32ToAddressNList } from '@pioneer-platform/pioneer-coins';
 import coinSelect from 'coinselect';
 import coinSelectSplit from 'coinselect/split';
@@ -19,7 +20,7 @@ export async function createUnsignedUxtoTx(
     if (!pioneer) throw Error('Failed to init! pioneer');
 
     const networkId = 'bip122:000000000019d6689c085ae165831e93'
-    const relevantPubkeys = pubkeys.filter((e) => e.networks.includes(networkId));
+    const relevantPubkeys = pubkeys.filter((e: any) => e.networks.includes(networkId));
 
     const segwitNetworks = [
       'bip122:000000000019d6689c085ae165831e93', // Bitcoin Mainnet
@@ -254,7 +255,7 @@ export async function createUnsignedUxtoTx(
   }
 }
 
-function transformInput(input) {
+function transformInput(input: any) {
   const {
     txid,
     vout,

@@ -53,7 +53,8 @@ macro_rules! kk_message {
 
             fn decode_as_type<B: bytes::Buf>(buf: &mut B, message_type: protos::MessageType) -> Result<Self, ::prost::DecodeError> {
                 Ok(match message_type {
-                    $(protos::MessageType::$x => Message::$x(<protos::$x as ::prost::Message>::decode(buf)?)),*
+                    $(protos::MessageType::$x => Message::$x(<protos::$x as ::prost::Message>::decode(buf)?),)*
+                    _ => return Err(::prost::DecodeError::new("Unsupported message type in Bitcoin-only build")),
                 })
             }
         }

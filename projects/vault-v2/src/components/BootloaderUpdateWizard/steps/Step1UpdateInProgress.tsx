@@ -61,7 +61,7 @@ export const Step1UpdateInProgress: React.FC<StepProps> = ({
 
   return (
     <VStack align="center" justify="center" gap={6} h="100%">
-      <Spinner size="xl" color="orange.500" thickness="4px" speed="0.65s" />
+      <Spinner size="xl" color="orange.500" />
       <VStack align="center">
         <Text fontSize="lg" fontWeight="semibold">Updating Bootloader...</Text>
         <Text fontSize="sm" color="gray.400">{statusMessage}</Text>

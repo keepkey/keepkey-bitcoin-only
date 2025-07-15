@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 fn main() {
     // Reuse the protocol definitions vendored in the original vault project.
-    let proto_dir: PathBuf = ["..", "vault", "src-tauri", "deps", "device-protocol"].iter().collect();
+    let proto_dir: PathBuf = ["..", "kkcli", "deps", "device-protocol"].iter().collect();
 
     // Collect all *.proto files in the directory.
     let protos: Vec<PathBuf> = std::fs::read_dir(&proto_dir)
