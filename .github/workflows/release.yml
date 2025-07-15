@@ -368,31 +368,18 @@ jobs:
             
             const updatedBody = `## KeepKey Vault ${{ github.ref_name }}
             
-            ### 🚀 Features
-            - Institutional-grade self-custody solution
-            - Multi-user governance and approval workflows
-            - Advanced security features with hardware wallet integration
-            - Enterprise API for programmatic access
+            ### Downloads
             
-            ### 📦 Downloads
+            **GUI Application:**
+            - macOS: \`.dmg\`
+            - Windows: \`.msi\`
+            - Linux: \`.AppImage\` or \`.deb\`
             
-            #### KeepKey Vault (GUI Application)
-            - **macOS**: Download the \`.dmg\` file below
-            - **Windows**: Download the \`.msi\` installer
-            - **Linux**: Download the \`.AppImage\` or \`.deb\` package
+            **Command Line:**
+            - Linux: \`kkcli-x86_64-unknown-linux-gnu\`
+            - Windows: \`kkcli-x86_64-pc-windows-msvc.exe\`
             
-            #### KeepKey CLI (Command Line Interface)
-            - **Linux**: \`kkcli-x86_64-unknown-linux-gnu\` (Ubuntu 24.04 / Universal Linux)
-            - **Windows**: \`kkcli-x86_64-pc-windows-msvc.exe\`
-            
-            ${signingStatus}
-            
-            ### 🔧 Build Information
-            - **Tauri Signing**: ${hasSigningSecrets ? '✅ Enabled' : '⚠️ Disabled'}
-            - **Build Date**: ${new Date().toISOString()}
-            - **Git Ref**: ${{ github.ref_name }}
-            
-            ${!hasSigningSecrets ? '\n⚠️ **Development Build**: This is an unsigned development build. For production use, please ensure proper signing certificates are configured.' : ''}`;
+            ${signingStatus}`;
             
             await github.rest.repos.updateRelease({
               owner: context.repo.owner,
