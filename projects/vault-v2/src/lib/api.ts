@@ -467,6 +467,42 @@ export class DeviceQueueAPI {
     }
   }
 
+  /**
+   * Request xpub from device with option to show on device display
+   * @param deviceId - Device ID
+   * @param path - Derivation path
+   * @param showDisplay - Whether to show xpub on device display
+   * @returns Promise<string> - Request ID
+   */
+  static async requestXpubFromDeviceWithDisplay(deviceId: string, path: string, showDisplay: boolean = false): Promise<string> {
+    // Validation: deviceId must be present and valid
+    if (!deviceId || typeof deviceId !== 'string' || deviceId.trim() === '') {
+      throw new Error('DeviceQueueAPI: Cannot queue xpub request: deviceId is missing or invalid.');
+    }
+    // Validation: device must be connected
+    const connected = await DeviceQueueAPI.getConnectedDevices();
+    if (!connected.some(d => getCanonicalDeviceId(d) === deviceId)) {
+      throw new Error(`DeviceQueueAPI: Cannot queue xpub request: device ${deviceId} is not connected.`);
+    }
+    try {
+      const requestId = `xpub_display_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const request = {
+        device_id: deviceId,
+        request_id: requestId,
+        request: {
+          GetXpubWithDisplay: { path, show_display: showDisplay }
+        }
+      };
+      
+      console.log('🔄 Requesting xpub with display from device:', { deviceId, path, showDisplay, requestId });
+      await invoke('add_to_device_queue', { request });
+      return requestId;
+    } catch (error) {
+      console.error('Failed to add xpub with display request to device queue:', error);
+      throw error;
+    }
+  }
+
   static async requestReceiveAddressFromDevice(
     deviceId: string, 
     path: string, 

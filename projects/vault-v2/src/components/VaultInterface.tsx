@@ -10,6 +10,7 @@ import { WalletProvider, useWallet } from '../contexts/WalletContext';
 import Send from './Send';
 import Receive from './Receive';
 import { useDialog } from '../contexts/DialogContext';
+import { AppHeader } from './AppHeader';
 
 type ViewType = 'apps' | 'browser' | 'pairings' | 'vault' | 'assets' | 'send' | 'receive' | 'portfolio';
 
