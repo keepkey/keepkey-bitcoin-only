@@ -1,0 +1,266 @@
+name: Build KeepKey Vault v5
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+# Add permissions for GitHub Actions to create releases
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            runner: macos-latest  # Use standard runner for now
+          - platform: ubuntu-22.04
+            runner: ubuntu-latest  # Use standard runner for now
+          - platform: windows-latest
+            runner: windows-latest  # Use standard runner for now
+
+    runs-on: ${{ matrix.runner }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0  # Full history for better submodule handling
+
+    - name: Log system information
+      shell: bash
+      run: |
+        echo "🚀 Building KeepKey Vault v5"
+        echo "📦 Platform: ${{ matrix.platform }}"
+        echo "🏃 Runner: ${{ matrix.runner }}"
+        echo "🔧 Node version: 20"
+        echo "🦀 Rust: stable"
+        echo "📁 Working directory: $(pwd)"
+        echo "💾 Available disk space:"
+        df -h || echo "df command not available"
+        echo "🧠 Memory info:"
+        if [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
+          free -h
+          nproc
+        elif [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+          sysctl -n hw.memsize | awk '{print $1/1024/1024/1024 " GB"}' || echo "Memory info not available"
+          sysctl -n hw.ncpu || echo "CPU info not available"
+        elif [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+          echo "Windows system detected"
+          systeminfo | findstr "Total Physical Memory" || echo "Memory info not available"
+          echo "CPU cores: $NUMBER_OF_PROCESSORS"
+        fi
+
+    - name: Check signing credentials
+      id: check-signing
+      shell: bash
+      run: |
+        echo "🔍 Checking for signing credentials..."
+        
+        # Check for Tauri signing credentials
+        if [ -n "${{ secrets.TAURI_PRIVATE_KEY }}" ]; then
+          echo "✅ TAURI_PRIVATE_KEY is set"
+          echo "has_tauri_signing=true" >> $GITHUB_OUTPUT
+        else
+          echo "⚠️  TAURI_PRIVATE_KEY is NOT set - will build without Tauri signing"
+          echo "has_tauri_signing=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # Check for Apple signing credentials (macOS only)
+        if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+          if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            echo "✅ Apple notarization credentials are set"
+            echo "has_apple_notarization=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Apple notarization credentials are NOT set - will build without notarization"
+            echo "has_apple_notarization=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ -n "${{ secrets.MACOS_CERTIFICATE_BASE64 }}" ] && [ -n "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" ]; then
+            echo "✅ Apple code signing credentials are set"
+            echo "has_apple_codesigning=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Apple code signing credentials are NOT set - will build without code signing"
+            echo "has_apple_codesigning=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "has_apple_notarization=false" >> $GITHUB_OUTPUT
+          echo "has_apple_codesigning=false" >> $GITHUB_OUTPUT
+        fi
+        
+        echo ""
+        echo "📝 To enable signing, add these secrets to your repository:"
+        echo "   - TAURI_PRIVATE_KEY: base64-encoded Tauri signing key"
+        echo "   - TAURI_KEY_PASSWORD: password for the Tauri signing key"
+        if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+          echo "   - APPLE_ID: Apple developer account email"
+          echo "   - APPLE_PASSWORD: Apple app-specific password"
+          echo "   - APPLE_TEAM_ID: Apple developer team ID"
+          echo "   - MACOS_CERTIFICATE_BASE64: base64-encoded Apple certificate"
+          echo "   - MACOS_CERTIFICATE_PASSWORD: Apple certificate password"
+        fi
+
+    - name: Verify submodules
+      shell: bash
+      run: |
+        echo "📋 Checking submodule status..."
+        git submodule status
+        echo "📁 Checking device-protocol directory..."
+        ls -la device-protocol/ || echo "⚠️ device-protocol directory not found"
+        if [ -f "device-protocol/types.proto" ]; then
+          echo "✅ types.proto found"
+        else
+          echo "❌ types.proto NOT found"
+          echo "📁 Contents of device-protocol:"
+          ls -la device-protocol/ || echo "Directory doesn't exist"
+        fi
+
+    - name: Install dependencies (Ubuntu only)
+      if: matrix.platform == 'ubuntu-22.04'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libudev-dev pkg-config
+
+    - name: Install dependencies (Windows only)
+      if: matrix.platform == 'windows-latest'
+      shell: powershell
+      run: |
+        echo "Installing Windows dependencies..."
+        # Install WebView2 Runtime if needed
+        $webview2Url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+        $webview2Path = "$env:TEMP\MicrosoftEdgeWebview2Setup.exe"
+        try {
+          Invoke-WebRequest -Uri $webview2Url -OutFile $webview2Path -ErrorAction Stop
+          Start-Process -FilePath $webview2Path -ArgumentList "/silent", "/install" -Wait -ErrorAction Stop
+          echo "✅ WebView2 Runtime installed"
+        } catch {
+          echo "⚠️ WebView2 installation failed or already installed: $_"
+        }
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Rust cache
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: './projects/keepkey-vault/src-tauri -> target'
+        cache-on-failure: true
+
+    - name: Install Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Install frontend dependencies
+      working-directory: ./projects/keepkey-vault
+      shell: bash
+      run: |
+        echo "📁 Current directory: $(pwd)"
+        echo "📦 Installing dependencies..."
+        bun install
+
+    - name: Debug build environment
+      working-directory: ./projects/keepkey-usb
+      shell: bash
+      run: |
+        echo "🔍 Debugging build environment..."
+        echo "📁 Current directory: $(pwd)"
+        echo "📁 Parent directories:"
+        ls -la ../
+        ls -la ../../
+        ls -la ../../../
+        echo "📁 Looking for device-protocol:"
+        find ../../../ -name "device-protocol" -type d 2>/dev/null || echo "Not found"
+        echo "📁 Looking for types.proto:"
+        find ../../../ -name "types.proto" 2>/dev/null || echo "Not found"
+
+    - name: Build the app
+      uses: tauri-apps/tauri-action@v0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RUST_BACKTRACE: 1  # Enable Rust backtraces for better error messages
+        # Conditionally set Tauri signing credentials
+        TAURI_SIGNING_PRIVATE_KEY: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && secrets.TAURI_PRIVATE_KEY || '' }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && secrets.TAURI_KEY_PASSWORD || '' }}
+        # Conditionally set Apple notarization credentials
+        APPLE_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_ID || '' }}
+        APPLE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_PASSWORD || '' }}
+        APPLE_TEAM_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        # Conditionally set Apple code signing credentials
+        CODESIGN_IDENTITY: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.CODESIGN_IDENTITY || '' }}
+        KEYCHAIN_NAME: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_NAME || '' }}
+        KEYCHAIN_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_PASSWORD || '' }}
+        MACOS_CERTIFICATE_BASE64: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_BASE64 || '' }}
+        MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
+      with:
+        projectPath: ./projects/keepkey-vault
+        tagName: v__VERSION__ # the action automatically replaces __VERSION__ with the app version
+        releaseName: 'KeepKey Vault v__VERSION__'
+        args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin' || '' }}
+        releaseBody: |
+          ## KeepKey Vault v__VERSION__
+          
+          ### 🚀 Features
+          - Institutional-grade self-custody solution
+          - Multi-user governance and approval workflows
+          - Advanced security features with hardware wallet integration
+          - Enterprise API for programmatic access
+          
+          ### 📦 Downloads
+          - **macOS**: Download the `.dmg` file below
+          - **Windows**: Download the `.msi` installer
+          - **Linux**: Download the `.AppImage` or `.deb` package
+          
+          ### 🔒 Security
+          ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && 'All releases are signed and verified. Please verify signatures before installation.' || '⚠️ This release is NOT signed. Use at your own risk in development environments only.' }}
+        releaseDraft: true
+        prerelease: false
+        includeUpdaterJson: true
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      if: always()  # Upload even if build fails for debugging
+      with:
+        name: ${{ matrix.platform }}-artifacts
+        path: |
+          projects/keepkey-vault/src-tauri/target/release/bundle/
+        retention-days: 7
+
+    - name: Upload build logs
+      uses: actions/upload-artifact@v4
+      if: failure()  # Upload logs only on failure
+      with:
+        name: ${{ matrix.platform }}-build-logs
+        path: |
+          projects/keepkey-vault/src-tauri/target/release/build/
+        retention-days: 3
+
+    - name: Build summary
+      shell: bash
+      run: |
+        echo "## 📦 Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Platform**: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Tauri Signing**: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+          echo "- **Apple Code Signing**: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Apple Notarization**: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ steps.check-signing.outputs.has_tauri_signing }}" == "false" ]]; then
+          echo "⚠️ **Warning**: This build is not signed and should only be used for development/testing purposes." >> $GITHUB_STEP_SUMMARY
+        fi 

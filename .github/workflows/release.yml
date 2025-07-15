@@ -1,0 +1,272 @@
+name: Release KeepKey Vault v5
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.id }}
+      release_upload_url: ${{ steps.create-release.outputs.upload_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Create Release
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: KeepKey Vault ${{ github.ref_name }}
+          draft: true
+          prerelease: false
+
+  build-tauri:
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+            name: 'macOS-universal'
+          - platform: 'ubuntu-22.04'
+            args: ''
+            name: 'linux-x64'
+          - platform: 'windows-latest'
+            args: ''
+            name: 'windows-x64'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Check signing credentials
+        id: check-signing
+        shell: bash
+        run: |
+          echo "🔍 Checking for signing credentials..."
+          
+          # Check for Tauri signing credentials
+          if [ -n "${{ secrets.TAURI_PRIVATE_KEY }}" ]; then
+            echo "✅ TAURI_PRIVATE_KEY is set"
+            echo "has_tauri_signing=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  TAURI_PRIVATE_KEY is NOT set - will build without Tauri signing"
+            echo "has_tauri_signing=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ -n "${{ secrets.TAURI_KEY_PASSWORD }}" ]; then
+            echo "✅ TAURI_KEY_PASSWORD is set"
+          else
+            echo "⚠️  TAURI_KEY_PASSWORD is NOT set"
+          fi
+          
+          # Check for Apple signing credentials (macOS only)
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+              echo "✅ Apple notarization credentials are set"
+              echo "has_apple_notarization=true" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️  Apple notarization credentials are NOT set - will build without notarization"
+              echo "has_apple_notarization=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if [ -n "${{ secrets.MACOS_CERTIFICATE_BASE64 }}" ] && [ -n "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" ]; then
+              echo "✅ Apple code signing credentials are set"
+              echo "has_apple_codesigning=true" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️  Apple code signing credentials are NOT set - will build without code signing"
+              echo "has_apple_codesigning=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "has_apple_notarization=false" >> $GITHUB_OUTPUT
+            echo "has_apple_codesigning=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo ""
+          echo "📝 To enable signing, add these secrets to your repository:"
+          echo "   - TAURI_PRIVATE_KEY: base64-encoded Tauri signing key"
+          echo "   - TAURI_KEY_PASSWORD: password for the Tauri signing key"
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            echo "   - APPLE_ID: Apple developer account email"
+            echo "   - APPLE_PASSWORD: Apple app-specific password"
+            echo "   - APPLE_TEAM_ID: Apple developer team ID"
+            echo "   - MACOS_CERTIFICATE_BASE64: base64-encoded Apple certificate"
+            echo "   - MACOS_CERTIFICATE_PASSWORD: Apple certificate password"
+            echo "   - CODESIGN_IDENTITY: Apple code signing identity"
+            echo "   - KEYCHAIN_NAME: macOS keychain name"
+            echo "   - KEYCHAIN_PASSWORD: macOS keychain password"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install app dependencies
+        working-directory: ./projects/keepkey-vault
+        run: bun install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Conditionally set Tauri signing credentials
+          TAURI_SIGNING_PRIVATE_KEY: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && secrets.TAURI_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && secrets.TAURI_KEY_PASSWORD || '' }}
+          # Conditionally set Apple notarization credentials
+          APPLE_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          # Conditionally set Apple code signing credentials
+          CODESIGN_IDENTITY: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.CODESIGN_IDENTITY || '' }}
+          KEYCHAIN_NAME: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_NAME || '' }}
+          KEYCHAIN_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_PASSWORD || '' }}
+          MACOS_CERTIFICATE_BASE64: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_BASE64 || '' }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
+        with:
+          projectPath: ./projects/keepkey-vault
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()  # Upload even if build fails for debugging
+        with:
+          name: ${{ matrix.name }}-artifacts
+          path: |
+            projects/keepkey-vault/src-tauri/target/release/bundle/
+          retention-days: 7
+
+      - name: Build summary
+        shell: bash
+        run: |
+          echo "## 📦 Build Summary - ${{ matrix.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tauri Signing**: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            echo "- **Apple Code Signing**: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Apple Notarization**: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.check-signing.outputs.has_tauri_signing }}" == "false" ]]; then
+            echo "⚠️ **Warning**: This build is not signed and should only be used for development/testing purposes." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  update-release-notes:
+    needs: [create-release, build-tauri]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Update release notes with signing status
+        uses: actions/github-script@v6
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            // Get the current release to read its body
+            const release = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id
+            });
+            
+            // Check if we have signing secrets (simplified check)
+            const hasSigningSecrets = '${{ secrets.TAURI_PRIVATE_KEY }}' !== '';
+            
+            // Update the release body with signing status
+            const signingStatus = hasSigningSecrets 
+              ? '🔒 **Security**: All releases are signed and verified. Please verify signatures before installation.'
+              : '⚠️ **Security Warning**: This release is NOT signed. Use at your own risk in development environments only.';
+            
+            const updatedBody = `## KeepKey Vault ${{ github.ref_name }}
+            
+            ### 🚀 Features
+            - Institutional-grade self-custody solution
+            - Multi-user governance and approval workflows
+            - Advanced security features with hardware wallet integration
+            - Enterprise API for programmatic access
+            
+            ### 📦 Downloads
+            - **macOS**: Download the \`.dmg\` file below
+            - **Windows**: Download the \`.msi\` installer
+            - **Linux**: Download the \`.AppImage\` or \`.deb\` package
+            
+            ${signingStatus}
+            
+            ### 🔧 Build Information
+            - **Tauri Signing**: ${hasSigningSecrets ? '✅ Enabled' : '⚠️ Disabled'}
+            - **Build Date**: ${new Date().toISOString()}
+            - **Git Ref**: ${{ github.ref_name }}
+            
+            ${!hasSigningSecrets ? '\n⚠️ **Development Build**: This is an unsigned development build. For production use, please ensure proper signing certificates are configured.' : ''}`;
+            
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id,
+              body: updatedBody
+            });
+
+  publish-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    needs: [create-release, build-tauri, update-release-notes]
+    
+    steps:
+      - name: Publish release
+        id: publish-release
+        uses: actions/github-script@v6
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id,
+              draft: false,
+              prerelease: false
+            })
+            
+            console.log('✅ Release published successfully!');
+            
+            // Log signing status for transparency
+            const hasSigningSecrets = '${{ secrets.TAURI_PRIVATE_KEY }}' !== '';
+            if (hasSigningSecrets) {
+              console.log('🔒 Release is signed and verified');
+            } else {
+              console.log('⚠️ Release is NOT signed - development build only');
+            } 
