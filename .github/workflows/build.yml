@@ -23,9 +23,18 @@ jobs:
           - platform: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             name: kkcli-linux-x86_64
+          - platform: ubuntu-24.04
+            target: i686-unknown-linux-gnu
+            name: kkcli-linux-i686
+          - platform: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
+            name: kkcli-linux-aarch64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             name: kkcli-windows-x86_64
+          - platform: windows-latest
+            target: aarch64-pc-windows-msvc
+            name: kkcli-windows-aarch64
 
     runs-on: ${{ matrix.platform }}
     
@@ -117,9 +126,21 @@ jobs:
           - platform: ubuntu-22.04
             runner: ubuntu-22.04
             name: Ubuntu-22.04-LTS
+          - platform: ubuntu-24.04
+            runner: ubuntu-24.04
+            name: Ubuntu-24.04-LTS-i686
+            target: i686-unknown-linux-gnu
+          - platform: ubuntu-24.04
+            runner: ubuntu-24.04
+            name: Ubuntu-24.04-LTS-aarch64
+            target: aarch64-unknown-linux-gnu
           - platform: windows-latest
             runner: windows-latest
             name: Windows-x64
+          - platform: windows-latest
+            runner: windows-latest
+            name: Windows-aarch64
+            target: aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.runner }}
     
@@ -208,7 +229,7 @@ jobs:
     - name: Install Rust stable
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+        targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target || '' }}
 
     - name: Install dependencies (Ubuntu/Debian)
       if: startsWith(matrix.platform, 'ubuntu-')
@@ -298,7 +319,7 @@ jobs:
         projectPath: ./projects/vault-v2
         tagName: v__VERSION__ # the action automatically replaces __VERSION__ with the app version
         releaseName: 'KeepKey Vault v__VERSION__'
-        args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin' || '' }}
+        args: ${{ matrix.platform == 'macos-latest' && '--target universal-apple-darwin' || matrix.target && format('--target {0}', matrix.target) || '' }}
         releaseBody: |
           ## KeepKey Vault v__VERSION__
           

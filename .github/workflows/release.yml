@@ -42,9 +42,18 @@ jobs:
           - platform: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             name: kkcli-linux-x86_64
+          - platform: ubuntu-24.04
+            target: i686-unknown-linux-gnu
+            name: kkcli-linux-i686
+          - platform: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
+            name: kkcli-linux-aarch64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             name: kkcli-windows-x86_64
+          - platform: windows-latest
+            target: aarch64-pc-windows-msvc
+            name: kkcli-windows-aarch64
 
     runs-on: ${{ matrix.platform }}
     
@@ -152,9 +161,18 @@ jobs:
           - platform: 'ubuntu-22.04'
             args: ''
             name: 'Ubuntu-22.04-LTS'
+          - platform: 'ubuntu-24.04'
+            args: '--target i686-unknown-linux-gnu'
+            name: 'Ubuntu-24.04-LTS-i686'
+          - platform: 'ubuntu-24.04'
+            args: '--target aarch64-unknown-linux-gnu'
+            name: 'Ubuntu-24.04-LTS-aarch64'
           - platform: 'windows-latest'
             args: ''
             name: 'Windows-x64'
+          - platform: 'windows-latest'
+            args: '--target aarch64-pc-windows-msvc'
+            name: 'Windows-aarch64'
 
     runs-on: ${{ matrix.platform }}
     steps:
