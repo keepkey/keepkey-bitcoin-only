@@ -9,6 +9,12 @@ use super::Transport;
 const KEEPKEY_VID: u16 = 0x2B24;
 const KEEPKEY_PIDS: &[u16] = &[0x0001, 0x0002]; // Legacy and bootloader PIDs
 const HID_REPORT_SIZE: usize = 64;
+
+// Windows HID fix: Use different report ID handling for Windows vs other platforms
+#[cfg(target_os = "windows")]
+const REPORT_ID: u8 = 0; // Windows sometimes needs explicit 0 report ID
+
+#[cfg(not(target_os = "windows"))]
 const REPORT_ID: u8 = 0;
 
 #[derive(Debug, Error)]
@@ -227,17 +233,44 @@ impl Transport for HidTransport {
         
         // Prepare first packet with v4 format (EXACT MATCH TO WORKING VAULT V1)
         let mut first_packet = vec![0u8; HID_REPORT_SIZE];
-        first_packet[0] = REPORT_ID;  // 0x00 - REQUIRED BY VAULT V1!
-        first_packet[1] = 0x3f;
-        first_packet[2] = 0x23;
-        first_packet[3] = 0x23;
-        first_packet[4..6].copy_from_slice(msg_type);
-        first_packet[6..10].copy_from_slice(msg_length);
         
-        // Copy as much data as fits in first packet
-        let first_chunk_size = (HID_REPORT_SIZE - 10).min(msg_data.len());
-        if first_chunk_size > 0 {
-            first_packet[10..10 + first_chunk_size].copy_from_slice(&msg_data[..first_chunk_size]);
+        // Calculate chunk size based on platform
+        let first_chunk_size;
+        
+        // Windows HID fix: Different packet format for Windows
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: Start directly with protocol without report ID
+            first_packet[0] = 0x3f;
+            first_packet[1] = 0x23;
+            first_packet[2] = 0x23;
+            first_packet[3..5].copy_from_slice(msg_type);
+            first_packet[5..9].copy_from_slice(msg_length);
+            
+            // Copy as much data as fits in first packet (Windows format)
+            first_chunk_size = (HID_REPORT_SIZE - 9).min(msg_data.len());
+            if first_chunk_size > 0 {
+                first_packet[9..9 + first_chunk_size].copy_from_slice(&msg_data[..first_chunk_size]);
+            }
+            
+            info!("🪟 Windows HID: Using direct protocol format (no report ID)");
+        }
+        
+        // Non-Windows: Use original format with report ID
+        #[cfg(not(target_os = "windows"))]
+        {
+            first_packet[0] = REPORT_ID;  // 0x00 - REQUIRED BY VAULT V1!
+            first_packet[1] = 0x3f;
+            first_packet[2] = 0x23;
+            first_packet[3] = 0x23;
+            first_packet[4..6].copy_from_slice(msg_type);
+            first_packet[6..10].copy_from_slice(msg_length);
+            
+            // Copy as much data as fits in first packet
+            first_chunk_size = (HID_REPORT_SIZE - 10).min(msg_data.len());
+            if first_chunk_size > 0 {
+                first_packet[10..10 + first_chunk_size].copy_from_slice(&msg_data[..first_chunk_size]);
+            }
         }
         
         debug!("HID Write: Sending first packet (64 bytes), data chunk size: {}", first_chunk_size);
