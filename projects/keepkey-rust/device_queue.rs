@@ -849,18 +849,31 @@ impl DeviceQueueFactory {
         info!("🔍 Detecting transport type for device {} (VID: {:04x}, PID: {:04x})", 
               device_info.unique_id, device_info.vid, device_info.pid);
         
-        // Legacy devices (PID 0x0001) must use HID
-        if device_info.pid == 0x0001 {
-            info!("🎛️ Legacy device (PID 0x0001) detected - using HID transport");
+        // WINDOWS FIDO BLOCKLIST FIX: Always use HID on Windows to avoid FIDO filter driver
+        #[cfg(target_os = "windows")]
+        {
+            info!("🪟 Windows detected - forcing HID transport to avoid FIDO/U2F blocklist issues");
+            info!("   📝 Windows CTAP-HID filter blocks USB access for KeepKey devices");
+            info!("   ✅ HID transport bypasses this restriction and works reliably");
             return Ok(TransportType::HidOnly);
         }
         
-        // Modern devices (PID 0x0002 and newer) should use USB transport, NOT HID
-        // PID 0x0002 devices have interrupt endpoints and use USB transport (not WebUSB with bulk endpoints)
-        if device_info.pid == 0x0002 {
-            info!("🔌 Modern KeepKey device (PID 0x0002) detected - using USB transport");
-            info!("   📡 Firmware 7.10.0+ devices use USB transport with interrupt endpoints");
-            return Ok(TransportType::TraditionalUsb);
+        // Non-Windows transport detection logic
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Legacy devices (PID 0x0001) must use HID
+            if device_info.pid == 0x0001 {
+                info!("🎛️ Legacy device (PID 0x0001) detected - using HID transport");
+                return Ok(TransportType::HidOnly);
+            }
+            
+            // Modern devices (PID 0x0002 and newer) should use USB transport, NOT HID
+            // PID 0x0002 devices have interrupt endpoints and use USB transport (not WebUSB with bulk endpoints)
+            if device_info.pid == 0x0002 {
+                info!("🔌 Modern KeepKey device (PID 0x0002) detected - using USB transport");
+                info!("   📡 Firmware 7.10.0+ devices use USB transport with interrupt endpoints");
+                return Ok(TransportType::TraditionalUsb);
+            }
         }
         
         // For other newer device PIDs, inspect the endpoints
