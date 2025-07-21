@@ -162,6 +162,13 @@ pub fn detect_device_state(features: &DeviceFeatures, raw_len: Option<usize>) ->
 pub fn get_device_features_for_device(target_device: &FriendlyUsbDevice) -> Result<DeviceFeatures> {
     log::info!("{TAG} Getting features for device: {} ({})", target_device.name, target_device.unique_id);
     
+    // Add Windows FIDO blocklist warning
+    #[cfg(target_os = "windows")]
+    {
+        log::info!("{TAG} 🪟 Windows detected - USB access may be blocked by FIDO/U2F filter driver");
+        log::info!("{TAG}    If USB fails, will automatically use HID transport");
+    }
+    
     let devices = list_devices();
     
     let device = if let Some(serial) = &target_device.serial_number {
