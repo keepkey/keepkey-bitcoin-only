@@ -10,6 +10,7 @@ import { WalletProvider, useWallet } from '../contexts/WalletContext';
 import Send from './Send';
 import Receive from './Receive';
 import { useDialog } from '../contexts/DialogContext';
+import packageJson from '../../package.json';
 // import { AppHeader } from './AppHeader';
 
 type ViewType = 'apps' | 'browser' | 'pairings' | 'vault' | 'assets' | 'send' | 'receive' | 'portfolio';
@@ -157,6 +158,28 @@ export const VaultInterface = () => {
       {/* Main Vault Interface - Hidden when settings is open */}
       {!isSettingsOpen && (
         <Box height="100%" display="flex" flexDirection="column">
+          {/* Top Header Bar */}
+          <Box
+            height="40px"
+            bg="rgba(26, 32, 44, 0.95)"
+            backdropFilter="blur(10px)"
+            borderBottom="1px solid"
+            borderColor="gray.700"
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            px={4}
+          >
+            <Text 
+              fontSize="sm" 
+              fontWeight="semibold" 
+              color="gray.300"
+              letterSpacing="wide"
+            >
+              KeepKey Vault v{packageJson.version}
+            </Text>
+          </Box>
+          
           {/* Main Content Area */}
           <Box flex="1" overflow="hidden">
             {renderCurrentView()}

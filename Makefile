@@ -73,6 +73,7 @@ vault: keepkey-rust check-deps
 
 # Build vault for production
 vault-build: keepkey-rust check-deps
+    lsof -ti:1420 | xargs kill -9 \
 	@echo "🔧 Building vault-v2 for production with latest keepkey-rust..."
 	cd projects/vault-v2 && bun i && tauri build
 
