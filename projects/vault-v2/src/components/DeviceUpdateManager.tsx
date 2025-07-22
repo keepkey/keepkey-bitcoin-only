@@ -495,10 +495,11 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         />
       )}
 
-      {showFirmwareUpdate && deviceStatus.firmwareCheck && (
+      {showFirmwareUpdate && deviceStatus?.firmwareCheck && (
         <FirmwareUpdateDialog
           isOpen={showFirmwareUpdate}
           firmwareCheck={deviceStatus.firmwareCheck}
+          deviceStatus={deviceStatus}
           onUpdateStart={handleFirmwareUpdate}
           onSkip={handleFirmwareSkip}
           onRemindLater={handleFirmwareRemindLater}

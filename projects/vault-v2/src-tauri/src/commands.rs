@@ -1195,7 +1195,7 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
         // Set bootloader status regardless of current mode
         if current_bootloader_version != "Unknown bootloader" {
             status.bootloader_check = Some(BootloaderCheck {
-                current_version: current_bootloader_version,
+                current_version: current_bootloader_version.clone(),
                 latest_version: latest_bootloader_version,
                 needs_update: needs_bootloader_update,
             });
@@ -1203,32 +1203,39 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
         }
         
         // Check firmware version 
-        let current_version = features.version.clone();
-        let latest_version = "7.10.0".to_string(); // Latest firmware version
-        
-        let needs_firmware_update = if features.bootloader_mode {
-            // CRITICAL: Devices in bootloader mode need firmware updates to get out of bootloader mode
-            // Only exception is if they have an old bootloader (1.x) that needs bootloader update first
-            !current_version.starts_with("1.")
+        let (current_firmware_version, needs_firmware_update) = if features.bootloader_mode {
+            // Device is in bootloader mode - we need to infer the firmware version
+            if current_bootloader_version.starts_with("1.") {
+                // OOB bootloader - no firmware installed yet, so firmware version is unknown
+                ("1.0.3".to_string(), true) // Treat as very old firmware needing update
+            } else {
+                // Modern bootloader - firmware was erased to enter bootloader mode
+                // We should have the last known firmware version, but if not, assume needs update
+                ("Unknown".to_string(), true) // Firmware needs to be installed
+            }
         } else {
-            // Normal mode - check if firmware needs update
-            if current_version.starts_with("1.0.") {
+            // Device is in normal firmware mode - use the actual firmware version
+            let current_fw_version = features.version.clone();
+            let needs_update = if current_fw_version.starts_with("1.0.") {
                 // OOB device - firmware update only after bootloader update
                 false // Bootloader has higher priority
             } else {
-                !current_version.starts_with("7.10.")
-            }
+                !current_fw_version.starts_with("7.10.")
+            };
+            (current_fw_version, needs_update)
         };
         
+        let latest_version = "7.10.0".to_string(); // Latest firmware version
+        
         status.firmware_check = Some(FirmwareCheck {
-            current_version: current_version.clone(),
+            current_version: current_firmware_version.clone(),
             latest_version: latest_version.clone(),
             needs_update: needs_firmware_update,
         });
         status.needs_firmware_update = needs_firmware_update;
         
         println!("🔧 Firmware check: {} vs {} -> needs update: {} (bootloader_mode: {})", 
-                current_version, latest_version, needs_firmware_update, features.bootloader_mode);
+                current_firmware_version, latest_version, needs_firmware_update, features.bootloader_mode);
         
         // Check initialization status
         if !features.bootloader_mode {
