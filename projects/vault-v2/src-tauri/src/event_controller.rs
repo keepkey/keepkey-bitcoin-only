@@ -465,7 +465,7 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
         }
         
         // Try to get features with a timeout using the shared worker
-        match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
+        match tokio::time::timeout(Duration::from_secs(30), queue_handle.get_features()).await {
             Ok(Ok(raw_features)) => {
                 // Convert features to our DeviceFeatures format
                 let device_features = crate::commands::convert_features_to_device_features(raw_features);
@@ -517,7 +517,7 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
         );
         
         // Try to get features with a timeout
-        match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
+        match tokio::time::timeout(Duration::from_secs(30), queue_handle.get_features()).await {
             Ok(Ok(raw_features)) => {
                 // Convert features to our DeviceFeatures format
                 let device_features = crate::commands::convert_features_to_device_features(raw_features);

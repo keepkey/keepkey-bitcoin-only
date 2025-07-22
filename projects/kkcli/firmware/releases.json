@@ -6,9 +6,9 @@
       "hash": "958764cf3baa53eec0002eab9c54e02ce6f5fdab71e7efbbe723f958e26ff419"
     },
     "bootloader": {
-      "version": "v2.1.4",
-      "url": "bl_v2.1.4/blupdater.bin",
-      "hash": "6bb7cfd28262fcd61c450fdc3f6932650bdf16a134ab6c1bc6f90b0d1578e620"
+      "version": "v1.1.0",
+      "url": "bl_v1.1.0/blupdater.bin",
+      "hash": "placeholder_hash_for_v1.1.0"
     },
     "updater": {
       "version": "v2.1.4"
@@ -21,9 +21,9 @@
       "hash": "958764cf3baa53eec0002eab9c54e02ce6f5fdab71e7efbbe723f958e26ff419"
     },
     "bootloader": {
-      "version": "v2.1.4",
-      "url": "bl_v2.1.4/blupdater.bin",
-      "hash": "6bb7cfd28262fcd61c450fdc3f6932650bdf16a134ab6c1bc6f90b0d1578e620"
+      "version": "v1.1.0",
+      "url": "bl_v1.1.0/blupdater.bin",
+      "hash": "placeholder_hash_for_v1.1.0"
     },
     "updater": {
       "version": "v2.1.4"

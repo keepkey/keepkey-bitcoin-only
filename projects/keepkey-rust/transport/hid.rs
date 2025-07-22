@@ -156,6 +156,12 @@ impl HidTransport {
                 match info.open_device(&api) {
                     Ok(device) => {
                         info!("Successfully opened KeepKey device with serial: {:?}", info.serial_number());
+                        // Windows HID fix: Set HID transport mode for timeout handling
+                        #[cfg(target_os = "windows")]
+                        {
+                            info!("🪟 Windows HID: Setting HID transport mode for longer timeouts");
+                            crate::messages::Message::set_hid_transport_mode(true);
+                        }
                         return Ok(Self { device });
                     }
                     Err(e) => {
@@ -192,6 +198,13 @@ impl HidTransport {
                 )
             }
         })?;
+        
+        // Windows HID fix: Set HID transport mode for timeout handling  
+        #[cfg(target_os = "windows")]
+        {
+            info!("🪟 Windows HID: Setting HID transport mode for longer timeouts");
+            crate::messages::Message::set_hid_transport_mode(true);
+        }
         
         Ok(Self { device })
     }

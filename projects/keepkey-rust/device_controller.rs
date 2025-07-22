@@ -14,7 +14,8 @@ use crate::blocking_actions::{BlockingActionsState, BlockingAction};
 
 const FEATURE_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const DEVICE_SCAN_INTERVAL: Duration = Duration::from_secs(2);
-const FEATURE_FETCH_TIMEOUT: Duration = Duration::from_secs(10); // Increased for better device compatibility
+// Windows HID fix: Increased timeout for better Windows HID compatibility
+const FEATURE_FETCH_TIMEOUT: Duration = Duration::from_secs(30); // Increased from 20 to 30 seconds to match Windows HID timeout
 
 #[derive(Debug, Clone)]
 pub enum DeviceControllerEvent {

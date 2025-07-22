@@ -492,7 +492,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
         return `${operation.replace(/_/g, ' ')}: ${deviceShort}`
       }
       
-      return `${log.direction}: ${JSON.stringify(log.data).substring(0, 100)}...`
+      return `${log.direction}: ${log.data ? JSON.stringify(log.data).substring(0, 100) : 'No data'}...`
     }
   }
 

@@ -108,6 +108,13 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       }
     } else if (status.needsFirmwareUpdate && status.firmwareCheck) {
       console.log('Device needs firmware update')
+      console.log('🔧 DeviceUpdateManager: Firmware update needed:', {
+        needsFirmwareUpdate: status.needsFirmwareUpdate,
+        firmwareCheck: status.firmwareCheck,
+        currentVersion: status.firmwareCheck?.currentVersion,
+        latestVersion: status.firmwareCheck?.latestVersion,
+        features: status.features
+      })
       setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(true)
@@ -166,6 +173,17 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         console.log('🔧 DeviceUpdateManager: Device features updated event received:', event.payload)
         const { status } = event.payload
         console.log('🔧 DeviceUpdateManager: Extracted status from event:', status)
+        console.log('🔧 DeviceUpdateManager: Device status details:', {
+          deviceId: status.deviceId,
+          connected: status.connected,
+          needsBootloaderUpdate: status.needsBootloaderUpdate,
+          needsFirmwareUpdate: status.needsFirmwareUpdate,
+          needsInitialization: status.needsInitialization,
+          needsPinUnlock: status.needsPinUnlock,
+          firmwareCheck: status.firmwareCheck,
+          bootloaderCheck: status.bootloaderCheck,
+          features: status.features
+        })
         
         // Check if recovery is in progress - if so, be very careful about state changes
         if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
@@ -477,10 +495,11 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         />
       )}
 
-      {showFirmwareUpdate && deviceStatus.firmwareCheck && (
+      {showFirmwareUpdate && deviceStatus?.firmwareCheck && (
         <FirmwareUpdateDialog
           isOpen={showFirmwareUpdate}
           firmwareCheck={deviceStatus.firmwareCheck}
+          deviceStatus={deviceStatus}
           onUpdateStart={handleFirmwareUpdate}
           onSkip={handleFirmwareSkip}
           onRemindLater={handleFirmwareRemindLater}
