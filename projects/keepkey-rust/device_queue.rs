@@ -849,31 +849,25 @@ impl DeviceQueueFactory {
         info!("🔍 Detecting transport type for device {} (VID: {:04x}, PID: {:04x})", 
               device_info.unique_id, device_info.vid, device_info.pid);
         
-        // WINDOWS FIDO BLOCKLIST FIX: Always use HID on Windows to avoid FIDO filter driver
-        #[cfg(target_os = "windows")]
-        {
-            info!("🪟 Windows detected - forcing HID transport to avoid FIDO/U2F blocklist issues");
-            info!("   📝 Windows CTAP-HID filter blocks USB access for KeepKey devices");
-            info!("   ✅ HID transport bypasses this restriction and works reliably");
+        // Legacy devices (PID 0x0001) must use HID on all platforms
+        if device_info.pid == 0x0001 {
+            info!("🎛️ Legacy device (PID 0x0001) detected - using HID transport");
             return Ok(TransportType::HidOnly);
         }
         
-        // Non-Windows transport detection logic
-        #[cfg(not(target_os = "windows"))]
-        {
-            // Legacy devices (PID 0x0001) must use HID
-            if device_info.pid == 0x0001 {
-                info!("🎛️ Legacy device (PID 0x0001) detected - using HID transport");
-                return Ok(TransportType::HidOnly);
+        // Modern devices (PID 0x0002 and newer) should prefer USB transport
+        // PID 0x0002 devices have interrupt endpoints and use USB transport (not WebUSB with bulk endpoints)
+        if device_info.pid == 0x0002 {
+            info!("🔌 Modern KeepKey device (PID 0x0002) detected - preferring USB transport");
+            info!("   📡 Firmware 7.10.0+ devices use USB transport with interrupt endpoints");
+            
+            // On Windows, we'll try USB first and let the fallback mechanism handle FIDO blocklist issues
+            #[cfg(target_os = "windows")]
+            {
+                info!("🪟 Windows detected - will try USB first, HID fallback available if FIDO blocklist blocks access");
             }
             
-            // Modern devices (PID 0x0002 and newer) should use USB transport, NOT HID
-            // PID 0x0002 devices have interrupt endpoints and use USB transport (not WebUSB with bulk endpoints)
-            if device_info.pid == 0x0002 {
-                info!("🔌 Modern KeepKey device (PID 0x0002) detected - using USB transport");
-                info!("   📡 Firmware 7.10.0+ devices use USB transport with interrupt endpoints");
-                return Ok(TransportType::TraditionalUsb);
-            }
+            return Ok(TransportType::TraditionalUsb);
         }
         
         // For other newer device PIDs, inspect the endpoints
@@ -929,6 +923,18 @@ impl DeviceQueueFactory {
     
     /// Try HID transport as fallback
     fn try_hid_fallback(device_info: &FriendlyUsbDevice, previous_error: String) -> Result<Box<dyn ProtocolAdapter + Send>> {
+        // Check if this is a Windows FIDO blocklist error
+        #[cfg(target_os = "windows")]
+        {
+            let error_lower = previous_error.to_lowercase();
+            if error_lower.contains("access") || error_lower.contains("denied") || 
+               error_lower.contains("permission") || error_lower.contains("0x00000005") {
+                info!("🪟 Windows FIDO blocklist detected - switching to HID transport");
+                info!("   📝 Windows CTAP-HID filter is blocking USB access");
+                info!("   ✅ Using HID transport to bypass FIDO restrictions");
+            }
+        }
+        
         match crate::transport::HidTransport::new_for_device(device_info.serial_number.as_deref()) {
             Ok(hid_transport) => {
                 info!("✅ Created HID transport for device {}", device_info.unique_id);

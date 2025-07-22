@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::fs;
 use serde_json::Value;
 use log;
+use std::time::Duration;
 
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
@@ -201,11 +202,14 @@ pub async fn reset_device_queue(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,
 ) -> Result<(), String> {
-    println!("♻️  Resetting device queue for {}", device_id);
+    println!("🔄 Resetting device queue for: {}", device_id);
+    
     let mut manager = queue_manager.lock().await;
     if let Some(handle) = manager.remove(&device_id) {
         let _ = handle.shutdown().await;
+        println!("✅ Device queue reset for: {}", device_id);
     }
+    
     Ok(())
 }
 
@@ -222,53 +226,31 @@ pub async fn get_queue_status(
     let manager = queue_manager.lock().await;
     let responses = last_responses.lock().await;
     
-    println!("[QUEUE_STATUS_CALL] get_queue_status called for device: {:?}", device_id);
-    if let Some(device_id) = device_id {
-        // Find the most recent response for this device_id from all stored responses
-        let mut last_response = None;
-        let mut newest_timestamp = 0u64;
-        
-        for (request_id, response) in responses.iter() {
-            // Check if this response belongs to the requested device
-            if match response {
-                DeviceResponse::Xpub { device_id: resp_device_id, .. } => resp_device_id == &device_id,
-                DeviceResponse::Address { device_id: resp_device_id, .. } => resp_device_id == &device_id,
-                DeviceResponse::Features { device_id: resp_device_id, .. } => resp_device_id == &device_id,
-                DeviceResponse::SignedTransaction { device_id: resp_device_id, .. } => resp_device_id == &device_id,
-                DeviceResponse::Raw { device_id: resp_device_id, .. } => resp_device_id == &device_id,
-            } {
-                // For now, use a simple heuristic: the response with the most recent request_id (timestamp-based)
-                // Extract timestamp from request_id format like "sign_tx_1750283052093_4af7u3ebr"
-                if let Some(timestamp_str) = request_id.split('_').nth(2) {
-                    if let Ok(timestamp) = timestamp_str.parse::<u64>() {
-                        if timestamp > newest_timestamp {
-                            newest_timestamp = timestamp;
-                            last_response = Some(response.clone());
-                            if let DeviceResponse::SignedTransaction { request_id, .. } = response {
-                                println!("[QUEUE_STATUS_SIGNED_TX] Returning SignedTransaction for request_id: {} in get_queue_status for device_id: {}", request_id, device_id);
-                            }
-                        }
-                    }
-                }
-            }
+    match device_id {
+        Some(id) => {
+            let active = if manager.contains_key(&id) { 1 } else { 0 };
+            let last_response = responses.get(&id).cloned();
+            
+            Ok(QueueStatus {
+                device_id: Some(id.clone()),
+                total_queued: active,
+                active_operations: active,
+                status: if active > 0 { "active".to_string() } else { "idle".to_string() },
+                last_response,
+            })
         }
-        
-        Ok(QueueStatus {
-            device_id: Some(device_id.clone()),
-            total_queued: 0, // Would need to track this per device
-            active_operations: if manager.contains_key(&device_id) { 1 } else { 0 },
-            status: if manager.contains_key(&device_id) { "active".to_string() } else { "idle".to_string() },
-            last_response,
-        })
-    } else {
-        // Return general status
-        Ok(QueueStatus {
-            device_id: None,
-            total_queued: 0,
-            active_operations: manager.len(),
-            status: if manager.is_empty() { "idle".to_string() } else { "active".to_string() },
-            last_response: None,
-        })
+        None => {
+            let total = manager.len();
+            let last_response = responses.values().next().cloned();
+            
+            Ok(QueueStatus {
+                device_id: None,
+                total_queued: total,
+                active_operations: total,
+                status: if total > 0 { "active".to_string() } else { "idle".to_string() },
+                last_response,
+            })
+        }
     }
 }
 
@@ -392,16 +374,55 @@ pub async fn get_device_status(
         };
         
         // Fetch device features through the queue
-        let features = match queue_handle.get_features().await {
-            Ok(raw_features) => {
+        let features = match tokio::time::timeout(
+            Duration::from_secs(30), // Increased from 15 to 30 seconds to match Windows HID timeout
+            queue_handle.get_features()
+        ).await {
+            Ok(Ok(raw_features)) => {
                 // Convert from raw Features message to DeviceFeatures
                 Some(convert_features_to_device_features(raw_features))
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 println!("Failed to get features for device {}: {}", device_id, e);
+                
+                // Log failed feature retrieval
+                let device_response_data = serde_json::json!({
+                    "error": format!("Failed to get features: {}", e),
+                    "operation": "get_features_for_device"
+                });
+                
+                if let Err(log_err) = log_device_response(&device_id, &request_id, false, &device_response_data, Some(&format!("Failed to get features: {}", e))).await {
+                    eprintln!("Failed to log device features error response: {}", log_err);
+                }
+                
+                None
+            }
+            Err(_) => {
+                println!("Timeout getting features for device {}", device_id);
+                
+                // Log timeout
+                let device_response_data = serde_json::json!({
+                    "error": "Timeout getting features",
+                    "operation": "get_features_for_device"
+                });
+                
+                if let Err(e) = log_device_response(&device_id, &request_id, false, &device_response_data, Some("Timeout getting features")).await {
+                    eprintln!("Failed to log device features timeout response: {}", e);
+                }
+                
                 None
             }
         };
+        
+        // Log successful feature retrieval
+        let device_response_data = serde_json::json!({
+            "features": features,
+            "operation": "get_features_for_device"
+        });
+        
+        if let Err(e) = log_device_response(&device_id, &request_id, true, &device_response_data, None).await {
+            eprintln!("Failed to log device features response: {}", e);
+        }
         
         // Evaluate device status
         let status = evaluate_device_status(device_id.clone(), features.as_ref());
@@ -420,14 +441,14 @@ pub async fn get_device_status(
     } else {
         println!("Device {} not found", device_id);
         
-        // Log the not found response
-        let response_data = serde_json::json!({
+        // Log device not found
+        let error_data = serde_json::json!({
             "error": "Device not found",
             "operation": "get_device_status"
         });
         
-        if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some("Device not found")).await {
-            eprintln!("Failed to log get device status error response: {}", e);
+        if let Err(e) = log_device_response(&device_id, &request_id, false, &error_data, Some("Device not found")).await {
+            eprintln!("Failed to log device not found response: {}", e);
         }
         
         Ok(None)
@@ -495,8 +516,11 @@ pub async fn get_device_info_by_id(
     };
     
     // Fetch device features through the queue
-    match queue_handle.get_features().await {
-        Ok(raw_features) => {
+    match tokio::time::timeout(
+        Duration::from_secs(30), // Increased from 15 to 30 seconds to match Windows HID timeout
+        queue_handle.get_features()
+    ).await {
+        Ok(Ok(raw_features)) => {
             // Convert from raw Features message to DeviceFeatures
             let device_features = convert_features_to_device_features(raw_features);
             
@@ -520,7 +544,7 @@ pub async fn get_device_info_by_id(
             
             Ok(Some(device_features))
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             let error_msg = e.to_string();
             
             // Check for device access errors (already claimed)
@@ -541,13 +565,11 @@ pub async fn get_device_info_by_id(
                         Common causes:\n\
                         • KeepKey Desktop app is running\n\
                         • KeepKey Bridge is running\n\
-                        • Another wallet application is connected\n\
-                        • Previous connection wasn't properly closed\n\n\
+                        • Another wallet application is connected\n\n\
                         Solutions:\n\
                         1. Close KeepKey Desktop app completely\n\
                         2. Close any other wallet applications\n\
-                        3. Unplug and reconnect your KeepKey device\n\
-                        4. Try again\n\n\
+                        3. Unplug and reconnect your KeepKey device\n\n\
                         Technical details: {}", e
                     )
                 };
@@ -590,6 +612,10 @@ pub async fn get_device_info_by_id(
             }
             
             Err(error)
+        }
+        Err(_) => {
+            println!("Timeout getting features for device {}", device_id);
+            Err("Timeout getting features".to_string())
         }
     }
 }
@@ -1002,7 +1028,7 @@ pub async fn get_connected_devices_with_features(
             
             // Try to fetch features through the queue
             let features = match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
+                Duration::from_secs(30), // Increased from 15 to 30 seconds to match Windows HID timeout
                 queue_handle.get_features()
             ).await {
                 Ok(Ok(raw_features)) => {
