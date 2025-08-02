@@ -1,4 +1,4 @@
-import { VStack, HStack, Text, Button, Box, Icon, Progress, Alert, Badge } from "@chakra-ui/react";
+import { VStack, HStack, Text, Button, Box, Icon, Progress, Badge, Alert } from "@chakra-ui/react";
 import { FaDownload } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -155,9 +155,18 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
           )}
 
           {error && (
-            <Alert status="error" borderRadius="md" w="100%">
-              {error}
-            </Alert>
+            <Box
+              bg="red.900"
+              borderRadius="md"
+              borderWidth="1px"
+              borderColor="red.600"
+              p={3}
+              w="100%"
+            >
+              <Text color="red.300" fontSize="sm">
+                {String(error)}
+              </Text>
+            </Box>
           )}
 
           {isUpdating && (

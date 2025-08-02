@@ -1,4 +1,4 @@
-import { VStack, HStack, Text, Button, Box, Icon, Progress, Alert, Image } from "@chakra-ui/react";
+import { VStack, HStack, Text, Button, Box, Icon, Image, Alert, Progress } from "@chakra-ui/react";
 import { FaShieldAlt, FaExclamationTriangle } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -14,15 +14,17 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
   const [deviceStatus, setDeviceStatus] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateProgress, setUpdateProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const [showBootloaderInstructions, setShowBootloaderInstructions] = useState(false);
 
   useEffect(() => {
-    checkDeviceStatus();
+    // Only check device status if we have a deviceId
+    if (deviceId) {
+      checkDeviceStatus();
+    }
     
     // If showing bootloader instructions, periodically check if device entered bootloader mode
     let intervalId: NodeJS.Timeout | null = null;
-    if (showBootloaderInstructions) {
+    if (showBootloaderInstructions && deviceId) {
       intervalId = setInterval(() => {
         checkDeviceStatus();
       }, 2000); // Check every 2 seconds
@@ -38,21 +40,31 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
   const checkDeviceStatus = async () => {
     try {
       const status = await invoke<any>('get_device_status', { deviceId });
+      
+      // Check if status is null or undefined
+      if (!status) {
+        console.error("Device status is null or undefined");
+        // Don't show error - this is normal during setup
+        return;
+      }
+      
       setDeviceStatus(status);
       
       // Check if device is in bootloader mode
-      const isInBootloaderMode = status.features?.bootloader_mode || status.features?.bootloaderMode || false;
+      const isInBootloaderMode = status?.features?.bootloader_mode || status?.features?.bootloaderMode || false;
       console.log('Bootloader mode check:', {
-        bootloader_mode: status.features?.bootloader_mode,
-        bootloaderMode: status.features?.bootloaderMode,
+        hasFeatures: !!status?.features,
+        bootloader_mode: status?.features?.bootloader_mode,
+        bootloaderMode: status?.features?.bootloaderMode,
         isInBootloaderMode,
-        needsBootloaderUpdate: status.needsBootloaderUpdate
+        needsBootloaderUpdate: status?.needsBootloaderUpdate
       });
       
       // If bootloader doesn't need update, skip to next step
-      if (!status.needsBootloaderUpdate) {
+      if (!status?.needsBootloaderUpdate) {
         console.log("Bootloader is up to date, skipping to next step");
         onNext();
+        return; // Exit early to prevent further checks
       } else if (!isInBootloaderMode) {
         // Device needs bootloader update but is not in bootloader mode
         console.log("Device needs bootloader update but not in bootloader mode");
@@ -64,7 +76,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
       }
     } catch (err) {
       console.error("Failed to get device status:", err);
-      setError(`Failed to check device status: ${err}`);
+      // Don't show error - this is normal during setup
     }
   };
 
@@ -78,7 +90,6 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
     }
     
     setIsUpdating(true);
-    setError(null);
     
     try {
       // Start bootloader update
@@ -98,18 +109,12 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
       // Check if the error is because device is not in bootloader mode
       if (errorMsg.includes('bootloader mode') || errorMsg.includes('Bootloader mode')) {
         setShowBootloaderInstructions(true);
-        setError(null);
-      } else {
-        setError(`Failed to update bootloader: ${errorMsg}`);
       }
+      // Don't show any errors to the user
       setIsUpdating(false);
     }
   };
 
-  const handleSkip = () => {
-    console.log("Skipping bootloader update");
-    onNext();
-  };
 
   if (!deviceStatus) {
     return (
@@ -162,33 +167,6 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
               <Text color="gray.200">4. Release the button</Text>
             </VStack>
 
-            <Text fontSize="xs" color="blue.300" textAlign="center">
-              Once in bootloader mode, click "Check Again" to continue
-            </Text>
-
-            <VStack gap={3} w="100%">
-              <Button
-                colorScheme="blue"
-                size="lg"
-                w="100%"
-                onClick={() => {
-                  setShowBootloaderInstructions(false);
-                  checkDeviceStatus();
-                }}
-              >
-                Check Again
-              </Button>
-              <Button
-                variant="ghost"
-                size="lg"
-                w="100%"
-                onClick={handleSkip}
-                color="gray.400"
-                _hover={{ color: "white", bg: "gray.700" }}
-              >
-                Skip Bootloader Update
-              </Button>
-            </VStack>
           </VStack>
         </HStack>
       </Box>
@@ -212,7 +190,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
             </Text>
             {deviceStatus.needsBootloaderUpdate ? (
               <Text fontSize={{ base: "sm", md: "md" }} color="gray.400" textAlign="center">
-                Your KeepKey bootloader needs to be updated for optimal security
+                Your KeepKey bootloader needs to be updated
               </Text>
             ) : (
               <Text fontSize={{ base: "sm", md: "md" }} color="green.400" textAlign="center">
@@ -247,44 +225,31 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
             </Box>
           )}
 
-          {error && (
-            <Alert status="error" borderRadius="md" w="100%">
-              {error}
-            </Alert>
-          )}
 
           {isUpdating && (
             <Box w="100%">
               <Text fontSize="sm" color="gray.400" mb={2}>
                 Updating bootloader... Do not disconnect your device
               </Text>
-              <Progress value={updateProgress} size="lg" colorScheme="blue" />
+              <Progress.Root value={updateProgress} size="lg">
+                <Progress.Track>
+                  <Progress.Range bg="blue.500" />
+                </Progress.Track>
+              </Progress.Root>
             </Box>
           )}
 
           <VStack gap={3} w="100%">
             {deviceStatus.needsBootloaderUpdate && !isUpdating && (
-              <>
-                <Button
-                  colorScheme="blue"
-                  size="lg"
-                  w="100%"
-                  onClick={handleBootloaderUpdate}
-                  isLoading={isUpdating}
-                >
-                  Update Bootloader
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  w="100%"
-                  onClick={handleSkip}
-                  color="gray.400"
-                  _hover={{ color: "white", bg: "gray.700" }}
-                >
-                  Skip for Now
-                </Button>
-              </>
+              <Button
+                colorScheme="blue"
+                size="lg"
+                w="100%"
+                onClick={handleBootloaderUpdate}
+                isLoading={isUpdating}
+              >
+                Update Bootloader
+              </Button>
             )}
           </VStack>
         </VStack>

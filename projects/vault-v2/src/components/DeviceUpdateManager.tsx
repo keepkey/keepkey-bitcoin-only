@@ -103,8 +103,14 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       return; // Don't change state while setup wizard is active
     }
     
-    // IMPORTANT: Check initialization FIRST - setup wizard should take priority over firmware updates for OOB devices
-    if (status.needsInitialization) {
+    // IMPORTANT: Check initialization FIRST - setup wizard should take priority over EVERYTHING
+    // Even if device is in bootloader mode, if it needs initialization, show setup wizard
+    // Check both explicit needsInitialization flag AND the initialized feature flag
+    const deviceNeedsInitialization = status.needsInitialization || 
+                                    status.features?.initialized === false || 
+                                    status.features?.initialized === undefined;
+    
+    if (deviceNeedsInitialization) {
       // Check if recovery is in progress - if so, don't interfere
       if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
         console.log('🛡️ DeviceUpdateManager: Recovery in progress - IGNORING initialization request')
@@ -113,6 +119,12 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       }
       
       console.log('🔧 DeviceUpdateManager: Device needs initialization - SHOULD SHOW SETUP WIZARD')
+      console.log('🔧 DeviceUpdateManager: Initialization check:', {
+        needsInitialization: status.needsInitialization,
+        initialized: status.features?.initialized,
+        deviceNeedsInitialization,
+        isInBootloaderMode
+      })
       console.log('🔧 DeviceUpdateManager: Setting showWalletCreation = true')
       setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
@@ -122,6 +134,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       setupWizardDeviceId.current = status.deviceId
       setPersistentDeviceId(status.deviceId) // Save device ID for persistence
       onSetupWizardActiveChange?.(true)
+      return; // Exit early - setup wizard takes absolute priority
     } else if (status.needsBootloaderUpdate && status.bootloaderCheck) {
       if (isInBootloaderMode) {
         // Device needs bootloader update AND is in bootloader mode -> show update dialog
@@ -360,8 +373,8 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
           setShowWalletCreation(false)
         } else {
           console.log('🛡️ DeviceUpdateManager: Setup wizard active - preserving state during disconnect')
-          // Keep minimal device status for the wizard
-          setDeviceStatus(prev => prev ? { ...prev, connected: false } : null)
+          // Don't clear device status when setup wizard is active
+          // This allows the wizard to continue working even when disconnected
         }
         
         setConnectedDeviceId(null)
@@ -490,8 +503,9 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
     // Don't call onComplete - user cancelled PIN entry
   }
 
-  if (!deviceStatus) {
-    console.log('🔧 DeviceUpdateManager: No deviceStatus, returning null')
+  // If setup wizard is active, we should still render it even without deviceStatus
+  if (!deviceStatus && !setupWizardActive.current && !persistentDeviceId) {
+    console.log('🔧 DeviceUpdateManager: No deviceStatus, no active wizard, and no persistentDeviceId, returning null')
     return null
   }
 
@@ -508,7 +522,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
 
   return (
     <>
-      {showEnterBootloaderMode && deviceStatus.bootloaderCheck && deviceStatus.deviceId && (
+      {showEnterBootloaderMode && deviceStatus?.bootloaderCheck && deviceStatus?.deviceId && (
         <EnterBootloaderModeDialog
           isOpen={showEnterBootloaderMode}
           bootloaderCheck={deviceStatus.bootloaderCheck}
@@ -517,7 +531,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         />
       )}
 
-      {showBootloaderUpdate && deviceStatus.bootloaderCheck && deviceStatus.deviceId && (
+      {showBootloaderUpdate && deviceStatus?.bootloaderCheck && deviceStatus?.deviceId && (
         <BootloaderUpdateDialog
           isOpen={showBootloaderUpdate}
           bootloaderCheck={deviceStatus.bootloaderCheck}
@@ -556,7 +570,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         />
       )}
 
-      {showPinUnlock && deviceStatus.deviceId && (
+      {showPinUnlock && deviceStatus?.deviceId && (
         <PinUnlockDialog
           isOpen={showPinUnlock}
           deviceId={deviceStatus.deviceId}
