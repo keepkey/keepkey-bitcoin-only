@@ -140,19 +140,15 @@ const RECOVER_ALL_STEPS: Step[] = [
 
 // Define visible steps for progress bar
 const CREATE_VISIBLE_STEPS = [
-  { id: "create-or-recover", label: "Setup", number: 1 },
-  { id: "device-label", label: "Device", number: 2 },
-  { id: "pin", label: "Security", number: 3 },
-  { id: "backup", label: "Backup", number: 4 },
-  { id: "complete", label: "Complete", number: 5 },
+  { id: "bootloader", label: "Check Bootloader", number: 1 },
+  { id: "firmware", label: "Check Firmware", number: 2 },
+  { id: "create-or-recover", label: "Create Wallet", number: 3 },
 ];
 
 const RECOVER_VISIBLE_STEPS = [
-  { id: "create-or-recover", label: "Setup", number: 1 },
-  { id: "recover", label: "Recovery", number: 2 },
-  { id: "device-label", label: "Device", number: 3 },
-  { id: "pin", label: "Security", number: 4 },
-  { id: "complete", label: "Complete", number: 5 },
+  { id: "bootloader", label: "Check Bootloader", number: 1 },
+  { id: "firmware", label: "Check Firmware", number: 2 },
+  { id: "create-or-recover", label: "Recover Wallet", number: 3 },
 ];
 
 export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps) {
@@ -237,9 +233,19 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
   // Calculate progress based on visible steps
   const currentStepId = ALL_STEPS[currentStep].id;
   const visibleStepIndex = VISIBLE_STEPS.findIndex(step => step.id === currentStepId);
-  const actualProgress = visibleStepIndex >= 0 
-    ? ((visibleStepIndex + 1) / VISIBLE_STEPS.length) * 100
-    : 0;
+  
+  // If we're past all visible steps, show 100% progress
+  let actualProgress = 0;
+  if (visibleStepIndex >= 0) {
+    actualProgress = ((visibleStepIndex + 1) / VISIBLE_STEPS.length) * 100;
+  } else {
+    // Check if we're past all visible steps
+    const lastVisibleStepId = VISIBLE_STEPS[VISIBLE_STEPS.length - 1].id;
+    const lastVisibleStepIndex = ALL_STEPS.findIndex(step => step.id === lastVisibleStepId);
+    if (currentStep > lastVisibleStepIndex) {
+      actualProgress = 100;
+    }
+  }
 
   // Props to pass to step components
   const stepProps = {
@@ -293,9 +299,9 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
         >
           <Box 
             h="100%" 
-            bg={highlightColor}
+            bg={actualProgress > 0 ? "green.500" : highlightColor}
             borderRadius="full"
-            transition="width 0.3s"
+            transition="width 0.3s, background-color 0.3s"
             w={`${actualProgress}%`}
           />
         </Box>
@@ -310,8 +316,13 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
           wrap="nowrap"
         >
           {VISIBLE_STEPS.map((step, index) => {
-            const isCompleted = ALL_STEPS.findIndex(s => s.id === step.id) < currentStep;
-            const isCurrent = ALL_STEPS[currentStep]?.id === step.id;
+            const stepIndex = ALL_STEPS.findIndex(s => s.id === step.id);
+            const lastVisibleStepId = VISIBLE_STEPS[VISIBLE_STEPS.length - 1].id;
+            const lastVisibleStepIndex = ALL_STEPS.findIndex(s => s.id === lastVisibleStepId);
+            const isPastAllVisible = currentStep > lastVisibleStepIndex;
+            
+            const isCompleted = isPastAllVisible || (stepIndex !== -1 && stepIndex < currentStep);
+            const isCurrent = !isPastAllVisible && ALL_STEPS[currentStep]?.id === step.id;
             const isActive = isCompleted || isCurrent;
             
             return (
@@ -320,7 +331,7 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
                   w={{ base: 8, md: 10 }}
                   h={{ base: 8, md: 10 }}
                   borderRadius="full"
-                  bg={isActive ? highlightColor : "gray.600"}
+                  bg={isCompleted ? "green.500" : (isCurrent ? highlightColor : "gray.600")}
                   display="flex"
                   alignItems="center"
                   justifyContent="center"
@@ -341,7 +352,7 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
                   ml={2}
                   fontSize={{ base: "xs", md: "sm" }}
                   fontWeight={isCurrent ? "bold" : "normal"}
-                  color={isActive ? highlightColor : "gray.400"}
+                  color={isCompleted ? "green.500" : (isCurrent ? highlightColor : "gray.400")}
                   display={{ base: "none", lg: "block" }}
                   whiteSpace="nowrap"
                 >
@@ -351,7 +362,7 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
                   <Box
                     w={{ base: 6, md: 10, lg: 12 }}
                     h={0.5}
-                    bg={isCompleted ? highlightColor : "gray.600"}
+                    bg={isCompleted ? "green.500" : (isCurrent ? highlightColor : "gray.600")}
                     ml={2}
                   />
                 )}
@@ -381,7 +392,10 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
       <Box p={6} borderTopWidth="1px" borderColor="gray.700" bg="gray.850">
         <HStack justify="space-between">
           <Text fontSize="sm" color="gray.400">
-            {visibleStepIndex >= 0 && `Step ${visibleStepIndex + 1} of ${VISIBLE_STEPS.length}`}
+            {visibleStepIndex >= 0 
+              ? `Step ${visibleStepIndex + 1} of ${VISIBLE_STEPS.length}`
+              : (currentStep > 0 ? 'Setting up wallet...' : '')
+            }
           </Text>
           <HStack gap={4}>
             <Button
