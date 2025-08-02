@@ -151,15 +151,23 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
       }
-    } else if (status.needsFirmwareUpdate && status.firmwareCheck) {
+    } else if (status.needsFirmwareUpdate) {  // Removed the && status.firmwareCheck check to handle bootloader mode
       console.log('Device needs firmware update')
       console.log('🔧 DeviceUpdateManager: Firmware update needed:', {
         needsFirmwareUpdate: status.needsFirmwareUpdate,
         firmwareCheck: status.firmwareCheck,
         currentVersion: status.firmwareCheck?.currentVersion,
         latestVersion: status.firmwareCheck?.latestVersion,
-        features: status.features
+        features: status.features,
+        isInBootloaderMode
       })
+      
+      // Special handling: If device is already in bootloader mode with correct bootloader version
+      // but needs firmware update, show firmware update dialog directly
+      if (isInBootloaderMode && !status.needsBootloaderUpdate) {
+        console.log('🔧 DeviceUpdateManager: Device in bootloader mode with correct bootloader, showing firmware update')
+      }
+      
       setShowEnterBootloaderMode(false)
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(true)
@@ -543,10 +551,14 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         />
       )}
 
-      {showFirmwareUpdate && deviceStatus?.firmwareCheck && (
+      {showFirmwareUpdate && deviceStatus && (
         <FirmwareUpdateDialog
           isOpen={showFirmwareUpdate}
-          firmwareCheck={deviceStatus.firmwareCheck}
+          firmwareCheck={deviceStatus.firmwareCheck || {
+            currentVersion: 'Unknown',
+            latestVersion: '7.10.0',
+            needsUpdate: true
+          }}
           deviceStatus={deviceStatus}
           onUpdateStart={handleFirmwareUpdate}
           onSkip={handleFirmwareSkip}

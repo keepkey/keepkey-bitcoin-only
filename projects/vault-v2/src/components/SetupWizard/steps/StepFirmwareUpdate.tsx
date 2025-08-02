@@ -174,7 +174,11 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
               <Text fontSize="sm" color="gray.400" mb={2}>
                 Updating firmware... Do not disconnect your device
               </Text>
-              <Progress value={updateProgress} size="lg" colorScheme="orange" />
+              <Progress.Root value={updateProgress} size="lg">
+                <Progress.Track>
+                  <Progress.Range bg="orange.500" />
+                </Progress.Track>
+              </Progress.Root>
               <Text fontSize="xs" color="gray.500" mt={2}>
                 This may take a few minutes. Your device will restart when complete.
               </Text>
