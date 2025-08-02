@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
 import { FirmwareUpdateDialog } from './FirmwareUpdateDialog'
-import { WalletCreationWizard } from './WalletCreationWizard/WalletCreationWizard'
+import { SetupWizard } from './SetupWizard'
 import { EnterBootloaderModeDialog } from './EnterBootloaderModeDialog'
 import { PinUnlockDialog } from './PinUnlockDialog'
 import type { DeviceStatus, DeviceFeatures } from '../types/device'
@@ -90,7 +90,22 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     })
     
     // Determine which dialog to show based on priority
-    if (status.needsBootloaderUpdate && status.bootloaderCheck) {
+    // IMPORTANT: Check initialization FIRST - setup wizard should take priority over firmware updates for OOB devices
+    if (status.needsInitialization) {
+      // Check if recovery is in progress - if so, don't interfere
+      if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
+        console.log('🛡️ DeviceUpdateManager: Recovery in progress - IGNORING initialization request')
+        console.log('🛡️ DeviceUpdateManager: Keeping current state to protect recovery')
+        return; // Don't change any state during recovery
+      }
+      
+      console.log('🔧 DeviceUpdateManager: Device needs initialization - SHOULD SHOW SETUP WIZARD')
+      console.log('🔧 DeviceUpdateManager: Setting showWalletCreation = true')
+      setShowEnterBootloaderMode(false)
+      setShowBootloaderUpdate(false)
+      setShowFirmwareUpdate(false)
+      setShowWalletCreation(true)
+    } else if (status.needsBootloaderUpdate && status.bootloaderCheck) {
       if (isInBootloaderMode) {
         // Device needs bootloader update AND is in bootloader mode -> show update dialog
         console.log('Device needs bootloader update and is in bootloader mode')
@@ -119,20 +134,6 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       setShowBootloaderUpdate(false)
       setShowFirmwareUpdate(true)
       setShowWalletCreation(false)
-    } else if (status.needsInitialization) {
-      // Check if recovery is in progress - if so, don't interfere
-      if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
-        console.log('🛡️ DeviceUpdateManager: Recovery in progress - IGNORING initialization request')
-        console.log('🛡️ DeviceUpdateManager: Keeping current state to protect recovery')
-        return; // Don't change any state during recovery
-      }
-      
-      console.log('🔧 DeviceUpdateManager: Device needs initialization - SHOULD SHOW ONBOARDING WIZARD')
-      console.log('🔧 DeviceUpdateManager: Setting showWalletCreation = true')
-      setShowEnterBootloaderMode(false)
-      setShowBootloaderUpdate(false)
-      setShowFirmwareUpdate(false)
-      setShowWalletCreation(true)
     } else if (status.needsPinUnlock) {
       // Device is initialized but locked with PIN - this is handled by the PIN unlock event listener
       console.log('🔒 DeviceUpdateManager: Device needs PIN unlock - NOT calling onComplete()')
@@ -509,7 +510,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       )}
 
       {showWalletCreation && deviceStatus.deviceId && (
-        <WalletCreationWizard
+        <SetupWizard
           deviceId={deviceStatus.deviceId}
           onComplete={handleWalletCreationComplete}
           onClose={() => setShowWalletCreation(false)}

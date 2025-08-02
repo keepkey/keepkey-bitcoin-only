@@ -551,7 +551,7 @@ export function useWalletCreationWizard() {
       
       show({
         id: dialogId,
-        component: React.lazy(() => import('../components/WalletCreationWizard/WalletCreationWizard').then(m => ({ default: m.WalletCreationWizard }))),
+        component: React.lazy(() => import('../components/SetupWizard').then(m => ({ default: m.SetupWizard }))),
         props: {
           ...props,
           onClose: () => {

@@ -2,7 +2,7 @@ import { useDialog } from '../contexts/DialogContext';
 import { useCallback } from 'react';
 import React from 'react';
 import { OnboardingWizard } from '../components/OnboardingWizard/OnboardingWizard';
-import { WalletCreationWizard } from '../components/WalletCreationWizard/WalletCreationWizard';
+import { SetupWizard } from '../components/SetupWizard';
 
 // Import dialog components dynamically
 const dialogComponents = {
@@ -49,19 +49,20 @@ export function useCommonDialogs() {
     console.trace('🏦 [useCommonDialogs] Call stack trace:');
     
     show({
-      id: 'wallet-creation',
-      component: WalletCreationWizard, // Direct component instead of lazy loading for better UX
+      id: 'setup-wizard',
+      component: SetupWizard, // Using new SetupWizard component
       props: {
         ...props,
+        deviceId: props?.deviceId || 'mock-device-id',
         onComplete: () => {
-          console.log(`🏦 [useCommonDialogs] showWalletCreation onComplete called`);
+          console.log(`🏦 [useCommonDialogs] SetupWizard onComplete called`);
           if (props?.onWizardComplete) props.onWizardComplete();
-          hide('wallet-creation');
+          hide('setup-wizard');
         },
         onClose: () => {
-          console.log(`🏦 [useCommonDialogs] showWalletCreation onClose called`);
+          console.log(`🏦 [useCommonDialogs] SetupWizard onClose called`);
           if (props?.onWizardClose) props.onWizardClose();
-          hide('wallet-creation');
+          hide('setup-wizard');
         }
       },
       priority: 'critical', // High priority since it's device setup

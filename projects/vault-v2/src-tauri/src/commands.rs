@@ -1152,9 +1152,10 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             }
         } else {
             // Device is in normal firmware mode - check if it's an OOB device
-            if features.version.starts_with("1.0.") {
-                // OOB device: firmware version 1.0.3 = bootloader version 1.0.3
-                features.version.clone()
+            if features.version.starts_with("1.0.") || features.version == "4.0.0" {
+                // OOB device: firmware version 1.0.3 or 4.0.0 = old bootloader
+                // Firmware 4.0.0 is known to have an old bootloader that needs updating
+                "1.0.3".to_string() // OOB devices have old bootloaders
             } else if let Some(ref bl_version) = features.bootloader_version {
                 // Use explicit bootloader version if available
                 bl_version.clone()
@@ -1216,9 +1217,10 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
         } else {
             // Device is in normal firmware mode - use the actual firmware version
             let current_fw_version = features.version.clone();
-            let needs_update = if current_fw_version.starts_with("1.0.") {
+            let needs_update = if current_fw_version.starts_with("1.0.") || current_fw_version == "4.0.0" {
                 // OOB device - firmware update only after bootloader update
-                false // Bootloader has higher priority
+                // Firmware 4.0.0 is an OOB firmware that needs bootloader update first
+                true // Both bootloader and firmware need updates
             } else {
                 !current_fw_version.starts_with("7.10.")
             };
