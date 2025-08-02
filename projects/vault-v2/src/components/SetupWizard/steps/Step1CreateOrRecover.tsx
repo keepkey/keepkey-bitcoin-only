@@ -7,21 +7,28 @@ interface Step1CreateOrRecoverProps {
 
 export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverProps) {
   return (
-    <VStack gap={8} w="100%">
+    <VStack gap={{ base: 4, md: 6, lg: 8 }} w="100%">
       <VStack gap={2}>
-        <Text fontSize="2xl" fontWeight="bold" color="white">
+        <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white" textAlign="center">
           Choose Setup Method
         </Text>
-        <Text fontSize="md" color="gray.400">
+        <Text fontSize={{ base: "sm", md: "md" }} color="gray.400" textAlign="center">
           Create a new wallet or restore an existing one
         </Text>
       </VStack>
 
-      <HStack gap={6} w="100%">
+      <HStack 
+        gap={{ base: 4, md: 6 }} 
+        w="100%" 
+        flexDirection={{ base: "column", md: "row" }}
+        align="stretch"
+      >
         {/* Create New Wallet */}
         <Box
-          flex={1}
-          p={6}
+          flex={{ base: "none", md: 1 }}
+          w={{ base: "100%", md: "auto" }}
+          maxW={{ base: "400px", md: "none" }}
+          p={{ base: 4, md: 6 }}
           borderRadius="lg"
           borderWidth="2px"
           borderColor="transparent"
@@ -37,24 +44,24 @@ export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverP
         >
           <VStack gap={4}>
             <Box
-              p={4}
+              p={{ base: 3, md: 4 }}
               borderRadius="full"
               bg="orange.500"
               color="white"
             >
-              <Icon as={FaPlus} boxSize={8} />
+              <Icon as={FaPlus} boxSize={{ base: 6, md: 8 }} />
             </Box>
             <VStack gap={2}>
-              <Text fontSize="xl" fontWeight="bold" color="white">
+              <Text fontSize={{ base: "lg", md: "xl" }} fontWeight="bold" color="white">
                 Create New Wallet
               </Text>
-              <Text fontSize="sm" color="gray.400" textAlign="center">
+              <Text fontSize={{ base: "xs", md: "sm" }} color="gray.400" textAlign="center">
                 Generate a new recovery phrase and set up a fresh wallet
               </Text>
             </VStack>
             <Button
               colorScheme="orange"
-              size="lg"
+              size={{ base: "md", md: "lg" }}
               w="100%"
               onClick={(e) => {
                 e.stopPropagation();
@@ -68,8 +75,10 @@ export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverP
 
         {/* Recover Existing Wallet */}
         <Box
-          flex={1}
-          p={6}
+          flex={{ base: "none", md: 1 }}
+          w={{ base: "100%", md: "auto" }}
+          maxW={{ base: "400px", md: "none" }}
+          p={{ base: 4, md: 6 }}
           borderRadius="lg"
           borderWidth="2px"
           borderColor="transparent"
@@ -85,24 +94,24 @@ export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverP
         >
           <VStack gap={4}>
             <Box
-              p={4}
+              p={{ base: 3, md: 4 }}
               borderRadius="full"
               bg="blue.500"
               color="white"
             >
-              <Icon as={FaKey} boxSize={8} />
+              <Icon as={FaKey} boxSize={{ base: 6, md: 8 }} />
             </Box>
             <VStack gap={2}>
-              <Text fontSize="xl" fontWeight="bold" color="white">
+              <Text fontSize={{ base: "lg", md: "xl" }} fontWeight="bold" color="white">
                 Recover Wallet
               </Text>
-              <Text fontSize="sm" color="gray.400" textAlign="center">
+              <Text fontSize={{ base: "xs", md: "sm" }} color="gray.400" textAlign="center">
                 Restore your wallet using an existing recovery phrase
               </Text>
             </VStack>
             <Button
               colorScheme="blue"
-              size="lg"
+              size={{ base: "md", md: "lg" }}
               w="100%"
               onClick={(e) => {
                 e.stopPropagation();

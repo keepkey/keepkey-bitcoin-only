@@ -1,4 +1,4 @@
-import { VStack, Text, Button, Box, Icon, Progress, Alert, Badge } from "@chakra-ui/react";
+import { VStack, HStack, Text, Button, Box, Icon, Progress, Alert, Badge } from "@chakra-ui/react";
 import { FaDownload } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -41,25 +41,14 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
     
     try {
       // Start firmware update
-      await invoke('update_firmware', { deviceId });
+      await invoke('update_device_firmware', { 
+        deviceId,
+        targetVersion: deviceStatus.firmwareCheck?.latestVersion || ''
+      });
       
-      // Simulate progress (in real implementation, listen to progress events)
-      const progressInterval = setInterval(() => {
-        setUpdateProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 100;
-          }
-          return prev + 5;
-        });
-      }, 500);
-
-      // Wait for update to complete
-      setTimeout(() => {
-        clearInterval(progressInterval);
-        setUpdateProgress(100);
-        onNext();
-      }, 10000); // Firmware updates take longer
+      // In real implementation, listen to progress events
+      // For now, skip to next step after the update
+      onNext();
       
     } catch (err) {
       console.error("Failed to update firmware:", err);
@@ -84,111 +73,134 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   const isOOBDevice = deviceStatus.firmwareCheck?.currentVersion === "4.0.0";
 
   return (
-    <VStack gap={6} w="100%" maxW="500px">
-      <Icon as={FaDownload} boxSize={16} color="orange.500" />
-      
-      <VStack gap={2}>
-        <Text fontSize="2xl" fontWeight="bold" color="white">
-          Firmware Update
-        </Text>
-        {deviceStatus.needsFirmwareUpdate ? (
-          <>
-            <Text fontSize="md" color="gray.400" textAlign="center">
-              A new firmware version is available for your KeepKey
+    <Box w="100%">
+      <HStack 
+        gap={{ base: 4, md: 8 }} 
+        align="flex-start"
+        flexDirection={{ base: "column", lg: "row" }}
+      >
+        {/* Left side - Icon and status */}
+        <VStack gap={4} flex={{ base: "none", lg: 1 }} w={{ base: "100%", lg: "auto" }}>
+          <Icon as={FaDownload} boxSize={{ base: 12, md: 16 }} color="orange.500" />
+          
+          <VStack gap={2}>
+            <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white" textAlign="center">
+              Firmware Update
             </Text>
-            {isOOBDevice && (
-              <Badge colorScheme="red" fontSize="sm">
-                Critical Update Required
-              </Badge>
-            )}
-          </>
-        ) : (
-          <Text fontSize="md" color="green.400" textAlign="center">
-            Your firmware is up to date!
-          </Text>
-        )}
-      </VStack>
-
-      {deviceStatus.firmwareCheck && (
-        <Box w="100%" p={4} bg="gray.700" borderRadius="lg">
-          <VStack gap={2} align="start">
-            <Text fontSize="sm" color="gray.300">
-              Current Version: v{deviceStatus.firmwareCheck.currentVersion}
-            </Text>
-            <Text fontSize="sm" color="gray.300">
-              Latest Version: v{deviceStatus.firmwareCheck.latestVersion}
-            </Text>
-            {isOOBDevice && (
-              <Text fontSize="sm" color="orange.400">
-                ⚠️ Your device has factory firmware. Update is highly recommended.
+            {deviceStatus.needsFirmwareUpdate ? (
+              <>
+                <Text fontSize={{ base: "sm", md: "md" }} color="gray.400" textAlign="center">
+                  A new firmware version is available for your KeepKey
+                </Text>
+                {isOOBDevice && (
+                  <Badge colorScheme="red" fontSize="sm">
+                    Critical Update Required
+                  </Badge>
+                )}
+              </>
+            ) : (
+              <Text fontSize={{ base: "sm", md: "md" }} color="green.400" textAlign="center">
+                Your firmware is up to date!
               </Text>
             )}
           </VStack>
-        </Box>
-      )}
 
-      {error && (
-        <Alert status="error" borderRadius="md">
-          {error}
-        </Alert>
-      )}
-
-      {isUpdating && (
-        <Box w="100%">
-          <Text fontSize="sm" color="gray.400" mb={2}>
-            Updating firmware... Do not disconnect your device
-          </Text>
-          <Progress value={updateProgress} size="lg" colorScheme="orange" />
-          <Text fontSize="xs" color="gray.500" mt={2}>
-            This may take a few minutes. Your device will restart when complete.
-          </Text>
-        </Box>
-      )}
-
-      <Box w="100%" p={4} bg="gray.700" borderRadius="lg" borderWidth="2px" borderColor="orange.500">
-        <VStack gap={3}>
-          <Text color="orange.400" fontWeight="bold" fontSize="sm">
-            ⚠️ Important Instructions:
-          </Text>
-          <Text fontSize="sm" color="gray.300">
-            • Do not disconnect your device during the update
-          </Text>
-          <Text fontSize="sm" color="gray.300">
-            • You may need to re-enter your PIN after the update
-          </Text>
-          <Text fontSize="sm" color="gray.300">
-            • Your funds and settings will remain safe
-          </Text>
+          {/* Important Instructions */}
+          <Box w="100%" p={4} bg="gray.700" borderRadius="lg" borderWidth="2px" borderColor="orange.500">
+            <VStack gap={2} align="start">
+              <Text color="orange.400" fontWeight="bold" fontSize="sm">
+                ⚠️ Important Instructions:
+              </Text>
+              <Text fontSize="xs" color="gray.300">
+                • Do not disconnect your device during the update
+              </Text>
+              <Text fontSize="xs" color="gray.300">
+                • You may need to re-enter your PIN after the update
+              </Text>
+              <Text fontSize="xs" color="gray.300">
+                • Your funds and settings will remain safe
+              </Text>
+            </VStack>
+          </Box>
         </VStack>
-      </Box>
 
-      <VStack gap={3} w="100%">
-        {deviceStatus.needsFirmwareUpdate && !isUpdating && (
-          <>
-            <Button
-              colorScheme="orange"
-              size="lg"
-              w="100%"
-              onClick={handleFirmwareUpdate}
-              isLoading={isUpdating}
-            >
-              Update Firmware Now
-            </Button>
-            {!isOOBDevice && (
-              <Button
-                variant="ghost"
-                size="lg"
-                w="100%"
-                onClick={handleSkip}
-                color="gray.400"
-                _hover={{ color: "white", bg: "gray.700" }}
-              >
-                Remind Me Later
-              </Button>
+        {/* Right side - Details and actions */}
+        <VStack gap={4} flex={{ base: "none", lg: 1 }} w={{ base: "100%", lg: "auto" }}>
+          {deviceStatus.firmwareCheck && (
+            <Box w="100%" p={4} bg="gray.700" borderRadius="lg">
+              <HStack gap={8} justify="space-between">
+                <VStack gap={1} align="start">
+                  <Text fontSize="xs" color="gray.400" textTransform="uppercase">
+                    Current Version
+                  </Text>
+                  <Text fontSize="lg" color={isOOBDevice ? "red.400" : "white"} fontWeight="bold">
+                    v{deviceStatus.firmwareCheck.currentVersion}
+                  </Text>
+                </VStack>
+                <VStack gap={1} align="start">
+                  <Text fontSize="xs" color="gray.400" textTransform="uppercase">
+                    Latest Version
+                  </Text>
+                  <Text fontSize="lg" color="green.400" fontWeight="bold">
+                    v{deviceStatus.firmwareCheck.latestVersion}
+                  </Text>
+                </VStack>
+              </HStack>
+              {isOOBDevice && (
+                <Text fontSize="sm" color="orange.400" mt={3}>
+                  ⚠️ Your device has factory firmware. Update is highly recommended.
+                </Text>
+              )}
+            </Box>
+          )}
+
+          {error && (
+            <Alert status="error" borderRadius="md" w="100%">
+              {error}
+            </Alert>
+          )}
+
+          {isUpdating && (
+            <Box w="100%">
+              <Text fontSize="sm" color="gray.400" mb={2}>
+                Updating firmware... Do not disconnect your device
+              </Text>
+              <Progress value={updateProgress} size="lg" colorScheme="orange" />
+              <Text fontSize="xs" color="gray.500" mt={2}>
+                This may take a few minutes. Your device will restart when complete.
+              </Text>
+            </Box>
+          )}
+
+          <VStack gap={3} w="100%">
+            {deviceStatus.needsFirmwareUpdate && !isUpdating && (
+              <>
+                <Button
+                  colorScheme="orange"
+                  size="lg"
+                  w="100%"
+                  onClick={handleFirmwareUpdate}
+                  isLoading={isUpdating}
+                >
+                  Update Firmware Now
+                </Button>
+                {!isOOBDevice && (
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    w="100%"
+                    onClick={handleSkip}
+                    color="gray.400"
+                    _hover={{ color: "white", bg: "gray.700" }}
+                  >
+                    Remind Me Later
+                  </Button>
+                )}
+              </>
             )}
-          </>
-        )}
-      </VStack>
-    </VStack>
+          </VStack>
+        </VStack>
+      </HStack>
+    </Box>
   );
 }

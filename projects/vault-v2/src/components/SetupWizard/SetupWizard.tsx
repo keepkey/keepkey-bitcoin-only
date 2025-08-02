@@ -35,8 +35,8 @@ interface Step {
   component: React.ComponentType<any>;
 }
 
-// Define steps based on flow type
-const CREATE_STEPS: Step[] = [
+// Define all steps (including hidden ones)
+const CREATE_ALL_STEPS: Step[] = [
   {
     id: "welcome",
     label: "Welcome",
@@ -87,7 +87,7 @@ const CREATE_STEPS: Step[] = [
   },
 ];
 
-const RECOVER_STEPS: Step[] = [
+const RECOVER_ALL_STEPS: Step[] = [
   {
     id: "welcome",
     label: "Welcome",
@@ -138,6 +138,23 @@ const RECOVER_STEPS: Step[] = [
   },
 ];
 
+// Define visible steps for progress bar
+const CREATE_VISIBLE_STEPS = [
+  { id: "create-or-recover", label: "Setup", number: 1 },
+  { id: "device-label", label: "Device", number: 2 },
+  { id: "pin", label: "Security", number: 3 },
+  { id: "backup", label: "Backup", number: 4 },
+  { id: "complete", label: "Complete", number: 5 },
+];
+
+const RECOVER_VISIBLE_STEPS = [
+  { id: "create-or-recover", label: "Setup", number: 1 },
+  { id: "recover", label: "Recovery", number: 2 },
+  { id: "device-label", label: "Device", number: 3 },
+  { id: "pin", label: "Security", number: 4 },
+  { id: "complete", label: "Complete", number: 5 },
+];
+
 export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [flowType, setFlowType] = useState<'create' | 'recover' | null>(null);
@@ -151,10 +168,11 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
   const { hide } = useDialog();
 
   // Determine which steps to use based on flow type
-  const STEPS = flowType === 'recover' ? RECOVER_STEPS : CREATE_STEPS;
+  const ALL_STEPS = flowType === 'recover' ? RECOVER_ALL_STEPS : CREATE_ALL_STEPS;
+  const VISIBLE_STEPS = flowType === 'recover' ? RECOVER_VISIBLE_STEPS : CREATE_VISIBLE_STEPS;
 
   const handleNext = () => {
-    if (currentStep < STEPS.length - 1) {
+    if (currentStep < ALL_STEPS.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
       handleComplete();
@@ -164,8 +182,8 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
   const handlePrevious = () => {
     if (currentStep > 0) {
       // If going back from a step after flow type is chosen, reset flow type
-      const createOrRecoverIndex = STEPS.findIndex(step => step.id === 'create-or-recover');
-      if (currentStep > createOrRecoverIndex && STEPS[currentStep].id !== 'create-or-recover') {
+      const createOrRecoverIndex = ALL_STEPS.findIndex(step => step.id === 'create-or-recover');
+      if (currentStep > createOrRecoverIndex && ALL_STEPS[currentStep].id !== 'create-or-recover') {
         // Going back to or before the create-or-recover step
         if (currentStep - 1 <= createOrRecoverIndex) {
           setFlowType(null);
@@ -214,8 +232,14 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
     setWizardData(prev => ({ ...prev, ...data }));
   };
 
-  const StepComponent = STEPS[currentStep].component;
-  const progress = ((currentStep + 1) / STEPS.length) * 100;
+  const StepComponent = ALL_STEPS[currentStep].component;
+  
+  // Calculate progress based on visible steps
+  const currentStepId = ALL_STEPS[currentStep].id;
+  const visibleStepIndex = VISIBLE_STEPS.findIndex(step => step.id === currentStepId);
+  const actualProgress = visibleStepIndex >= 0 
+    ? ((visibleStepIndex + 1) / VISIBLE_STEPS.length) * 100
+    : 0;
 
   // Props to pass to step components
   const stepProps = {
@@ -230,14 +254,17 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
 
   return (
     <Box
-      w="100%"
-      maxW="800px"
+      w={{ base: "100vw", md: "90vw", lg: "80vw" }}
+      maxW="1200px"
+      minH={{ base: "100vh", md: "auto" }}
       bg="gray.800"
-      borderRadius="xl"
-      boxShadow="xl"
-      borderWidth="1px"
+      borderRadius={{ base: "none", md: "xl" }}
+      boxShadow={{ base: "none", md: "xl" }}
+      borderWidth={{ base: "0", md: "1px" }}
       borderColor="gray.700"
       overflow="hidden"
+      mx="auto"
+      my={{ base: 0, md: 4 }}
     >
       {/* Header */}
       <Box 
@@ -251,7 +278,7 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
             KeepKey Bitcoin Setup
           </Text>
           <Text fontSize="md" color="gray.400">
-            {STEPS[currentStep].description}
+            {ALL_STEPS[currentStep].description}
           </Text>
         </VStack>
       </Box>
@@ -269,72 +296,92 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
             bg={highlightColor}
             borderRadius="full"
             transition="width 0.3s"
-            w={`${progress}%`}
+            w={`${actualProgress}%`}
           />
         </Box>
       </Box>
 
-      {/* Step indicators */}
-      <HStack gap={4} justify="center" p={4}>
-        {STEPS.map((step, index) => (
-          <Flex key={step.id} align="center">
-            <Box
-              w={8}
-              h={8}
-              borderRadius="full"
-              bg={index <= currentStep ? highlightColor : "gray.600"}
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
-              transition="all 0.3s"
-            >
-              {index < currentStep ? (
-                <Icon as={FaCheckCircle} color="white" boxSize={4} />
-              ) : (
-                <Text color="white" fontSize="sm" fontWeight="bold">
-                  {index + 1}
+      {/* Step indicators with improved responsive layout */}
+      <Box px={4} py={3} overflowX="auto">
+        <HStack 
+          gap={{ base: 2, md: 3 }} 
+          justify="center" 
+          minW="fit-content"
+          wrap="nowrap"
+        >
+          {VISIBLE_STEPS.map((step, index) => {
+            const isCompleted = ALL_STEPS.findIndex(s => s.id === step.id) < currentStep;
+            const isCurrent = ALL_STEPS[currentStep]?.id === step.id;
+            const isActive = isCompleted || isCurrent;
+            
+            return (
+              <Flex key={step.id} align="center" flexShrink={0}>
+                <Box
+                  w={{ base: 8, md: 10 }}
+                  h={{ base: 8, md: 10 }}
+                  borderRadius="full"
+                  bg={isActive ? highlightColor : "gray.600"}
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  transition="all 0.3s"
+                  flexShrink={0}
+                  transform={isCurrent ? "scale(1.1)" : "scale(1)"}
+                  boxShadow={isCurrent ? "0 0 0 4px rgba(251, 146, 60, 0.25)" : "none"}
+                >
+                  {isCompleted ? (
+                    <Icon as={FaCheckCircle} color="white" boxSize={{ base: 4, md: 5 }} />
+                  ) : (
+                    <Text color="white" fontSize={{ base: "sm", md: "md" }} fontWeight="bold">
+                      {step.number}
+                    </Text>
+                  )}
+                </Box>
+                <Text
+                  ml={2}
+                  fontSize={{ base: "xs", md: "sm" }}
+                  fontWeight={isCurrent ? "bold" : "normal"}
+                  color={isActive ? highlightColor : "gray.400"}
+                  display={{ base: "none", lg: "block" }}
+                  whiteSpace="nowrap"
+                >
+                  {step.label}
                 </Text>
-              )}
-            </Box>
-            <Text
-              ml={2}
-              fontSize="sm"
-              fontWeight={index === currentStep ? "bold" : "normal"}
-              color={index <= currentStep ? highlightColor : "gray.400"}
-              display={{ base: "none", md: "block" }}
-            >
-              {step.label}
-            </Text>
-            {index < STEPS.length - 1 && (
-              <Box
-                w={8}
-                h={0.5}
-                bg={index < currentStep ? highlightColor : "gray.600"}
-                ml={2}
-                display={{ base: "none", md: "block" }}
-              />
-            )}
-          </Flex>
-        ))}
-      </HStack>
+                {index < VISIBLE_STEPS.length - 1 && (
+                  <Box
+                    w={{ base: 6, md: 10, lg: 12 }}
+                    h={0.5}
+                    bg={isCompleted ? highlightColor : "gray.600"}
+                    ml={2}
+                  />
+                )}
+              </Flex>
+            );
+          })}
+        </HStack>
+      </Box>
 
       {/* Content */}
       <Box
-        p={8}
-        minH="400px"
+        p={{ base: 4, md: 6, lg: 8 }}
+        minH={{ base: "50vh", md: "400px" }}
         bg="gray.800"
         display="flex"
         alignItems="center"
         justifyContent="center"
+        w="100%"
+        overflow="hidden"
       >
-        <StepComponent {...stepProps} />
+        <Box w="100%" maxW="900px">
+          <StepComponent {...stepProps} />
+        </Box>
       </Box>
 
       {/* Footer */}
       <Box p={6} borderTopWidth="1px" borderColor="gray.700" bg="gray.850">
         <HStack justify="space-between">
           <Text fontSize="sm" color="gray.400">
-            Step {currentStep + 1} of {STEPS.length}
+            {visibleStepIndex >= 0 && `Step ${visibleStepIndex + 1} of ${VISIBLE_STEPS.length}`}
           </Text>
           <HStack gap={4}>
             <Button
@@ -348,13 +395,13 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
               Previous
             </Button>
             {/* Only show Next button if not on flow selection step or if flow is selected */}
-            {(STEPS[currentStep].id !== 'create-or-recover' || flowType) && (
+            {(ALL_STEPS[currentStep].id !== 'create-or-recover' || flowType) && (
               <Button
                 colorScheme="orange"
                 onClick={handleNext}
                 size="lg"
               >
-                {currentStep === STEPS.length - 1 ? "Complete Setup" : "Next"}
+                {currentStep === ALL_STEPS.length - 1 ? "Complete Setup" : "Next"}
               </Button>
             )}
           </HStack>

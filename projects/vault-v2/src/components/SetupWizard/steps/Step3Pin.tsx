@@ -1,5 +1,5 @@
 import { Box } from "@chakra-ui/react";
-import { DevicePin } from "../../WalletCreationWizard/DevicePin";
+import { DevicePinHorizontal } from "../../WalletCreationWizard/DevicePinHorizontal";
 
 interface Step3PinProps {
   deviceId: string;
@@ -24,7 +24,7 @@ export function Step3Pin({
 
   return (
     <Box w="100%">
-      <DevicePin
+      <DevicePinHorizontal
         deviceId={deviceId}
         deviceLabel={wizardData.deviceLabel || 'KeepKey'}
         mode="create"
