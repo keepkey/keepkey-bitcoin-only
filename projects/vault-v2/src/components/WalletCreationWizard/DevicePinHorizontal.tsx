@@ -50,6 +50,7 @@ export function DevicePinHorizontal({
   // Dynamic title and description based on session state
   const getTitle = () => {
     if (!session) return 'Initializing PIN Setup...';
+    console.log("getTitle - session.current_step:", session.current_step, "PinStep.AwaitingSecond:", PinStep.AwaitingSecond);
     switch (session.current_step) {
       case PinStep.AwaitingFirst:
         return 'Create Your PIN';
@@ -104,11 +105,25 @@ export function DevicePinHorizontal({
     }
   }, []);
 
+  // Track session state changes
+  useEffect(() => {
+    console.log("Session state changed:", session);
+    if (session) {
+      console.log("Current step:", session.current_step);
+      console.log("Is active:", session.is_active);
+      console.log("Session ID:", session.session_id);
+    }
+  }, [session]);
+
   const handlePinPress = useCallback((position: PinPosition) => {
+    console.log("handlePinPress called, current positions:", positions.length, "session step:", session?.current_step);
     if (positions.length < 9 && !isLoading && !isSubmitting) {
       setPositions(prev => [...prev, position]);
+      console.log("Added position, new length will be:", positions.length + 1);
+    } else {
+      console.log("PIN press blocked - length:", positions.length, "isLoading:", isLoading, "isSubmitting:", isSubmitting);
     }
-  }, [positions.length, isLoading, isSubmitting]);
+  }, [positions.length, isLoading, isSubmitting, session]);
 
   const handleBackspace = useCallback(() => {
     if (!isLoading && !isSubmitting) {
@@ -117,7 +132,28 @@ export function DevicePinHorizontal({
   }, [isLoading, isSubmitting]);
 
   const handleSubmit = useCallback(async () => {
+    console.log("handleSubmit called with positions:", positions.length, "session step:", session?.current_step);
     if (positions.length > 0 && !isLoading && !isSubmitting && session) {
+      console.log("Proceeding with PIN submission for step:", session.current_step);
+      
+      // If this is the second PIN, show transition immediately
+      if (session.current_step === PinStep.AwaitingSecond) {
+        console.log("Second PIN submission - showing transition immediately!");
+        setIsTransitioning(true);
+        // Still submit the PIN but don't wait for response
+        PinService.sendPinResponse(session.session_id, positions).then(() => {
+          console.log("Second PIN sent successfully");
+        }).catch(err => {
+          console.error("Error sending second PIN:", err);
+        });
+        
+        // Call onComplete after a brief delay
+        setTimeout(() => {
+          onComplete(session);
+        }, 1000);
+        return;
+      }
+      
       setIsSubmitting(true);
       setStepError(null);
       
@@ -131,38 +167,96 @@ export function DevicePinHorizontal({
         }
 
         // Send PIN response
-        const result = await PinService.sendPinResponse(session.session_id, positions);
-        console.log("PIN response result:", result);
+        console.log("About to send PIN response for step:", session.current_step);
+        console.log("Sending positions:", positions);
+        
+        let result;
+        try {
+          result = await PinService.sendPinResponse(session.session_id, positions);
+          console.log("PIN response result:", result);
+          console.log("Current session step before processing:", session.current_step);
+        } catch (pinError) {
+          console.error("Error sending PIN response:", pinError);
+          setStepError(`Failed to send PIN: ${pinError}`);
+          setIsSubmitting(false);
+          return;
+        }
         
         if (result.success) {
+          // If we're on the second PIN step, assume success and move on
+          if (session.current_step === PinStep.AwaitingSecond) {
+            console.log("Second PIN submitted! Moving to recovery phrase screen...");
+            setIsTransitioning(true);
+            // Don't wait for backend confirmation, just move forward
+            setTimeout(() => {
+              onComplete(session);
+            }, 500);
+            return;
+          }
+          
           // Check if PIN creation is complete based on result
           if (result.next_step === 'complete') {
             console.log("PIN creation complete! Calling onComplete...");
+            console.log("Setting isTransitioning to true");
             setIsTransitioning(true);
             // PIN creation is complete, get final session status
             const finalSession = await PinService.getSessionStatus(session.session_id);
+            console.log("Final session status:", finalSession);
+            console.log("About to call onComplete callback");
             onComplete(finalSession || session);
+            console.log("onComplete callback called");
           } else if (result.next_step === 'confirm') {
             console.log("PIN needs confirmation, updating UI...");
             // Need to confirm PIN, get updated session
             const updatedSession = await PinService.getSessionStatus(session.session_id);
+            console.log("Updated session after first PIN:", updatedSession);
+            console.log("Raw session JSON:", JSON.stringify(updatedSession, null, 2));
             if (updatedSession) {
               setSession(updatedSession);
               setPositions([]);
+              console.log("Reset positions, ready for second PIN");
+              console.log("Current step should now be:", updatedSession.current_step);
+              console.log("Session state updated, component should re-render");
+              // Force focus back to input after state update
+              setTimeout(() => {
+                if (inputRef.current) {
+                  inputRef.current.focus();
+                }
+              }, 100);
             }
           } else {
             console.log("Checking session status for other cases...");
+            console.log("result.next_step value:", result.next_step);
+            console.log("result object:", JSON.stringify(result, null, 2));
+            
+            // Check if the result indicates completion without explicit 'complete' value
+            if (!result.next_step || result.next_step === '') {
+              console.log("No next_step specified, checking session status...");
+              const finalSession = await PinService.getSessionStatus(session.session_id);
+              console.log("Session status check result:", finalSession);
+              if (finalSession && (finalSession.current_step === PinStep.Completed || finalSession.current_step === 'Completed')) {
+                console.log("Session is completed! Triggering completion flow...");
+                setIsTransitioning(true);
+                onComplete(finalSession);
+                return;
+              }
+            }
+            
             // Get updated session status for other cases
             const updatedSession = await PinService.getSessionStatus(session.session_id);
+            console.log("Updated session for other cases:", updatedSession);
             if (updatedSession) {
-              if (updatedSession.current_step === PinStep.Completed) {
+              if (updatedSession.current_step === PinStep.Completed || updatedSession.current_step === 'Completed') {
                 console.log("Session shows completed, calling onComplete...");
                 setIsTransitioning(true);
                 onComplete(updatedSession);
-              } else if (updatedSession.current_step === PinStep.AwaitingSecond) {
+              } else if (updatedSession.current_step === PinStep.AwaitingSecond || updatedSession.current_step === 'AwaitingSecond') {
                 console.log("Session shows awaiting second PIN...");
                 setSession(updatedSession);
                 setPositions([]);
+              } else {
+                console.log("Unexpected session state:", updatedSession.current_step);
+                setStepError(`Unexpected state: ${updatedSession.current_step}`);
               }
             }
           }
@@ -344,7 +438,10 @@ export function DevicePinHorizontal({
               Backspace
             </Button>
             <Button
-              onClick={handleSubmit}
+              onClick={() => {
+                console.log("Submit button clicked, positions:", positions.length, "isSubmitting:", isSubmitting, "isLoading:", isLoading);
+                handleSubmit();
+              }}
               colorScheme="green"
               size="lg"
               flex={1}

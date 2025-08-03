@@ -68,16 +68,16 @@ const CREATE_ALL_STEPS: Step[] = [
     component: Step3Pin,
   },
   {
-    id: "device-label",
-    label: "Device Name",
-    description: "Name your device",
-    component: Step2DeviceLabel,
-  },
-  {
     id: "backup",
     label: "Backup",
     description: "Backup your recovery phrase",
     component: Step4BackupOrRecover,
+  },
+  {
+    id: "device-label",
+    label: "Device Name",
+    description: "Name your device",
+    component: Step2DeviceLabel,
   },
   {
     id: "complete",
@@ -168,14 +168,23 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
   const VISIBLE_STEPS = flowType === 'recover' ? RECOVER_VISIBLE_STEPS : CREATE_VISIBLE_STEPS;
 
   const handleNext = () => {
-    console.log("SetupWizard handleNext called, currentStep:", currentStep, "total steps:", ALL_STEPS.length);
+    console.log("=== SetupWizard handleNext called ===");
+    console.log("Current step:", currentStep);
+    console.log("Current step ID:", ALL_STEPS[currentStep].id);
+    console.log("Total steps:", ALL_STEPS.length);
+    console.log("Flow type:", flowType);
+    
     if (currentStep < ALL_STEPS.length - 1) {
-      console.log("Moving to next step:", currentStep + 1, "which is:", ALL_STEPS[currentStep + 1].id);
-      setCurrentStep(currentStep + 1);
+      const nextStep = currentStep + 1;
+      const nextStepId = ALL_STEPS[nextStep].id;
+      console.log("Moving to next step:", nextStep, "which is:", nextStepId);
+      setCurrentStep(nextStep);
+      console.log("setCurrentStep called with:", nextStep);
     } else {
       console.log("At final step, calling handleComplete");
       handleComplete();
     }
+    console.log("=== handleNext completed ===");
   };
 
   const handlePrevious = () => {
@@ -390,7 +399,7 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
         overflow="hidden"
       >
         <Box w="100%" maxW="900px">
-          <StepComponent {...stepProps} />
+          <StepComponent key={`step-${currentStep}-${ALL_STEPS[currentStep].id}`} {...stepProps} />
         </Box>
       </Box>
 

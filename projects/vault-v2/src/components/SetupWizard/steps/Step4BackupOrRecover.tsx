@@ -1,10 +1,8 @@
-import { Box, VStack, Text, Button, Icon, Image } from "@chakra-ui/react";
-import { FaShieldAlt } from "react-icons/fa";
+import { Box, VStack, Text, Button } from "@chakra-ui/react";
 import { RecoveryFlow } from "../../WalletCreationWizard/RecoveryFlow";
 import { RecoverySettings } from "../../WalletCreationWizard/RecoverySettings";
 import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
-import keepkeyImage from "../../../assets/svg/connect-keepkey.svg";
 
 interface Step4BackupOrRecoverProps {
   deviceId: string;
@@ -27,6 +25,8 @@ export function Step4BackupOrRecover({
   const [error, setError] = useState<string | null>(null);
   const [showRecoverySettings, setShowRecoverySettings] = useState(true);
 
+  console.log("Step4BackupOrRecover rendered with flowType:", flowType);
+
   // Create flow - show backup phrase
   if (flowType === 'create') {
     const handleBackupComplete = async () => {
@@ -43,8 +43,8 @@ export function Step4BackupOrRecover({
     };
 
     return (
-      <VStack gap={6} w="100%" maxW="500px">
-        <VStack gap={4}>
+      <VStack gap={6} w="100%" maxW="600px" mx="auto" align="center" justify="center">
+        <VStack gap={4} w="100%">
           <Text 
             fontSize="4xl" 
             fontWeight="bold" 
@@ -54,23 +54,16 @@ export function Step4BackupOrRecover({
             Look at Your Device
           </Text>
           
-          <Image 
-            src={keepkeyImage} 
-            alt="KeepKey Device"
-            maxW="200px"
-            opacity={0.9}
-          />
-          
           <Box 
             p={8} 
             bg="gray.800" 
             borderRadius="xl" 
             borderWidth="3px"
-            borderColor="orange.500"
+            borderColor="green.500"
             w="100%"
           >
             <VStack gap={4}>
-              <Text fontSize="2xl" color="orange.400" fontWeight="bold" textAlign="center">
+              <Text fontSize="2xl" color="green.400" fontWeight="bold" textAlign="center">
                 Your recovery phrase is displayed on your KeepKey screen
               </Text>
               <Text fontSize="lg" color="gray.300" textAlign="center">
@@ -112,7 +105,7 @@ export function Step4BackupOrRecover({
         )}
 
         <Button
-          colorScheme="orange"
+          colorScheme="green"
           size="lg"
           w="100%"
           onClick={handleBackupComplete}
