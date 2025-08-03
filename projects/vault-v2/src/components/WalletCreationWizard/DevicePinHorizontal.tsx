@@ -14,14 +14,14 @@ import {
 import { useState, useCallback, useRef, useEffect } from "react";
 import { FaCircle, FaChevronDown, FaChevronRight, FaInfoCircle } from "react-icons/fa";
 import cipherImage from "../../assets/onboarding/cipher.png";
-import { PinService } from "../../services/pinService";
-import { PinCreationSession, PinStep, PinPosition, PIN_MATRIX_LAYOUT } from "../../types/pin";
+import { PinService, PinSession } from "../../services/pinService";
+import { PinStep, PinPosition, PIN_MATRIX_LAYOUT } from "../../types/pin";
 
 interface DevicePinHorizontalProps {
   deviceId: string;
   deviceLabel?: string;
   mode: 'create' | 'confirm';
-  onComplete: (session: PinCreationSession) => void;
+  onComplete: (session: PinSession) => void;
   onBack?: () => void;
   isLoading?: boolean;
   error?: string | null;
@@ -38,7 +38,7 @@ export function DevicePinHorizontal({
 }: DevicePinHorizontalProps) {
   const [positions, setPositions] = useState<PinPosition[]>([]);
   const [showMoreInfo, setShowMoreInfo] = useState(false);
-  const [session, setSession] = useState<PinCreationSession | null>(null);
+  const [session, setSession] = useState<PinSession | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -117,7 +117,7 @@ export function DevicePinHorizontal({
           session.current_step === PinStep.AwaitingFirst
         );
         
-        if (updatedSession.current_step === PinStep.Complete && updatedSession.success) {
+        if (updatedSession.current_step === PinStep.Completed && updatedSession.success) {
           onComplete(updatedSession);
         } else if (updatedSession.current_step === PinStep.AwaitingSecond) {
           setSession(updatedSession);
