@@ -182,16 +182,16 @@ try {
     if ($Debug) {
         Write-Status "Starting vault-v2 in development mode..."
         if ($PackageManager -eq "bun") {
-            bun run tauri:dev
+            bun run tauri dev
         } else {
-            npm run tauri:dev
+            npm run tauri dev
         }
     } else {
         Write-Status "Building vault-v2 for production..."
         if ($PackageManager -eq "bun") {
-            bun run tauri:build
+            bun run tauri build
         } else {
-            npm run tauri:build
+            npm run tauri build
         }
         
         Write-Success "Build completed successfully!"
