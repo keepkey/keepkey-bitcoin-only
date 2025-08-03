@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Box, Button, HStack, VStack, Text, Flex, Icon, Progress } from '@chakra-ui/react';
+import { Box, Button, HStack, VStack, Text, Flex, Icon } from '@chakra-ui/react';
 import { FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
 import { useDialog } from '../../contexts/DialogContext';
 import { Step0Warning } from './steps/Step0Warning';
@@ -170,21 +170,6 @@ export function BootloaderUpdateWizard({
           </Text>
         </Box>
 
-        {/* Progress Bar */} 
-        <Box px={5} py={2} bg="gray.900">
-            <Progress.Root 
-              value={progressInfo ? progressInfo.value : overallProgress} 
-              size="xs" 
-              colorScheme={errorInfo ? "red" : "orange"}
-            >
-              <Progress.Track borderRadius="sm">
-                <Progress.Range />
-              </Progress.Track>
-            </Progress.Root>
-            {activeStep.id === 'in-progress' && progressInfo && (
-                 <Text fontSize="xs" color="gray.400" mt={1} textAlign="center">{progressInfo.message}</Text>
-            )}
-        </Box>
 
         {errorInfo && activeStep.id !== 'completion' && (
           <Box p={4} bg="red.900" borderBottomWidth="1px" borderColor="red.700">

@@ -619,3 +619,41 @@ export function useDeviceInvalidStateDialog() {
     isShowing: (deviceId: string) => isShowing(`device-invalid-state-${deviceId}`),
   };
 }
+
+// Pre-configured dialog for PIN Unlock
+export function usePinUnlockDialog() {
+  const { show, hide, isShowing } = useDialog();
+  return {
+    show: (props: {
+      deviceId: string;
+      onUnlocked?: () => void;
+      onDialogClose?: () => void;
+    }) => {
+      const dialogId = `pin-unlock-${props.deviceId}`;
+      console.log(`🔒 [PinUnlockDialog] show() called for device:`, props.deviceId);
+      
+      show({
+        id: dialogId,
+        component: React.lazy(() => import('../components/PinUnlockDialog').then(m => ({ default: m.PinUnlockDialog }))),
+        props: {
+          isOpen: true,
+          deviceId: props.deviceId,
+          onUnlocked: () => {
+            console.log(`🔒 [PinUnlockDialog] Device unlocked successfully`);
+            if (props.onUnlocked) props.onUnlocked();
+            hide(dialogId);
+          },
+          onClose: () => {
+            console.log(`🔒 [PinUnlockDialog] Dialog closed`);
+            if (props.onDialogClose) props.onDialogClose();
+            hide(dialogId);
+          }
+        },
+        priority: 'critical', // Highest priority - PIN is needed for all operations
+        persistent: true, // User must enter PIN or explicitly close
+      });
+    },
+    hide: (deviceId: string) => hide(`pin-unlock-${deviceId}`),
+    isShowing: (deviceId: string) => isShowing(`pin-unlock-${deviceId}`),
+  };
+}

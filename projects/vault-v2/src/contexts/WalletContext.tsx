@@ -12,6 +12,7 @@ import { listen } from '@tauri-apps/api/event';
 // Import organized types and services
 import { Asset, Portfolio, QueueStatus } from '../types';
 import { PortfolioAPI, DeviceQueueAPI, PioneerAPI } from '../lib';
+import { usePinUnlockDialog } from './DialogContext';
 
 const TAG = " | WalletContext | ";
 
@@ -84,6 +85,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   
   // Store fetched xpubs in memory (not database for v2)
   const [fetchedXpubs, setFetchedXpubs] = useState<Array<{path: string, xpub: string, caip: string}>>([]);
+  
+  // PIN unlock dialog hook
+  const pinUnlockDialog = usePinUnlockDialog();
 
   const refreshPortfolio = useCallback(async () => {
     const tag = TAG + " | refreshPortfolio | ";
@@ -655,7 +659,31 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
             setLastReceiveAddress(addressResponse.address); // <-- context state
           } else {
             console.error(tag, `❌ Address request failed:`, addressResponse.error);
-            entry.reject(new Error(addressResponse.error || 'Device error'));
+            
+            // Check if the error is PIN-related
+            const errorMsg = (addressResponse.error || '').toLowerCase();
+            if (errorMsg.includes('pin entry required') || errorMsg.includes('pin request has been triggered')) {
+              console.log(tag, '🔒 Device needs PIN unlock, showing PIN dialog');
+              
+              // Get the device ID from the connected devices
+              const connectedDevices = await DeviceQueueAPI.getConnectedDevices();
+              if (connectedDevices && connectedDevices.length > 0) {
+                const deviceId = getCanonicalDeviceId(connectedDevices[0]);
+                
+                // Show PIN unlock dialog
+                pinUnlockDialog.show({
+                  deviceId,
+                  onUnlocked: () => {
+                    console.log(tag, '🔓 Device unlocked, user should retry the address request');
+                  }
+                });
+              }
+              
+              // Reject with a user-friendly error message
+              entry.reject(new Error('Device locked. Please enter your PIN and try again.'));
+            } else {
+              entry.reject(new Error(addressResponse.error || 'Device error'));
+            }
           }
         }
         
@@ -761,6 +789,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   useEffect(() => {
     let unlistenConnect: Promise<() => void>;
     let unlistenDisconnect: Promise<() => void>;
+    let unlistenPinRequest: Promise<() => void>;
     
     (async () => {
       // Handle device connections
@@ -803,13 +832,33 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           console.error(TAG, 'Failed to cleanup queue on disconnect:', e);
         }
       });
+      
+      // Handle PIN request triggered events
+      unlistenPinRequest = listen('device:pin-request-triggered', async (event: any) => {
+        const tag = TAG + " | device:pin-request-triggered | ";
+        console.log(tag, '🔒 PIN request triggered event received:', event.payload);
+        
+        if (event.payload?.deviceId) {
+          const deviceId = event.payload.deviceId;
+          console.log(tag, '🔒 Showing PIN dialog for device:', deviceId);
+          
+          // Show PIN unlock dialog
+          pinUnlockDialog.show({
+            deviceId,
+            onUnlocked: () => {
+              console.log(tag, '🔓 Device unlocked successfully');
+            }
+          });
+        }
+      });
     })();
 
     return () => {
       unlistenConnect?.then(fn => fn());
       unlistenDisconnect?.then(fn => fn());
+      unlistenPinRequest?.then(fn => fn());
     };
-  }, []);
+  }, [pinUnlockDialog]);
 
   // Watch fetchedXpubs and refresh portfolio when all expected xpubs are present
   useEffect(() => {
