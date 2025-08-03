@@ -18,7 +18,9 @@ export function Step3Pin({
 }: Step3PinProps) {
   
   const handlePinComplete = (pinSession: any) => {
+    console.log("Step3Pin: PIN completed, session:", pinSession);
     updateWizardData({ pinSession });
+    console.log("Step3Pin: Calling onNext() to proceed to recovery screen...");
     onNext();
   };
 

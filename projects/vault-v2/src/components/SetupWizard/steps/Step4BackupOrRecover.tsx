@@ -1,9 +1,10 @@
-import { Box, VStack, Text, Button, Icon } from "@chakra-ui/react";
+import { Box, VStack, Text, Button, Icon, Image } from "@chakra-ui/react";
 import { FaShieldAlt } from "react-icons/fa";
 import { RecoveryFlow } from "../../WalletCreationWizard/RecoveryFlow";
 import { RecoverySettings } from "../../WalletCreationWizard/RecoverySettings";
 import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
+import keepkeyImage from "../../../assets/svg/connect-keepkey.svg";
 
 interface Step4BackupOrRecoverProps {
   deviceId: string;
@@ -43,43 +44,66 @@ export function Step4BackupOrRecover({
 
     return (
       <VStack gap={6} w="100%" maxW="500px">
-        <Icon as={FaShieldAlt} boxSize={16} color="orange.500" />
-        
-        <VStack gap={2}>
-          <Text fontSize="2xl" fontWeight="bold" color="white">
-            Backup Your Recovery Phrase
+        <VStack gap={4}>
+          <Text 
+            fontSize="4xl" 
+            fontWeight="bold" 
+            color="white"
+            textAlign="center"
+          >
+            Look at Your Device
           </Text>
-          <Text fontSize="md" color="gray.400" textAlign="center">
-            Your recovery phrase is now displayed on your KeepKey device
-          </Text>
-        </VStack>
+          
+          <Image 
+            src={keepkeyImage} 
+            alt="KeepKey Device"
+            maxW="200px"
+            opacity={0.9}
+          />
+          
+          <Box 
+            p={8} 
+            bg="gray.800" 
+            borderRadius="xl" 
+            borderWidth="3px"
+            borderColor="orange.500"
+            w="100%"
+          >
+            <VStack gap={4}>
+              <Text fontSize="2xl" color="orange.400" fontWeight="bold" textAlign="center">
+                Your recovery phrase is displayed on your KeepKey screen
+              </Text>
+              <Text fontSize="lg" color="gray.300" textAlign="center">
+                Write down each word exactly as shown on the device
+              </Text>
+            </VStack>
+          </Box>
 
-        <Box 
-          p={4} 
-          bg="gray.700" 
-          borderRadius="lg" 
-          borderWidth="2px"
-          borderColor="orange.500"
-          w="100%"
-        >
-          <VStack gap={3}>
-            <Text color="orange.400" fontWeight="bold">
-              ⚠️ Important Instructions:
+          <Box 
+            p={4} 
+            bg="red.900" 
+            borderRadius="lg" 
+            borderWidth="2px"
+            borderColor="red.500"
+            w="100%"
+          >
+            <Text color="red.300" fontWeight="bold" fontSize="lg" textAlign="center">
+              ⚠️ YOU WILL ONLY SEE THIS ONCE
             </Text>
-            <Text fontSize="sm" color="gray.300">
-              1. Write down each word exactly as shown on your device
+            <Text fontSize="md" color="gray.300" textAlign="center" mt={2}>
+              This is by design - the phrase cannot be retrieved later
             </Text>
-            <Text fontSize="sm" color="gray.300">
-              2. Store your recovery phrase in a safe place
+          </Box>
+
+          <VStack gap={2} w="100%">
+            <Text fontSize="md" color="gray.400" textAlign="center">
+              Take your time to write down all words carefully
             </Text>
-            <Text fontSize="sm" color="gray.300">
-              3. Never share it with anyone or store it digitally
-            </Text>
-            <Text fontSize="sm" color="gray.300">
-              4. This is your only way to recover your funds
+            <Text fontSize="sm" color="gray.500" textAlign="center">
+              The device will wait for your confirmation
             </Text>
           </VStack>
-        </Box>
+        </VStack>
 
         {error && (
           <Text color="red.400" fontSize="sm">
@@ -94,6 +118,7 @@ export function Step4BackupOrRecover({
           onClick={handleBackupComplete}
           isLoading={isLoading}
           loadingText="Completing setup..."
+          _hover={{ transform: "scale(1.02)" }}
         >
           I Have Written Down My Recovery Phrase
         </Button>

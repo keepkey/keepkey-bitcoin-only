@@ -62,16 +62,16 @@ const CREATE_ALL_STEPS: Step[] = [
     component: Step1CreateOrRecover,
   },
   {
-    id: "device-label",
-    label: "Device Name",
-    description: "Name your device",
-    component: Step2DeviceLabel,
-  },
-  {
     id: "pin",
     label: "Security",
     description: "Set up your PIN",
     component: Step3Pin,
+  },
+  {
+    id: "device-label",
+    label: "Device Name",
+    description: "Name your device",
+    component: Step2DeviceLabel,
   },
   {
     id: "backup",
@@ -119,16 +119,16 @@ const RECOVER_ALL_STEPS: Step[] = [
     component: Step4BackupOrRecover,
   },
   {
-    id: "device-label",
-    label: "Device Name",
-    description: "Name your device",
-    component: Step2DeviceLabel,
-  },
-  {
     id: "pin",
     label: "Security",
     description: "Set up your PIN",
     component: Step3Pin,
+  },
+  {
+    id: "device-label",
+    label: "Device Name",
+    description: "Name your device",
+    component: Step2DeviceLabel,
   },
   {
     id: "complete",
@@ -168,9 +168,12 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
   const VISIBLE_STEPS = flowType === 'recover' ? RECOVER_VISIBLE_STEPS : CREATE_VISIBLE_STEPS;
 
   const handleNext = () => {
+    console.log("SetupWizard handleNext called, currentStep:", currentStep, "total steps:", ALL_STEPS.length);
     if (currentStep < ALL_STEPS.length - 1) {
+      console.log("Moving to next step:", currentStep + 1, "which is:", ALL_STEPS[currentStep + 1].id);
       setCurrentStep(currentStep + 1);
     } else {
+      console.log("At final step, calling handleComplete");
       handleComplete();
     }
   };
@@ -229,6 +232,9 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
   };
 
   const StepComponent = ALL_STEPS[currentStep].component;
+  
+  // Debug current step
+  console.log("SetupWizard render - currentStep:", currentStep, "stepId:", ALL_STEPS[currentStep].id, "component:", StepComponent.name);
   
   // Calculate progress based on visible steps
   const currentStepId = ALL_STEPS[currentStep].id;

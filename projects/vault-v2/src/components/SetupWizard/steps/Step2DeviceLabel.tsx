@@ -31,9 +31,17 @@ export function Step2DeviceLabel({
       }
       updateWizardData({ deviceLabel: label.trim() || 'KeepKey' });
       onNext();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to set device label:", err);
-      setError(`Failed to set device label: ${err}`);
+      
+      // If the error is about PIN, skip setting the label for now
+      if (err.toString().includes('PIN')) {
+        console.warn("Device requires PIN for label setting, skipping for now");
+        updateWizardData({ deviceLabel: label.trim() || 'KeepKey', labelPending: true });
+        onNext();
+      } else {
+        setError(`Failed to set device label: ${err}`);
+      }
     } finally {
       setIsLoading(false);
     }

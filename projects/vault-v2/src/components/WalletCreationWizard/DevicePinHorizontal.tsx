@@ -10,18 +10,20 @@ import {
   Heading,
   Image,
   Flex,
+  Spinner,
+  Center,
 } from "@chakra-ui/react";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { FaCircle, FaChevronDown, FaChevronRight, FaInfoCircle } from "react-icons/fa";
 import cipherImage from "../../assets/onboarding/cipher.png";
-import { PinService, PinSession } from "../../services/pinService";
-import { PinStep, PinPosition, PIN_MATRIX_LAYOUT } from "../../types/pin";
+import { PinService } from "../../services/pinService";
+import { PinCreationSession, PinStep, PinPosition, PIN_MATRIX_LAYOUT } from "../../types/pin";
 
 interface DevicePinHorizontalProps {
   deviceId: string;
   deviceLabel?: string;
   mode: 'create' | 'confirm';
-  onComplete: (session: PinSession) => void;
+  onComplete: (session: PinCreationSession) => void;
   onBack?: () => void;
   isLoading?: boolean;
   error?: string | null;
@@ -38,9 +40,11 @@ export function DevicePinHorizontal({
 }: DevicePinHorizontalProps) {
   const [positions, setPositions] = useState<PinPosition[]>([]);
   const [showMoreInfo, setShowMoreInfo] = useState(false);
-  const [session, setSession] = useState<PinSession | null>(null);
+  const [session, setSession] = useState<PinCreationSession | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Dynamic title and description based on session state
@@ -68,18 +72,26 @@ export function DevicePinHorizontal({
     }
   };
 
-  // Initialize PIN creation session
+  // Initialize PIN creation session with delay
   useEffect(() => {
     const initializeSession = async () => {
       if (!session && mode === 'create') {
+        setIsInitializing(true);
         try {
+          // Add 1 second delay to ensure device is ready
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
           const newSession = await PinService.startPinCreation(deviceId, deviceLabel);
           setSession(newSession);
           setStepError(null);
         } catch (error) {
           console.error("PIN creation initialization error:", error);
           setStepError(`Failed to start PIN creation: ${error}`);
+        } finally {
+          setIsInitializing(false);
         }
+      } else {
+        setIsInitializing(false);
       }
     };
 
@@ -110,18 +122,52 @@ export function DevicePinHorizontal({
       setStepError(null);
       
       try {
-        const updatedSession = await PinService.submitPin(
-          session.id, 
-          deviceId, 
-          positions, 
-          session.current_step === PinStep.AwaitingFirst
-        );
+        // Validate positions first
+        const validation = PinService.validatePositions(positions);
+        if (!validation.valid) {
+          setStepError(validation.error!);
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Send PIN response
+        const result = await PinService.sendPinResponse(session.session_id, positions);
+        console.log("PIN response result:", result);
         
-        if (updatedSession.current_step === PinStep.Completed && updatedSession.success) {
-          onComplete(updatedSession);
-        } else if (updatedSession.current_step === PinStep.AwaitingSecond) {
-          setSession(updatedSession);
-          setPositions([]);
+        if (result.success) {
+          // Check if PIN creation is complete based on result
+          if (result.next_step === 'complete') {
+            console.log("PIN creation complete! Calling onComplete...");
+            setIsTransitioning(true);
+            // PIN creation is complete, get final session status
+            const finalSession = await PinService.getSessionStatus(session.session_id);
+            onComplete(finalSession || session);
+          } else if (result.next_step === 'confirm') {
+            console.log("PIN needs confirmation, updating UI...");
+            // Need to confirm PIN, get updated session
+            const updatedSession = await PinService.getSessionStatus(session.session_id);
+            if (updatedSession) {
+              setSession(updatedSession);
+              setPositions([]);
+            }
+          } else {
+            console.log("Checking session status for other cases...");
+            // Get updated session status for other cases
+            const updatedSession = await PinService.getSessionStatus(session.session_id);
+            if (updatedSession) {
+              if (updatedSession.current_step === PinStep.Completed) {
+                console.log("Session shows completed, calling onComplete...");
+                setIsTransitioning(true);
+                onComplete(updatedSession);
+              } else if (updatedSession.current_step === PinStep.AwaitingSecond) {
+                console.log("Session shows awaiting second PIN...");
+                setSession(updatedSession);
+                setPositions([]);
+              }
+            }
+          }
+        } else {
+          setStepError(result.error || 'Failed to process PIN');
         }
       } catch (error) {
         console.error("PIN submission error:", error);
@@ -158,6 +204,34 @@ export function DevicePinHorizontal({
       transform={i === 3 && positions.length === 4 ? "scale(1.1)" : "scale(1)"}
     />
   ));
+
+  // Show loading spinner during initialization
+  if (isInitializing) {
+    return (
+      <Center minH="400px">
+        <VStack gap={4}>
+          <Spinner size="xl" color="blue.500" thickness="4px" />
+          <Text color="gray.400" fontSize="lg">
+            Initializing PIN setup on device...
+          </Text>
+        </VStack>
+      </Center>
+    );
+  }
+
+  // Show transition state when PIN is complete
+  if (isTransitioning) {
+    return (
+      <Center minH="400px">
+        <VStack gap={4}>
+          <Spinner size="xl" color="green.500" thickness="4px" />
+          <Text color="green.400" fontSize="lg">
+            PIN setup complete! Preparing recovery phrase...
+          </Text>
+        </VStack>
+      </Center>
+    );
+  }
 
   return (
     <Box w="100%">
