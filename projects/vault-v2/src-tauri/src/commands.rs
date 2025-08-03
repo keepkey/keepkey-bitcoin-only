@@ -15,7 +15,8 @@ use std::path::PathBuf;
 use std::fs;
 use serde_json::Value;
 use log;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use once_cell::sync::Lazy;
 
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
@@ -339,6 +340,21 @@ pub async fn get_device_status(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,
 ) -> Result<Option<DeviceStatus>, String> {
+    // Rate limit status checks - ignore rapid duplicate requests
+    static LAST_STATUS_CHECK: once_cell::sync::Lazy<Arc<tokio::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>> = 
+        once_cell::sync::Lazy::new(|| Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())));
+    
+    {
+        let mut last_checks = LAST_STATUS_CHECK.lock().await;
+        if let Some(last_check) = last_checks.get(&device_id) {
+            if last_check.elapsed() < Duration::from_millis(500) {
+                // Skip if checked within last 500ms
+                return Ok(None);
+            }
+        }
+        last_checks.insert(device_id.clone(), std::time::Instant::now());
+    }
+    
     println!("Getting device status for: {}", device_id);
     
     let request_id = uuid::Uuid::new_v4().to_string();
@@ -383,7 +399,7 @@ pub async fn get_device_status(
                 println!("🔄 Attempting to get features for device {} (attempt {}/3)", device_id, attempt);
                 
                 match tokio::time::timeout(
-                    Duration::from_secs(30), // 30 seconds per attempt
+                    Duration::from_secs(10), // Reduced to 10 seconds per attempt for faster retries
                     queue_handle.get_features()
                 ).await {
                     Ok(Ok(raw_features)) => {
@@ -393,12 +409,23 @@ pub async fn get_device_status(
                         break;
                     }
                     Ok(Err(e)) => {
-                        println!("⚠️ Failed to get features for device {} on attempt {}: {}", device_id, attempt, e);
-                        last_error = Some(format!("Failed to get features: {}", e));
+                        let error_detail = format!("{:?}", e);
+                        println!("⚠️ Failed to get features for device {} on attempt {}: {}", device_id, attempt, error_detail);
+                        
+                        // Check for specific error conditions
+                        if error_detail.contains("PinRequired") || error_detail.contains("pin") {
+                            last_error = Some("Device requires PIN unlock".to_string());
+                        } else if error_detail.contains("Bootloader") || error_detail.contains("bootloader") {
+                            last_error = Some("Device is in bootloader mode".to_string());
+                        } else if error_detail.contains("Busy") || error_detail.contains("busy") {
+                            last_error = Some("Device is busy, please wait".to_string());
+                        } else {
+                            last_error = Some(format!("Device error: {}", e));
+                        }
                     }
                     Err(_) => {
-                        println!("⏱️ Timeout getting features for device {} on attempt {}", device_id, attempt);
-                        last_error = Some("Timeout getting features".to_string());
+                        println!("⏱️ Timeout getting features for device {} on attempt {} (10s timeout)", device_id, attempt);
+                        last_error = Some("Device operation timed out".to_string());
                     }
                 }
                 

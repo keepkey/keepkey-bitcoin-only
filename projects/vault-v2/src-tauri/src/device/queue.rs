@@ -77,37 +77,62 @@ pub async fn add_to_device_queue(
     };
 
     // ------------------------------------------------------------------
-    // --------------------------------------------------------------
+    // Check if device is in PIN flow BEFORE doing anything else
+    // ------------------------------------------------------------------
+    if crate::commands::is_device_in_pin_flow(&request.device_id) {
+        // Don't interrupt PIN flow with ANY device operations
+        match &request.request {
+            DeviceRequest::GetXpub { .. } | 
+            DeviceRequest::GetAddress { .. } | 
+            DeviceRequest::SignTransaction { .. } => {
+                println!("🚫 Blocking request during PIN flow - device is entering PIN");
+                return Err("Device is currently in PIN entry mode. Please complete PIN entry first.".to_string());
+            },
+            _ => {
+                // Allow GetFeatures and SendRaw during PIN flow as they might be needed
+            }
+        }
+    }
+    
+    // ------------------------------------------------------------------
     // Pre-flight status check – ensure the device can service this request
     // ------------------------------------------------------------------
-    // We fetch the current features via the queue (which opens a temporary
-    // transport) so that we have accurate mode/version information.
-    let raw_features_opt = match keepkey_rust::device_queue::DeviceQueueHandle::get_features(&queue_handle).await {
-        Ok(f) => {
-            // Successfully got features, update cache
-            let mut cache = DEVICE_STATE_CACHE.write().await;
-            cache.insert(request.device_id.clone(), DeviceStateCache {
-                is_oob_bootloader: false,
-                last_features: Some(f.clone()),
-                last_update: std::time::Instant::now(),
-            });
-            Some(f)
-        },
-        Err(e) => {
-            eprintln!("⚠️  Unable to fetch features for status check: {e}");
-            
-            // Check if we have cached state for this device
-            let cache = DEVICE_STATE_CACHE.read().await;
-            if let Some(cached_state) = cache.get(&request.device_id) {
-                // If we know this is an OOB bootloader from a previous successful check
-                if cached_state.is_oob_bootloader {
-                    println!("📋 Using cached OOB bootloader state for device {}", request.device_id);
-                    cached_state.last_features.clone()
+    // Skip GetFeatures if device is in PIN flow to avoid interrupting the PIN screen
+    let raw_features_opt = if crate::commands::is_device_in_pin_flow(&request.device_id) {
+        println!("⚠️ Skipping GetFeatures check - device is in PIN flow");
+        // Check cache for last known features
+        let cache = DEVICE_STATE_CACHE.read().await;
+        cache.get(&request.device_id).and_then(|state| state.last_features.clone())
+    } else {
+        // We fetch the current features via the queue (which opens a temporary
+        // transport) so that we have accurate mode/version information.
+        match keepkey_rust::device_queue::DeviceQueueHandle::get_features(&queue_handle).await {
+            Ok(f) => {
+                // Successfully got features, update cache
+                let mut cache = DEVICE_STATE_CACHE.write().await;
+                cache.insert(request.device_id.clone(), DeviceStateCache {
+                    is_oob_bootloader: false,
+                    last_features: Some(f.clone()),
+                    last_update: std::time::Instant::now(),
+                });
+                Some(f)
+            },
+            Err(e) => {
+                eprintln!("⚠️  Unable to fetch features for status check: {e}");
+                
+                // Check if we have cached state for this device
+                let cache = DEVICE_STATE_CACHE.read().await;
+                if let Some(cached_state) = cache.get(&request.device_id) {
+                    // If we know this is an OOB bootloader from a previous successful check
+                    if cached_state.is_oob_bootloader {
+                        println!("📋 Using cached OOB bootloader state for device {}", request.device_id);
+                        cached_state.last_features.clone()
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
-            } else {
-                None
             }
         }
     };

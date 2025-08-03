@@ -138,15 +138,36 @@ impl DeviceLogger {
     
     /// Write a log entry to the current log file
     async fn write_log_entry(&self, log_entry: &serde_json::Value) -> Result<(), String> {
-        let mut file = self.get_current_log_file().await?;
+        let current_date = Self::get_current_date();
         
-        // Write the log entry as a JSON line
-        writeln!(file, "{}", serde_json::to_string(log_entry).unwrap())
-            .map_err(|e| format!("Failed to write log entry: {}", e))?;
+        // Hold both locks for the entire write operation to prevent interleaving
+        let mut current_date_lock = self.current_date.lock().await;
+        let mut current_log_file_lock = self.current_log_file.lock().await;
         
-        // Flush to ensure it's written immediately
-        file.flush()
-            .map_err(|e| format!("Failed to flush log file: {}", e))?;
+        // Check if we need to create a new log file (new day or first time)
+        if *current_date_lock != current_date || current_log_file_lock.is_none() {
+            let log_file_path = self.logs_dir.join(format!("device-communications-{}.log", current_date));
+            
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_file_path)
+                .map_err(|e| format!("Failed to open log file: {}", e))?;
+            
+            *current_date_lock = current_date;
+            *current_log_file_lock = Some(file);
+        }
+        
+        // Write to the file while holding the lock
+        if let Some(ref mut file) = *current_log_file_lock {
+            // Write the log entry as a JSON line
+            writeln!(file, "{}", serde_json::to_string(log_entry).unwrap())
+                .map_err(|e| format!("Failed to write log entry: {}", e))?;
+            
+            // Flush to ensure it's written immediately
+            file.flush()
+                .map_err(|e| format!("Failed to flush log file: {}", e))?;
+        }
         
         Ok(())
     }

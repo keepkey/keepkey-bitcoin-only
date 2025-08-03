@@ -1,15 +1,17 @@
 pub mod routes;
 pub mod context;
+pub mod proxy;
 
 use axum::{
     Router,
     serve,
     routing::{get, post},
+    response::Json,
 };
 
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
-use tracing::info;
+use tracing::{info, debug};
 use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -78,6 +80,11 @@ pub async fn start_server(device_queue_manager: crate::commands::DeviceQueueMana
         // System endpoints
         .route("/api/health", get(routes::health_check))
         
+        // Add compatibility route for Pioneer SDK kkapi detection
+        .route("/spec/swagger.json", get(|| async move {
+            Json(ApiDoc::openapi())
+        }))
+        
         // Context endpoints - commented out until full device interaction is implemented
         // .route("/api/context", get(routes::api_get_context))
         // .route("/api/context", post(routes::api_set_context))
@@ -94,19 +101,57 @@ pub async fn start_server(device_queue_manager: crate::commands::DeviceQueueMana
         .merge(swagger_ui)
         // Then add state and middleware
         .with_state(server_state)
-        .layer(CorsLayer::permissive());
+        .layer(
+            CorsLayer::new()
+                // Allow any origin with wildcard
+                .allow_origin(tower_http::cors::Any)
+                // Allow all methods
+                .allow_methods(tower_http::cors::Any)
+                // Allow all headers
+                .allow_headers(tower_http::cors::Any)
+                // Note: credentials cannot be used with wildcard origin
+                .allow_credentials(false)
+        );
     
     let addr = "127.0.0.1:1646";
     let listener = TcpListener::bind(addr).await?;
     
-    info!("🚀 Server started successfully:");
-    info!("  📋 REST API: http://{}/api", addr);
-    info!("  📚 API Documentation: http://{}/docs", addr);
-    info!("  🔌 Device Management: http://{}/api/devices", addr);
-    info!("  🤖 MCP Endpoint: http://{}/mcp", addr);
+    // Start the proxy server on port 8080
+    let proxy_addr = "127.0.0.1:8080";
+    let proxy_app = proxy::create_proxy_router();
+    let proxy_listener = TcpListener::bind(proxy_addr).await?;
     
-    // Spawn the server
-    serve(listener, app).await?;
+    info!("🚀 Starting servers:");
+    info!("  📋 REST API: http://{}/api", addr);
+    info!("  🌍 Vault Proxy: http://{} -> vault.keepkey.com", proxy_addr);
+    info!("  📚 API Documentation: http://{}/docs", addr);
+    debug!("  🔌 Device Management: http://{}/api/devices", addr);
+    debug!("  🤖 MCP Endpoint: http://{}/mcp", addr);
+    debug!("  📄 Swagger JSON: http://{}/spec/swagger.json", addr);
+    
+    // Start the proxy server in a separate task
+    let proxy_handle = tokio::spawn(async move {
+        serve(proxy_listener, proxy_app).await
+    });
+    
+    // Small delay to let proxy server start
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    
+    info!("✅ Both servers started successfully and are ready");
+    
+    // Run both servers concurrently
+    tokio::select! {
+        result = serve(listener, app) => {
+            if let Err(e) = result {
+                tracing::error!("API server error: {}", e);
+            }
+        }
+        result = proxy_handle => {
+            if let Err(e) = result {
+                tracing::error!("Proxy server error: {}", e);
+            }
+        }
+    }
     
     Ok(())
 } 

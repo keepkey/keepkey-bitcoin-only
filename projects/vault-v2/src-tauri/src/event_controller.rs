@@ -77,6 +77,17 @@ impl EventController {
                         // Check for newly connected devices
                         for device in &current_devices {
                             if !last_devices.iter().any(|d| d.unique_id == device.unique_id) {
+                                // Check if this is a duplicate of an already connected device
+                                let is_duplicate = current_devices.iter().any(|other| {
+                                    other.unique_id != device.unique_id && 
+                                    crate::commands::are_devices_potentially_same(&device.unique_id, &other.unique_id)
+                                });
+                                
+                                if is_duplicate {
+                                    println!("⚠️ Skipping duplicate device: {} (already connected with different ID)", device.unique_id);
+                                    continue;
+                                }
+                                
                                 println!("🔌 Device connected: {} (VID: 0x{:04x}, PID: 0x{:04x})", 
                                          device.unique_id, device.vid, device.pid);
                                 println!("   Device info: {} - {}", 
@@ -126,6 +137,8 @@ impl EventController {
                                 let app_for_task = app_handle.clone();
                                 let device_for_task = device.clone();
                                 tokio::spawn(async move {
+                                    // Give device a moment to settle after connection
+                                    tokio::time::sleep(Duration::from_millis(500)).await;
                                     println!("📡 Fetching device features for: {}", device_for_task.unique_id);
                                     
                                     // Emit getting features status
@@ -474,7 +487,7 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
                 return Err("Device entered PIN flow during feature fetch".to_string());
             }
             
-            match tokio::time::timeout(Duration::from_secs(30), queue_handle.get_features()).await {
+            match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
                 Ok(Ok(raw_features)) => {
                     println!("✅ Successfully got features for device {} on attempt {}", device.unique_id, attempt);
                     // Convert features to our DeviceFeatures format
