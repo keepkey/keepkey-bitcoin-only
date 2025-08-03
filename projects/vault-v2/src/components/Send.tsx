@@ -404,20 +404,62 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
         amount: input.amount,
         vout: input.vout,
         txid: input.txid,
-        prev_tx_hex: input.hex
+        hex: input.hex  // Device expects 'hex' field name
       }));
       
       const realOutputs = unsignedTx.outputs.map((output: any) => ({
-        address: output.address,
+        address: output.address || '',  // Ensure address is always a string
         amount: parseInt(output.amount),
         address_type: output.addressType === 'change' ? 'change' : 'spend',
-        script_type: output.scriptType || 'p2pkh',
-        address_n_list: output.addressNList
+        is_change: output.addressType === 'change' ? true : false,
+        address_n_list: output.addressNList || null,
+        script_type: output.scriptType || 'p2pkh'
       }));
+      
+      // Debug log the outputs being sent
+      console.log('📤 Outputs being sent to device:', realOutputs);
+      realOutputs.forEach((output: any, idx: number) => {
+        console.log(`   Output ${idx + 1}:`, {
+          address: output.address,
+          amount: output.amount,
+          address_type: output.address_type,
+          is_change: output.is_change,
+          has_address_n_list: !!output.address_n_list,
+          script_type: output.script_type
+        });
+      });
       
       // Sign the transaction using real device with properly selected UTXOs
       console.log('🔐 Calling signTransaction with device queue...');
       console.log('🔐 Request ID will be:', `sign_tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+      
+      // Log the EXACT payload being sent to the device
+      console.log('📝 COMPLETE SIGN PAYLOAD TO DEVICE:');
+      console.log('==========================================');
+      console.log(JSON.stringify({
+        coin: unsignedTx.coin,
+        inputs: realInputs,
+        outputs: realOutputs,
+        version: unsignedTx.version,
+        locktime: unsignedTx.locktime
+      }, null, 2));
+      console.log('==========================================');
+      
+      // Also log each input individually for detailed inspection
+      console.log('🔍 DETAILED INPUT INSPECTION:');
+      realInputs.forEach((input: any, index: number) => {
+        console.log(`Input ${index + 1} Full Details:`);
+        console.log('  - txid:', input.txid);
+        console.log('  - vout:', input.vout);
+        console.log('  - amount:', input.amount);
+        console.log('  - script_type:', input.script_type);
+        console.log('  - address_n_list:', JSON.stringify(input.address_n_list));
+        console.log('  - hex present?:', !!input.hex);
+        console.log('  - hex length:', input.hex ? input.hex.length : 0);
+        console.log('  - hex first 100 chars:', input.hex ? input.hex.substring(0, 100) : 'NO HEX');
+        console.log('  - hex last 20 chars:', input.hex ? input.hex.substring(input.hex.length - 20) : 'NO HEX');
+        console.log('  - All fields:', Object.keys(input));
+      });
       
       let signedTxHex: string;
       try {
@@ -719,20 +761,30 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
             <HStack gap={1}>
               {(['slow', 'medium', 'fast'] as const).map((preset) => {
                 const presetFeeRate = feeRates[preset];
+                const isSelected = feeRate === preset;
                 
                 return (
                   <Button
                     key={preset}
                     size="xs"
-                    variant={feeRate === preset ? "solid" : "outline"}
-                    colorScheme={feeRate === preset ? "blue" : "gray"}
+                    variant={isSelected ? "solid" : "outline"}
+                    colorScheme={isSelected ? "blue" : "gray"}
                     onClick={() => setFeeRate(preset)}
                     flex="1"
                     fontSize="2xs"
                     h="6"
                     disabled={loadingFees}
+                    bg={isSelected ? "blue.500" : "transparent"}
+                    _hover={{
+                      bg: isSelected ? "blue.600" : "gray.700",
+                      borderColor: isSelected ? "blue.600" : "gray.500"
+                    }}
+                    _active={{
+                      bg: isSelected ? "blue.700" : "gray.800"
+                    }}
+                    borderColor={isSelected ? "blue.500" : "gray.600"}
                   >
-                    {preset} ({loadingFees ? '...' : Math.round(presetFeeRate)})
+                    {preset} ({loadingFees ? '...' : `${Math.round(presetFeeRate)} sat/vB`})
                   </Button>
                 );
               })}
@@ -793,11 +845,17 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
             </HStack>
             <HStack justify="space-between">
               <Text color="gray.400">Est. Fee:</Text>
-              <Text color="white">{transactionReview.fee.toFixed(8)} BTC</Text>
+              <VStack align="end" gap={0}>
+                <Text color="white">{transactionReview.fee.toFixed(8)} BTC</Text>
+                <Text color="gray.500" fontSize="xs">≈ ${convertBtcToUsd(transactionReview.fee).toFixed(2)} USD</Text>
+              </VStack>
             </HStack>
             <HStack justify="space-between" borderTop="1px solid" borderColor="gray.600" pt={2}>
               <Text color="gray.400" fontWeight="bold">Total:</Text>
-              <Text color="orange.300" fontWeight="bold">{transactionReview.total.toFixed(8)} BTC</Text>
+              <VStack align="end" gap={0}>
+                <Text color="orange.300" fontWeight="bold">{transactionReview.total.toFixed(8)} BTC</Text>
+                <Text color="gray.500" fontSize="xs">≈ ${convertBtcToUsd(transactionReview.total).toFixed(2)} USD</Text>
+              </VStack>
             </HStack>
           </VStack>
         </Box>
@@ -929,16 +987,16 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
                     onClick={async () => {
                       try {
                         const { invoke } = await import('@tauri-apps/api/core');
-                        await invoke('open_url', { url: `https://blockstream.info/tx/${txid}` });
+                        await invoke('open_url', { url: `https://mempool.space/tx/${txid}` });
                       } catch (error) {
                         console.error('Failed to open URL:', error);
                         // Fallback to window.open if Tauri command fails
-                        window.open(`https://blockstream.info/tx/${txid}`, '_blank');
+                        window.open(`https://mempool.space/tx/${txid}`, '_blank');
                       }
                     }}
                     flex="1"
                   >
-                    🔗 View on Blockstream
+                    🔗 View on Mempool
                   </Button>
                 </HStack>
               </VStack>

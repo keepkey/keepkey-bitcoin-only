@@ -323,38 +323,48 @@ pub async fn add_to_device_queue(
             // Build transaction map with previous transactions and unsigned transaction
             let mut tx_map = std::collections::HashMap::new();
             
-            // Cache previous transactions
+            // Cache previous transactions (only required for legacy inputs)
             for (idx, input) in inputs.iter().enumerate() {
+                // Only legacy (p2pkh) inputs require previous transaction hex
+                // SegWit inputs (p2sh, p2sh-p2wpkh, p2wpkh) do NOT need hex
+                let needs_hex = input.script_type == "p2pkh";
+                
                 if let Some(hex_data) = &input.prev_tx_hex {
-                    let tx_hash = hex::decode(&input.txid).map_err(|e| format!("Invalid txid hex: {}", e))?;
-                    let tx_hash_hex = hex::encode(&tx_hash);
-                    
-                    // Parse the previous transaction from hex
-                    match parse_transaction_from_hex(hex_data) {
-                        Ok((metadata, tx_inputs, tx_outputs)) => {
-                            let tx = keepkey_rust::messages::TransactionType {
-                                version: Some(metadata.0),
-                                lock_time: Some(metadata.3),
-                                inputs_cnt: Some(metadata.1),
-                                outputs_cnt: Some(metadata.2),
-                                inputs: tx_inputs,
-                                bin_outputs: tx_outputs,
-                                outputs: vec![],
-                                extra_data: None,
-                                extra_data_len: Some(0),
-                                ..Default::default()
-                            };
-                            tx_map.insert(tx_hash_hex.clone(), tx);
-                            println!("✅ Cached previous transaction: {} (v{}, {} inputs, {} outputs)", 
-                                   tx_hash_hex, metadata.0, metadata.1, metadata.2);
+                    if !hex_data.is_empty() {
+                        let tx_hash = hex::decode(&input.txid).map_err(|e| format!("Invalid txid hex: {}", e))?;
+                        let tx_hash_hex = hex::encode(&tx_hash);
+                        
+                        // Parse the previous transaction from hex
+                        match parse_transaction_from_hex(hex_data) {
+                            Ok((metadata, tx_inputs, tx_outputs)) => {
+                                let tx = keepkey_rust::messages::TransactionType {
+                                    version: Some(metadata.0),
+                                    lock_time: Some(metadata.3),
+                                    inputs_cnt: Some(metadata.1),
+                                    outputs_cnt: Some(metadata.2),
+                                    inputs: tx_inputs,
+                                    bin_outputs: tx_outputs,
+                                    outputs: vec![],
+                                    extra_data: None,
+                                    extra_data_len: Some(0),
+                                    ..Default::default()
+                                };
+                                tx_map.insert(tx_hash_hex.clone(), tx);
+                                println!("✅ Cached previous transaction for legacy input: {} (v{}, {} inputs, {} outputs)", 
+                                       tx_hash_hex, metadata.0, metadata.1, metadata.2);
+                            }
+                            Err(e) => {
+                                eprintln!("⚠️ Failed to parse previous transaction for input {}: {}", idx, e);
+                                return Err(format!("Failed to parse previous transaction for input {}: {}", idx, e));
+                            }
                         }
-                        Err(e) => {
-                            eprintln!("⚠️ Failed to parse previous transaction for input {}: {}", idx, e);
-                            return Err(format!("Failed to parse previous transaction for input {}: {}", idx, e));
-                        }
+                    } else if needs_hex {
+                        return Err(format!("Legacy input {} missing required previous transaction hex", idx));
                     }
+                } else if needs_hex {
+                    return Err(format!("Legacy input {} missing required previous transaction hex", idx));
                 } else {
-                    return Err(format!("Input {} missing previous transaction hex", idx));
+                    println!("⚡ SegWit input {} ({}): no hex required", idx, input.script_type);
                 }
             }
 
@@ -363,7 +373,7 @@ pub async fn add_to_device_queue(
             for input in inputs {
                 let script_type = match input.script_type.as_str() {
                     "p2pkh" => keepkey_rust::messages::InputScriptType::Spendaddress,
-                    "p2sh-p2wpkh" => keepkey_rust::messages::InputScriptType::Spendp2shwitness,
+                    "p2sh" | "p2sh-p2wpkh" => keepkey_rust::messages::InputScriptType::Spendp2shwitness,
                     "p2wpkh" => keepkey_rust::messages::InputScriptType::Spendwitness,
                     _ => keepkey_rust::messages::InputScriptType::Spendaddress,
                 };

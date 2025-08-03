@@ -175,6 +175,45 @@ export class PioneerAPI {
     }
   }
 
+  static async getRawTransaction(txid: string): Promise<string> {
+    try {
+      console.log('🔍 Fetching raw transaction for txid:', txid);
+      
+      // Using mempool.space API - it's more reliable and feature-rich than blockstream
+      // mempool.space/api/tx/{txid}/hex returns the raw transaction hex
+      const response = await axios.get(
+        `https://mempool.space/api/tx/${txid}/hex`,
+        { 
+          headers: { 'accept': 'text/plain' },
+          timeout: 10000
+        }
+      );
+      
+      console.log('✅ Raw transaction hex retrieved from mempool.space, length:', response.data.length);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Failed to get raw transaction from mempool.space:', error);
+      
+      // Fallback to blockstream.info if mempool.space fails
+      try {
+        console.log('🔄 Falling back to blockstream.info...');
+        const fallbackResponse = await axios.get(
+          `https://blockstream.info/api/tx/${txid}/hex`,
+          { 
+            headers: { 'accept': 'text/plain' },
+            timeout: 10000
+          }
+        );
+        console.log('✅ Raw transaction hex retrieved from blockstream fallback, length:', fallbackResponse.data.length);
+        return fallbackResponse.data;
+      } catch (fallbackError) {
+        console.error('❌ Fallback also failed:', fallbackError);
+        // Return empty string if we can't get the tx - device will fail gracefully
+        return '';
+      }
+    }
+  }
+
   static async broadcastTransaction(networkId: string, serializedTx: string): Promise<{ txid: string }> {
     try {
       console.log('📡 Broadcasting transaction to network:', networkId);

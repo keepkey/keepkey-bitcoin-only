@@ -58,6 +58,7 @@ pub struct BitcoinUtxoInput {
     pub amount: String,               // Amount in satoshis as string
     pub vout: u32,                    // Output index
     pub txid: String,                 // Transaction ID
+    #[serde(alias = "hex")]           // Accept both "prev_tx_hex" and "hex" field names
     pub prev_tx_hex: Option<String>,  // Raw previous transaction hex
 }
 
@@ -1433,8 +1434,24 @@ pub fn parse_transaction_from_hex(hex_data: &str) -> Result<((u32, u32, u32, u32
     // Parse version (4 bytes, little-endian)
     let version = read_u32_le(&mut cursor)?;
     
-    // Parse input count (varint)
-    let input_count = read_varint(&mut cursor)?;
+    // Check for SegWit marker and flag
+    let mut is_segwit = false;
+    let input_count = {
+        let first_byte = read_varint(&mut cursor)?;
+        if first_byte == 0 {
+            // This might be SegWit marker (0x00) followed by flag (0x01)
+            let flag = read_u8(&mut cursor)?;
+            if flag == 1 {
+                is_segwit = true;
+                // Now read the actual input count
+                read_varint(&mut cursor)?
+            } else {
+                return Err("Invalid transaction format: unexpected marker/flag".to_string());
+            }
+        } else {
+            first_byte
+        }
+    };
     
     // Parse inputs
     let mut inputs = Vec::new();
@@ -1494,10 +1511,29 @@ pub fn parse_transaction_from_hex(hex_data: &str) -> Result<((u32, u32, u32, u32
         });
     }
     
+    // If this is a SegWit transaction, skip witness data
+    if is_segwit {
+        // Skip witness data for each input
+        for _ in 0..input_count {
+            let witness_count = read_varint(&mut cursor)?;
+            for _ in 0..witness_count {
+                let witness_len = read_varint(&mut cursor)? as usize;
+                let mut witness_data = vec![0u8; witness_len];
+                read_exact(&mut cursor, &mut witness_data)?;
+            }
+        }
+    }
+    
     // Parse lock time (4 bytes, little-endian)
     let lock_time = read_u32_le(&mut cursor)?;
     
     Ok(((version, input_count as u32, output_count as u32, lock_time), inputs, outputs))
+}
+
+fn read_u8(cursor: &mut Cursor<Vec<u8>>) -> Result<u8, String> {
+    let mut buf = [0u8; 1];
+    read_exact(cursor, &mut buf)?;
+    Ok(buf[0])
 }
 
 fn read_u32_le(cursor: &mut Cursor<Vec<u8>>) -> Result<u32, String> {
