@@ -4,10 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'release-*'
   workflow_dispatch:
 
 jobs:
   create-release:
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -31,7 +34,7 @@ jobs:
           prerelease: false
 
   build-kkcli:
-    needs: create-release
+    needs: ${{ startsWith(github.ref, 'refs/tags/') && 'create-release' || '' }}
     permissions:
       contents: write
     
@@ -150,7 +153,7 @@ jobs:
         retention-days: 7
 
   build-tauri:
-    needs: create-release
+    needs: ${{ startsWith(github.ref, 'refs/tags/') && 'create-release' || '' }}
     permissions:
       contents: write
     
@@ -369,6 +372,7 @@ jobs:
           fi
 
   update-release-notes:
+    if: startsWith(github.ref, 'refs/tags/')
     needs: [create-release, build-kkcli, build-tauri]
     permissions:
       contents: write
@@ -419,6 +423,7 @@ jobs:
             });
 
   publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest

@@ -2,9 +2,9 @@ name: Build KeepKey Vault v5
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 'release-*' ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, 'release-*' ]
   workflow_dispatch:
 
 # Add permissions for GitHub Actions to create releases
