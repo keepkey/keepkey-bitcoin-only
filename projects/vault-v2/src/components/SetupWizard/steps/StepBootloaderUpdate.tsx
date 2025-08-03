@@ -312,7 +312,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
                 size="lg"
                 w="100%"
                 onClick={handleBootloaderUpdate}
-                isLoading={isUpdating}
+                loading={isUpdating}
               >
                 Update Bootloader
               </Button>

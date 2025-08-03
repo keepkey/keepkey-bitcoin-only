@@ -383,7 +383,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
                 size="lg"
                 w="100%"
                 onClick={handleFirmwareUpdate}
-                isLoading={isUpdating}
+                loading={isUpdating}
               >
                 Update Firmware Now
               </Button>

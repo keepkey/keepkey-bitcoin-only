@@ -183,16 +183,7 @@ export function DevicePinHorizontal({
         }
         
         if (result.success) {
-          // If we're on the second PIN step, assume success and move on
-          if (session.current_step === PinStep.AwaitingSecond) {
-            console.log("Second PIN submitted! Moving to recovery phrase screen...");
-            setIsTransitioning(true);
-            // Don't wait for backend confirmation, just move forward
-            setTimeout(() => {
-              onComplete(session);
-            }, 500);
-            return;
-          }
+          // The AwaitingSecond case is already handled above with early return
           
           // Check if PIN creation is complete based on result
           if (result.next_step === 'complete') {
@@ -234,7 +225,7 @@ export function DevicePinHorizontal({
               console.log("No next_step specified, checking session status...");
               const finalSession = await PinService.getSessionStatus(session.session_id);
               console.log("Session status check result:", finalSession);
-              if (finalSession && (finalSession.current_step === PinStep.Completed || finalSession.current_step === 'Completed')) {
+              if (finalSession && finalSession.current_step === PinStep.Completed) {
                 console.log("Session is completed! Triggering completion flow...");
                 setIsTransitioning(true);
                 onComplete(finalSession);
@@ -246,11 +237,11 @@ export function DevicePinHorizontal({
             const updatedSession = await PinService.getSessionStatus(session.session_id);
             console.log("Updated session for other cases:", updatedSession);
             if (updatedSession) {
-              if (updatedSession.current_step === PinStep.Completed || updatedSession.current_step === 'Completed') {
+              if (updatedSession.current_step === PinStep.Completed) {
                 console.log("Session shows completed, calling onComplete...");
                 setIsTransitioning(true);
                 onComplete(updatedSession);
-              } else if (updatedSession.current_step === PinStep.AwaitingSecond || updatedSession.current_step === 'AwaitingSecond') {
+              } else if (updatedSession.current_step === PinStep.AwaitingSecond) {
                 console.log("Session shows awaiting second PIN...");
                 setSession(updatedSession);
                 setPositions([]);
@@ -304,7 +295,7 @@ export function DevicePinHorizontal({
     return (
       <Center minH="400px">
         <VStack gap={4}>
-          <Spinner size="xl" color="blue.500" thickness="4px" />
+          <Spinner size="xl" color="blue.500" />
           <Text color="gray.400" fontSize="lg">
             Initializing PIN setup on device...
           </Text>
@@ -318,7 +309,7 @@ export function DevicePinHorizontal({
     return (
       <Center minH="400px">
         <VStack gap={4}>
-          <Spinner size="xl" color="green.500" thickness="4px" />
+          <Spinner size="xl" color="green.500" />
           <Text color="green.400" fontSize="lg">
             PIN setup complete! Preparing recovery phrase...
           </Text>
@@ -433,7 +424,7 @@ export function DevicePinHorizontal({
               colorScheme="gray"
               size="lg"
               flex={1}
-              isDisabled={positions.length === 0 || isLoading || isSubmitting}
+              disabled={positions.length === 0 || isLoading || isSubmitting}
             >
               Backspace
             </Button>
@@ -445,8 +436,8 @@ export function DevicePinHorizontal({
               colorScheme="green"
               size="lg"
               flex={1}
-              isLoading={isSubmitting}
-              isDisabled={positions.length === 0 || isLoading}
+              loading={isSubmitting}
+              disabled={positions.length === 0 || isLoading}
             >
               {session?.current_step === PinStep.AwaitingSecond ? 'Confirm PIN' : 'Set PIN'}
             </Button>
