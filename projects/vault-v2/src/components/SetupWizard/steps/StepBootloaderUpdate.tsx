@@ -1,6 +1,6 @@
 import { VStack, HStack, Text, Button, Box, Icon, Image, Alert, Progress } from "@chakra-ui/react";
 import { FaShieldAlt, FaExclamationTriangle } from "react-icons/fa";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import holdAndConnectSvg from '../../../assets/svg/hold-and-connect.svg';
 
@@ -10,11 +10,20 @@ interface StepBootloaderUpdateProps {
   onBack: () => void;
 }
 
+// CSS animation for striped progress bar
+const stripeAnimationStyle = `
+  @keyframes stripeAnimation {
+    0% { background-position: 0 0; }
+    100% { background-position: 40px 0; }
+  }
+`;
+
 export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloaderUpdateProps) {
   const [deviceStatus, setDeviceStatus] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateProgress, setUpdateProgress] = useState(0);
   const [showBootloaderInstructions, setShowBootloaderInstructions] = useState(false);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Only check device status if we have a deviceId
@@ -90,6 +99,20 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
     }
     
     setIsUpdating(true);
+    setUpdateProgress(0);
+    
+    // Start the 60-second progress animation
+    let progress = 0;
+    progressIntervalRef.current = setInterval(() => {
+      progress += (100 / 60); // 100% over 60 seconds
+      if (progress >= 100) {
+        progress = 100;
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+        }
+      }
+      setUpdateProgress(progress);
+    }, 1000); // Update every second
     
     try {
       // Start bootloader update
@@ -98,9 +121,16 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
         targetVersion: deviceStatus.bootloaderCheck?.latestVersion || ''
       });
       
-      // In real implementation, listen to progress events
-      // For now, skip to next step after the update
-      onNext();
+      // Clear the interval when done
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+      setUpdateProgress(100);
+      
+      // Wait a moment to show completion
+      setTimeout(() => {
+        onNext();
+      }, 500);
       
     } catch (err) {
       console.error("Failed to update bootloader:", err);
@@ -112,8 +142,21 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
       }
       // Don't show any errors to the user
       setIsUpdating(false);
+      // Clear the interval on error
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
     }
   };
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
 
 
   if (!deviceStatus) {
@@ -228,14 +271,34 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
 
           {isUpdating && (
             <Box w="100%">
+              <style>{stripeAnimationStyle}</style>
               <Text fontSize="sm" color="gray.400" mb={2}>
                 Updating bootloader... Do not disconnect your device
               </Text>
-              <Progress.Root value={updateProgress} size="lg">
-                <Progress.Track>
-                  <Progress.Range bg="blue.500" />
-                </Progress.Track>
-              </Progress.Root>
+              <Box position="relative" h="24px" bg="gray.600" borderRadius="full" overflow="hidden">
+                <Box
+                  position="absolute"
+                  top={0}
+                  left={0}
+                  h="100%"
+                  w={`${updateProgress}%`}
+                  bg="green.500"
+                  borderRadius="full"
+                  transition="width 0.5s ease-out"
+                  backgroundImage="repeating-linear-gradient(
+                    -45deg,
+                    rgba(255, 255, 255, 0.15),
+                    rgba(255, 255, 255, 0.15) 10px,
+                    transparent 10px,
+                    transparent 20px
+                  )"
+                  backgroundSize="40px 40px"
+                  animation="stripeAnimation 1s linear infinite"
+                />
+              </Box>
+              <Text fontSize="xs" color="gray.500" mt={2}>
+                {Math.round(updateProgress)}% - Estimated time remaining: {Math.max(0, 60 - Math.round(updateProgress * 0.6))}s
+              </Text>
             </Box>
           )}
 

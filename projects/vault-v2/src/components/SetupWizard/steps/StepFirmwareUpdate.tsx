@@ -1,6 +1,6 @@
 import { VStack, HStack, Text, Button, Box, Icon, Progress, Badge, Alert } from "@chakra-ui/react";
-import { FaDownload } from "react-icons/fa";
-import { useState, useEffect } from "react";
+import { FaDownload, FaExclamationTriangle } from "react-icons/fa";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface StepFirmwareUpdateProps {
@@ -9,11 +9,13 @@ interface StepFirmwareUpdateProps {
   onBack: () => void;
 }
 
+type UpdateState = 'idle' | 'waiting_confirmation' | 'complete';
+
 export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpdateProps) {
   const [deviceStatus, setDeviceStatus] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [updateProgress, setUpdateProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [updateState, setUpdateState] = useState<UpdateState>('idle');
 
   useEffect(() => {
     checkDeviceStatus();
@@ -38,22 +40,34 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   const handleFirmwareUpdate = async () => {
     setIsUpdating(true);
     setError(null);
+    setUpdateState('waiting_confirmation');
     
     try {
-      // Start firmware update
+      // Actually invoke the firmware update
+      // This will handle all the device communication including:
+      // - Loading firmware
+      // - Getting device features
+      // - Firmware erase
+      // - Waiting for user confirmation
+      // - Uploading firmware
       await invoke('update_device_firmware', { 
         deviceId,
         targetVersion: deviceStatus.firmwareCheck?.latestVersion || ''
       });
       
-      // In real implementation, listen to progress events
-      // For now, skip to next step after the update
-      onNext();
+      // If we get here, the update was successful
+      setUpdateState('complete');
+      
+      // Wait a moment to show completion
+      setTimeout(() => {
+        onNext();
+      }, 1500);
       
     } catch (err) {
       console.error("Failed to update firmware:", err);
       setError(`Failed to update firmware: ${err}`);
       setIsUpdating(false);
+      setUpdateState('idle');
     }
   };
 
@@ -171,45 +185,72 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
 
           {isUpdating && (
             <Box w="100%">
-              <Text fontSize="sm" color="gray.400" mb={2}>
-                Updating firmware... Do not disconnect your device
-              </Text>
-              <Progress.Root value={updateProgress} size="lg">
-                <Progress.Track>
-                  <Progress.Range bg="orange.500" />
-                </Progress.Track>
-              </Progress.Root>
-              <Text fontSize="xs" color="gray.500" mt={2}>
-                This may take a few minutes. Your device will restart when complete.
-              </Text>
+              {updateState === 'waiting_confirmation' && (
+                <Box 
+                  p={4} 
+                  bg="orange.900" 
+                  borderRadius="md" 
+                  borderWidth="2px" 
+                  borderColor="orange.500"
+                  boxShadow="0 0 20px rgba(251, 146, 60, 0.5)"
+                  animation="pulse 2s infinite"
+                >
+                  <style>{`
+                    @keyframes pulse {
+                      0% { opacity: 1; }
+                      50% { opacity: 0.8; }
+                      100% { opacity: 1; }
+                    }
+                  `}</style>
+                  <VStack gap={3} align="start">
+                    <HStack gap={2}>
+                      <Icon as={FaExclamationTriangle} color="orange.300" boxSize={5} />
+                      <Text fontSize="md" color="orange.300" fontWeight="bold">
+                        Firmware update in progress...
+                      </Text>
+                    </HStack>
+                    <Text fontSize="sm" color="orange.200" fontWeight="semibold">
+                      Please check your KeepKey device screen!
+                    </Text>
+                    <VStack gap={1} align="start" pl={4}>
+                      <Text fontSize="xs" color="orange.200">
+                        • Press the button to confirm the firmware update
+                      </Text>
+                      <Text fontSize="xs" color="orange.200">
+                        • Do not disconnect your device
+                      </Text>
+                      <Text fontSize="xs" color="orange.200" fontStyle="italic">
+                        • If you see "verify backup" screen, you can safely ignore it
+                      </Text>
+                    </VStack>
+                    <Text fontSize="xs" color="gray.400" mt={2}>
+                      This process may take a few minutes...
+                    </Text>
+                  </VStack>
+                </Box>
+              )}
+
+              {updateState === 'complete' && (
+                <Box p={4} bg="green.900" borderRadius="md" borderWidth="2px" borderColor="green.500">
+                  <Text fontSize="sm" color="green.300" fontWeight="bold">
+                    ✅ Firmware update complete!
+                  </Text>
+                </Box>
+              )}
             </Box>
           )}
 
           <VStack gap={3} w="100%">
             {deviceStatus.needsFirmwareUpdate && !isUpdating && (
-              <>
-                <Button
-                  colorScheme="orange"
-                  size="lg"
-                  w="100%"
-                  onClick={handleFirmwareUpdate}
-                  isLoading={isUpdating}
-                >
-                  Update Firmware Now
-                </Button>
-                {!isOOBDevice && (
-                  <Button
-                    variant="ghost"
-                    size="lg"
-                    w="100%"
-                    onClick={handleSkip}
-                    color="gray.400"
-                    _hover={{ color: "white", bg: "gray.700" }}
-                  >
-                    Remind Me Later
-                  </Button>
-                )}
-              </>
+              <Button
+                colorScheme="orange"
+                size="lg"
+                w="100%"
+                onClick={handleFirmwareUpdate}
+                isLoading={isUpdating}
+              >
+                Update Firmware Now
+              </Button>
             )}
           </VStack>
         </VStack>
