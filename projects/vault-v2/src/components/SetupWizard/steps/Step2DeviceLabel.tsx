@@ -1,5 +1,5 @@
 import { VStack, Text, Input, Button, HStack, Box } from "@chakra-ui/react";
-import { useState } from "react";
+import React, { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface Step2DeviceLabelProps {
@@ -20,6 +20,14 @@ export function Step2DeviceLabel({
   const [label, setLabel] = useState(wizardData.deviceLabel || "");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Skip this step if we should skip device label (after backup completion)
+  React.useEffect(() => {
+    if (wizardData.skipDeviceLabel) {
+      console.log("Skipping device label step, moving to completion");
+      onNext();
+    }
+  }, [wizardData.skipDeviceLabel, onNext]);
 
   const handleSubmit = async () => {
     setIsLoading(true);

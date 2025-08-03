@@ -233,7 +233,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
             </Text>
             {deviceStatus.needsBootloaderUpdate ? (
               <Text fontSize={{ base: "sm", md: "md" }} color="gray.400" textAlign="center">
-                Your KeepKey bootloader needs to be updated
+                Your KeepKey bootloader needs to be updated!
               </Text>
             ) : (
               <Text fontSize={{ base: "sm", md: "md" }} color="green.400" textAlign="center">

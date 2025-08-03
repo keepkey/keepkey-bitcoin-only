@@ -33,6 +33,8 @@ export function Step4BackupOrRecover({
       setIsLoading(true);
       try {
         await invoke('complete_wallet_creation', { deviceId });
+        // Update wizard data to indicate we should skip device label
+        updateWizardData({ skipDeviceLabel: true });
         onNext();
       } catch (err) {
         console.error("Failed to complete wallet creation:", err);
