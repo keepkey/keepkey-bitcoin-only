@@ -595,7 +595,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
           {/* Show balance warning if zero */}
           {availableBalance === 0 && (
             <Text color="yellow.400" fontSize="xs" mt={1}>
-              ⚠️ No balance available. Please ensure your wallet is synced.
+              ⚠️ No balance available. Please fund your wallet.
             </Text>
           )}
         </Box>

@@ -55,9 +55,10 @@ function App() {
         const [isRestarting, setIsRestarting] = useState(false);
         const [deviceUpdateComplete, setDeviceUpdateComplete] = useState(false);
         const [onboardingActive, setOnboardingActive] = useState(false);
+        const [setupWizardActive, setSetupWizardActive] = useState(false);
         const { showOnboarding, showError } = useCommonDialogs();
         const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
-        const { hideAll, activeDialog, getQueue } = useDialog();
+        const { hideAll, activeDialog, getQueue, isWizardActive } = useDialog();
         const { fetchedXpubs, portfolio, isSync, reinitialize } = useWallet();
         
         // Check wallet context state and sync with local state
@@ -344,8 +345,8 @@ function App() {
               alignItems="center"
               justifyContent="center"
             >
-              {/* Clickable Logo in the center */}
-              {!onboardingActive && (
+              {/* Clickable Logo in the center - hide when wizards are active */}
+              {!onboardingActive && !isWizardActive() && !setupWizardActive && (
                 <Logo 
                 width="100px" 
                 onClick={handleLogoClick}
@@ -417,6 +418,7 @@ function App() {
                     setDeviceConnected(true);
                   }
                 }}
+                onSetupWizardActiveChange={setSetupWizardActive}
               />
 
               {/* REST and MCP links in bottom right corner */}

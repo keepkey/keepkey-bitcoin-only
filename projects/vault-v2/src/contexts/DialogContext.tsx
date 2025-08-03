@@ -35,6 +35,9 @@ interface DialogContextType {
   // App focus management
   requestAppFocus: () => void;
   releaseAppFocus: () => void;
+  
+  // Check if any wizard is active
+  isWizardActive: () => boolean;
 }
 
 const DialogContext = createContext<DialogContextType | null>(null);
@@ -259,6 +262,11 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const isWizardActive = useCallback(() => {
+    const wizardIds = ['setup-wizard', 'onboarding', 'wallet-creation', 'firmware-update', 'bootloader-update'];
+    return state.active ? wizardIds.includes(state.active.id) : false;
+  }, [state.active]);
+
   const value: DialogContextType = {
     show,
     hide,
@@ -269,6 +277,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     activeDialog: state.active,
     requestAppFocus,
     releaseAppFocus,
+    isWizardActive,
   };
 
   return (
@@ -286,11 +295,13 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               right: 0, 
               bottom: 0, 
               zIndex: state.active.id.includes('pin-unlock') ? 99999 : 9999,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              backgroundColor: 'rgba(0, 0, 0, 0.8)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              pointerEvents: 'auto'
+              pointerEvents: 'auto',
+              padding: isWizardActive() ? '0' : '20px',
+              overflow: 'auto'
             }}
           >
             <DialogRenderer
@@ -551,7 +562,7 @@ export function useWalletCreationWizard() {
       
       show({
         id: dialogId,
-        component: React.lazy(() => import('../components/WalletCreationWizard/WalletCreationWizard').then(m => ({ default: m.WalletCreationWizard }))),
+        component: React.lazy(() => import('../components/SetupWizard').then(m => ({ default: m.SetupWizard }))),
         props: {
           ...props,
           onClose: () => {
