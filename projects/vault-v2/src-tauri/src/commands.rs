@@ -373,41 +373,57 @@ pub async fn get_device_status(
             }
         };
         
-        // Fetch device features through the queue
-        let features = match tokio::time::timeout(
-            Duration::from_secs(30), // Increased from 15 to 30 seconds to match Windows HID timeout
-            queue_handle.get_features()
-        ).await {
-            Ok(Ok(raw_features)) => {
-                // Convert from raw Features message to DeviceFeatures
-                Some(convert_features_to_device_features(raw_features))
-            }
-            Ok(Err(e)) => {
-                println!("Failed to get features for device {}: {}", device_id, e);
+        // Fetch device features through the queue with retry logic
+        let features = {
+            let mut last_error = None;
+            let mut success_features = None;
+            
+            for attempt in 1..=3 {
+                println!("🔄 Attempting to get features for device {} (attempt {}/3)", device_id, attempt);
                 
-                // Log failed feature retrieval
-                let device_response_data = serde_json::json!({
-                    "error": format!("Failed to get features: {}", e),
-                    "operation": "get_features_for_device"
-                });
-                
-                if let Err(log_err) = log_device_response(&device_id, &request_id, false, &device_response_data, Some(&format!("Failed to get features: {}", e))).await {
-                    eprintln!("Failed to log device features error response: {}", log_err);
+                match tokio::time::timeout(
+                    Duration::from_secs(30), // 30 seconds per attempt
+                    queue_handle.get_features()
+                ).await {
+                    Ok(Ok(raw_features)) => {
+                        println!("✅ Successfully got features for device {} on attempt {}", device_id, attempt);
+                        // Convert from raw Features message to DeviceFeatures
+                        success_features = Some(convert_features_to_device_features(raw_features));
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        println!("⚠️ Failed to get features for device {} on attempt {}: {}", device_id, attempt, e);
+                        last_error = Some(format!("Failed to get features: {}", e));
+                    }
+                    Err(_) => {
+                        println!("⏱️ Timeout getting features for device {} on attempt {}", device_id, attempt);
+                        last_error = Some("Timeout getting features".to_string());
+                    }
                 }
                 
-                None
+                // Wait before retrying (exponential backoff)
+                if attempt < 3 {
+                    let delay_ms = 500 * attempt as u64; // 500ms, 1000ms
+                    println!("⏳ Waiting {}ms before retry for device {}", delay_ms, device_id);
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                }
             }
-            Err(_) => {
-                println!("Timeout getting features for device {}", device_id);
+            
+            // Handle final result
+            if let Some(features) = success_features {
+                Some(features)
+            } else {
+                // Log the final failure
+                let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
+                println!("❌ All attempts failed for device {}: {}", device_id, error_msg);
                 
-                // Log timeout
                 let device_response_data = serde_json::json!({
-                    "error": "Timeout getting features",
+                    "error": error_msg,
                     "operation": "get_features_for_device"
                 });
                 
-                if let Err(e) = log_device_response(&device_id, &request_id, false, &device_response_data, Some("Timeout getting features")).await {
-                    eprintln!("Failed to log device features timeout response: {}", e);
+                if let Err(log_err) = log_device_response(&device_id, &request_id, false, &device_response_data, Some(&error_msg)).await {
+                    eprintln!("Failed to log device features error response: {}", log_err);
                 }
                 
                 None
@@ -1026,53 +1042,69 @@ pub async fn get_connected_devices_with_features(
                 }
             };
             
-            // Try to fetch features through the queue
-            let features = match tokio::time::timeout(
-                Duration::from_secs(30), // Increased from 15 to 30 seconds to match Windows HID timeout
-                queue_handle.get_features()
-            ).await {
-                Ok(Ok(raw_features)) => {
-                    // Convert from raw Features message to DeviceFeatures
-                    let device_features = convert_features_to_device_features(raw_features);
+            // Try to fetch features through the queue with retry logic
+            let features = {
+                let mut last_error = None;
+                let mut success_features = None;
+                
+                for attempt in 1..=3 {
+                    println!("🔄 Attempting to get features for device {} (attempt {}/3)", device_id, attempt);
                     
-                    // Log successful feature retrieval
-                    let device_response_data = serde_json::json!({
-                        "features": device_features,
-                        "operation": "get_features_for_device"
-                    });
-                    
-                    if let Err(e) = log_device_response(&device_id, &device_request_id, true, &device_response_data, None).await {
-                        eprintln!("Failed to log device features response: {}", e);
+                    match tokio::time::timeout(
+                        Duration::from_secs(30), // 30 seconds per attempt
+                        queue_handle.get_features()
+                    ).await {
+                        Ok(Ok(raw_features)) => {
+                            println!("✅ Successfully got features for device {} on attempt {}", device_id, attempt);
+                            // Convert from raw Features message to DeviceFeatures
+                            let device_features = convert_features_to_device_features(raw_features);
+                            
+                            // Log successful feature retrieval
+                            let device_response_data = serde_json::json!({
+                                "features": device_features,
+                                "operation": "get_features_for_device"
+                            });
+                            
+                            if let Err(e) = log_device_response(&device_id, &device_request_id, true, &device_response_data, None).await {
+                                eprintln!("Failed to log device features response: {}", e);
+                            }
+                            
+                            success_features = Some(device_features);
+                            break;
+                        }
+                        Ok(Err(e)) => {
+                            println!("⚠️ Failed to get features for device {} on attempt {}: {}", device_id, attempt, e);
+                            last_error = Some(format!("Failed to get features: {}", e));
+                        }
+                        Err(_) => {
+                            println!("⏱️ Timeout getting features for device {} on attempt {}", device_id, attempt);
+                            last_error = Some("Timeout getting features".to_string());
+                        }
                     }
                     
-                    Some(device_features)
+                    // Wait before retrying (exponential backoff)
+                    if attempt < 3 {
+                        let delay_ms = 500 * attempt as u64; // 500ms, 1000ms
+                        println!("⏳ Waiting {}ms before retry for device {}", delay_ms, device_id);
+                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    }
                 }
-                Ok(Err(e)) => {
-                    println!("Failed to get features for device {}: {}", device_id, e);
+                
+                // Handle final result
+                if let Some(features) = success_features {
+                    Some(features)
+                } else {
+                    // Log the final failure
+                    let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
+                    println!("❌ All attempts failed for device {}: {}", device_id, error_msg);
                     
-                    // Log failed feature retrieval
                     let device_response_data = serde_json::json!({
-                        "error": format!("Failed to get features: {}", e),
+                        "error": error_msg,
                         "operation": "get_features_for_device"
                     });
                     
-                    if let Err(log_err) = log_device_response(&device_id, &device_request_id, false, &device_response_data, Some(&format!("Failed to get features: {}", e))).await {
+                    if let Err(log_err) = log_device_response(&device_id, &device_request_id, false, &device_response_data, Some(&error_msg)).await {
                         eprintln!("Failed to log device features error response: {}", log_err);
-                    }
-                    
-                    None
-                }
-                Err(_) => {
-                    println!("Timeout getting features for device {}", device_id);
-                    
-                    // Log timeout
-                    let device_response_data = serde_json::json!({
-                        "error": "Timeout getting features",
-                        "operation": "get_features_for_device"
-                    });
-                    
-                    if let Err(e) = log_device_response(&device_id, &device_request_id, false, &device_response_data, Some("Timeout getting features")).await {
-                        eprintln!("Failed to log device features timeout response: {}", e);
                     }
                     
                     None

@@ -464,41 +464,67 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
             return Err("Device entered PIN flow - aborting feature fetch".to_string());
         }
         
-        // Try to get features with a timeout using the shared worker
-        match tokio::time::timeout(Duration::from_secs(30), queue_handle.get_features()).await {
-            Ok(Ok(raw_features)) => {
-                // Convert features to our DeviceFeatures format
-                let device_features = crate::commands::convert_features_to_device_features(raw_features);
-                Ok(device_features)
+        // Try to get features with retry logic for timeout resilience
+        let mut last_error = None;
+        for attempt in 1..=3 {
+            println!("🔄 Attempting to get features for device {} (attempt {}/3)", device.unique_id, attempt);
+            
+            // Check PIN flow status before each attempt
+            if crate::commands::is_device_in_pin_flow(&device.unique_id) {
+                return Err("Device entered PIN flow during feature fetch".to_string());
             }
-            Ok(Err(e)) => {
-                let error_str = e.to_string();
-                
-                // Check if this looks like an OOB bootloader that doesn't understand GetFeatures
-                if error_str.contains("Unknown message") || 
-                   error_str.contains("Failure: Unknown message") ||
-                   error_str.contains("Unexpected response") {
+            
+            match tokio::time::timeout(Duration::from_secs(30), queue_handle.get_features()).await {
+                Ok(Ok(raw_features)) => {
+                    println!("✅ Successfully got features for device {} on attempt {}", device.unique_id, attempt);
+                    // Convert features to our DeviceFeatures format
+                    let device_features = crate::commands::convert_features_to_device_features(raw_features);
+                    return Ok(device_features);
+                }
+                Ok(Err(e)) => {
+                    let error_str = e.to_string();
                     
-                    println!("🔧 Device may be in OOB bootloader mode, trying Initialize message...");
-                    
-                    // Try the direct approach using keepkey-rust's proven method
-                    match try_oob_bootloader_detection(device).await {
-                        Ok(features) => {
-                            println!("✅ Successfully detected OOB bootloader mode for device {}", device.unique_id);
-                            Ok(features)
+                    // Check if this looks like an OOB bootloader that doesn't understand GetFeatures
+                    if error_str.contains("Unknown message") || 
+                       error_str.contains("Failure: Unknown message") ||
+                       error_str.contains("Unexpected response") {
+                        
+                        println!("🔧 Device may be in OOB bootloader mode, trying Initialize message...");
+                        
+                        // Try the direct approach using keepkey-rust's proven method
+                        match try_oob_bootloader_detection(device).await {
+                            Ok(features) => {
+                                println!("✅ Successfully detected OOB bootloader mode for device {}", device.unique_id);
+                                return Ok(features);
+                            }
+                            Err(oob_err) => {
+                                println!("❌ OOB bootloader detection also failed for {}: {}", device.unique_id, oob_err);
+                                last_error = Some(format!("Failed to get device features: {} (OOB attempt: {})", error_str, oob_err));
+                            }
                         }
-                        Err(oob_err) => {
-                            println!("❌ OOB bootloader detection also failed for {}: {}", device.unique_id, oob_err);
-                            Err(format!("Failed to get device features: {} (OOB attempt: {})", error_str, oob_err))
-                        }
+                    } else {
+                        println!("⚠️ Failed to get features for device {} on attempt {}: {}", device.unique_id, attempt, error_str);
+                        last_error = Some(format!("Failed to get device features: {}", error_str));
                     }
-                } else {
-                    Err(format!("Failed to get device features: {}", error_str))
+                }
+                Err(_) => {
+                    println!("⏱️ Timeout getting features for device {} on attempt {}", device.unique_id, attempt);
+                    last_error = Some("Timeout while fetching device features".to_string());
                 }
             }
-            Err(_) => {
-                Err("Timeout while fetching device features".to_string())
+            
+            // Wait before retrying (exponential backoff)
+            if attempt < 3 {
+                let delay_ms = 500 * attempt as u64; // 500ms, 1000ms
+                println!("⏳ Waiting {}ms before retry for device {}", delay_ms, device.unique_id);
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             }
+        }
+        
+        // All attempts failed
+        match last_error {
+            Some(err) => Err(err),
+            None => Err(format!("All feature fetch attempts failed for device {}", device.unique_id))
         }
     } else {
         // Fallback to the old method if queue manager is not available

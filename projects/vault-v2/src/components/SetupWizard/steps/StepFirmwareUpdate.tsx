@@ -1,4 +1,4 @@
-import { VStack, HStack, Text, Button, Box, Icon, Progress, Badge, Alert } from "@chakra-ui/react";
+import { VStack, HStack, Text, Button, Box, Icon, Progress, Badge, Alert, Spinner } from "@chakra-ui/react";
 import { FaDownload, FaExclamationTriangle } from "react-icons/fa";
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -151,7 +151,10 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   if (!deviceStatus) {
     return (
       <VStack gap={6} w="100%" maxW="500px">
-        <Text color="gray.400">Checking device status...</Text>
+        <HStack gap={3}>
+          <Spinner size="sm" color="green.500" />
+          <Text color="gray.400">Follow Directions on device...</Text>
+        </HStack>
       </VStack>
     );
   }
