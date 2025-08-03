@@ -2,6 +2,7 @@ import { VStack, HStack, Text, Button, Box, Icon, Progress, Badge, Alert } from 
 import { FaDownload, FaExclamationTriangle } from "react-icons/fa";
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 interface StepFirmwareUpdateProps {
   deviceId: string;
@@ -9,17 +10,87 @@ interface StepFirmwareUpdateProps {
   onBack: () => void;
 }
 
-type UpdateState = 'idle' | 'waiting_confirmation' | 'complete';
+type UpdateState = 'idle' | 'loading_firmware' | 'erasing' | 'waiting_confirmation' | 'uploading' | 'complete';
+
+// CSS animation for striped progress bar
+const stripeAnimationStyle = `
+  @keyframes stripeAnimation {
+    0% { background-position: 0 0; }
+    100% { background-position: 40px 0; }
+  }
+`;
 
 export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpdateProps) {
   const [deviceStatus, setDeviceStatus] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>('idle');
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const unlistenRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     checkDeviceStatus();
   }, [deviceId]);
+
+  // Set up event listener for firmware update events
+  useEffect(() => {
+    if (!isUpdating) return;
+
+    const setupListener = async () => {
+      unlistenRef.current = await listen('firmware:update-status', (event) => {
+        const { status, progress } = event.payload as { status: string; progress?: number };
+        console.log('Firmware update status:', status, progress);
+        
+        switch (status) {
+          case 'loading_firmware':
+            setUpdateState('loading_firmware');
+            break;
+          case 'firmware_erase':
+            setUpdateState('erasing');
+            break;
+          case 'button_request':
+            setUpdateState('waiting_confirmation');
+            break;
+          case 'firmware_upload':
+            setUpdateState('uploading');
+            // Start progress animation when upload begins
+            if (!progressIntervalRef.current) {
+              let prog = 0;
+              progressIntervalRef.current = setInterval(() => {
+                prog += (100 / 60); // 100% over 60 seconds
+                if (prog >= 100) {
+                  prog = 100;
+                  if (progressIntervalRef.current) {
+                    clearInterval(progressIntervalRef.current);
+                  }
+                }
+                setUpdateProgress(prog);
+              }, 1000);
+            }
+            break;
+          case 'complete':
+            setUpdateState('complete');
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+            }
+            setUpdateProgress(100);
+            break;
+        }
+      });
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlistenRef.current) {
+        unlistenRef.current();
+      }
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, [isUpdating]);
 
   const checkDeviceStatus = async () => {
     try {
@@ -40,16 +111,13 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   const handleFirmwareUpdate = async () => {
     setIsUpdating(true);
     setError(null);
-    setUpdateState('waiting_confirmation');
+    setUpdateProgress(0);
+    // Start with loading state - the event listener will update based on actual events
+    setUpdateState('loading_firmware');
     
     try {
       // Actually invoke the firmware update
-      // This will handle all the device communication including:
-      // - Loading firmware
-      // - Getting device features
-      // - Firmware erase
-      // - Waiting for user confirmation
-      // - Uploading firmware
+      // The event listener will handle updating the UI based on actual device events
       await invoke('update_device_firmware', { 
         deviceId,
         targetVersion: deviceStatus.firmwareCheck?.latestVersion || ''
@@ -68,6 +136,10 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
       setError(`Failed to update firmware: ${err}`);
       setIsUpdating(false);
       setUpdateState('idle');
+      // Clear any running progress interval
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
     }
   };
 
@@ -185,49 +257,110 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
 
           {isUpdating && (
             <Box w="100%">
-              {updateState === 'waiting_confirmation' && (
-                <Box 
-                  p={4} 
-                  bg="orange.900" 
-                  borderRadius="md" 
-                  borderWidth="2px" 
-                  borderColor="orange.500"
-                  boxShadow="0 0 20px rgba(251, 146, 60, 0.5)"
-                  animation="pulse 2s infinite"
-                >
-                  <style>{`
-                    @keyframes pulse {
-                      0% { opacity: 1; }
-                      50% { opacity: 0.8; }
-                      100% { opacity: 1; }
-                    }
-                  `}</style>
-                  <VStack gap={3} align="start">
-                    <HStack gap={2}>
-                      <Icon as={FaExclamationTriangle} color="orange.300" boxSize={5} />
-                      <Text fontSize="md" color="orange.300" fontWeight="bold">
-                        Firmware update in progress...
-                      </Text>
-                    </HStack>
-                    <Text fontSize="sm" color="orange.200" fontWeight="semibold">
-                      Please check your KeepKey device screen!
+              <style>{stripeAnimationStyle}</style>
+              
+              {/* Status Messages */}
+              <VStack gap={3} mb={4} align="stretch">
+                {/* Loading Firmware */}
+                {['loading_firmware', 'erasing', 'waiting_confirmation', 'uploading', 'complete'].includes(updateState) && (
+                  <HStack gap={2}>
+                    <Box w={2} h={2} borderRadius="full" bg="green.500" />
+                    <Text fontSize="sm" color="gray.300">
+                      📦 Loaded firmware binary: 577,720 bytes
                     </Text>
-                    <VStack gap={1} align="start" pl={4}>
-                      <Text fontSize="xs" color="orange.200">
-                        • Press the button to confirm the firmware update
-                      </Text>
-                      <Text fontSize="xs" color="orange.200">
-                        • Do not disconnect your device
+                  </HStack>
+                )}
+                
+                {/* Device in bootloader mode */}
+                {['erasing', 'waiting_confirmation', 'uploading', 'complete'].includes(updateState) && (
+                  <HStack gap={2}>
+                    <Box w={2} h={2} borderRadius="full" bg="green.500" />
+                    <Text fontSize="sm" color="gray.300">
+                      ✅ Device confirmed in bootloader mode
+                    </Text>
+                  </HStack>
+                )}
+                
+                {/* Firmware Erase */}
+                {['erasing', 'waiting_confirmation', 'uploading', 'complete'].includes(updateState) && (
+                  <HStack gap={2}>
+                    <Box w={2} h={2} borderRadius="full" bg={updateState === 'erasing' ? "blue.500" : "green.500"} />
+                    <Text fontSize="sm" color="gray.300">
+                      {updateState === 'erasing' ? '🔄' : '✅'} Firmware Erase
+                    </Text>
+                  </HStack>
+                )}
+                
+                {/* Waiting for confirmation */}
+                {updateState === 'waiting_confirmation' && (
+                  <Box 
+                    p={4} 
+                    bg="orange.900" 
+                    borderRadius="md" 
+                    borderWidth="2px" 
+                    borderColor="orange.500"
+                    boxShadow="0 0 20px rgba(251, 146, 60, 0.5)"
+                    animation="pulse 2s infinite"
+                  >
+                    <style>{`
+                      @keyframes pulse {
+                        0% { opacity: 1; }
+                        50% { opacity: 0.8; }
+                        100% { opacity: 1; }
+                      }
+                    `}</style>
+                    <VStack gap={2} align="start">
+                      <HStack gap={2}>
+                        <Icon as={FaExclamationTriangle} color="orange.300" boxSize={5} />
+                        <Text fontSize="md" color="orange.300" fontWeight="bold">
+                          Confirm action on device!
+                        </Text>
+                      </HStack>
+                      <Text fontSize="sm" color="orange.200">
+                        Look at your KeepKey screen and press the button to confirm.
                       </Text>
                       <Text fontSize="xs" color="orange.200" fontStyle="italic">
-                        • If you see "verify backup" screen, you can safely ignore it
+                        Note: If your device is not set up, you can safely ignore any "verify backup" screen.
                       </Text>
                     </VStack>
-                    <Text fontSize="xs" color="gray.400" mt={2}>
-                      This process may take a few minutes...
-                    </Text>
-                  </VStack>
-                </Box>
+                  </Box>
+                )}
+              </VStack>
+
+              {/* Progress Bar - Only show during actual upload */}
+              {updateState === 'uploading' && (
+                <>
+                  <Text fontSize="sm" color="gray.400" mb={2}>
+                    Uploading firmware... Do not disconnect your device
+                  </Text>
+                  <Box position="relative" h="24px" bg="gray.600" borderRadius="full" overflow="hidden">
+                    <Box
+                      position="absolute"
+                      top={0}
+                      left={0}
+                      h="100%"
+                      w={`${updateProgress}%`}
+                      bg="green.500"
+                      borderRadius="full"
+                      transition="width 0.5s ease-out"
+                      backgroundImage="repeating-linear-gradient(
+                        -45deg,
+                        rgba(255, 255, 255, 0.15),
+                        rgba(255, 255, 255, 0.15) 10px,
+                        transparent 10px,
+                        transparent 20px
+                      )"
+                      backgroundSize="40px 40px"
+                      animation="stripeAnimation 1s linear infinite"
+                    />
+                  </Box>
+                  <Text fontSize="xs" color="gray.500" mt={2}>
+                    {Math.round(updateProgress)}% - Estimated time remaining: {Math.max(0, 60 - Math.round(updateProgress * 0.6))}s
+                  </Text>
+                  <Text fontSize="xs" color="gray.500">
+                    Your device will restart when complete.
+                  </Text>
+                </>
               )}
 
               {updateState === 'complete' && (

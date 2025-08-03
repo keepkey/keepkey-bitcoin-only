@@ -45,9 +45,9 @@ export function Step2DeviceLabel({
   };
 
   return (
-    <VStack gap={6} w="100%" maxW="400px">
+    <VStack gap={6} w="100%" maxW="400px" mx="auto">
       <VStack gap={2}>
-        <Text fontSize="2xl" fontWeight="bold" color="white">
+        <Text fontSize="2xl" fontWeight="bold" color="white" textAlign="center">
           Name Your Device
         </Text>
         <Text fontSize="md" color="gray.400" textAlign="center">
