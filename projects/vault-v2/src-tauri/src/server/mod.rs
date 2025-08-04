@@ -103,12 +103,14 @@ pub async fn start_server(device_queue_manager: crate::commands::DeviceQueueMana
         .with_state(server_state)
         .layer(
             CorsLayer::new()
-                // Allow any origin with wildcard
+                // Allow any origin with wildcard (includes localhost:8080 proxy)
                 .allow_origin(tower_http::cors::Any)
                 // Allow all methods
                 .allow_methods(tower_http::cors::Any)
-                // Allow all headers
+                // Allow all headers including X-Requested-With for AJAX
                 .allow_headers(tower_http::cors::Any)
+                // Max age for preflight caching
+                .max_age(std::time::Duration::from_secs(3600))
                 // Note: credentials cannot be used with wildcard origin
                 .allow_credentials(false)
         );
@@ -123,7 +125,7 @@ pub async fn start_server(device_queue_manager: crate::commands::DeviceQueueMana
     
     info!("🚀 Starting servers:");
     info!("  📋 REST API: http://{}/api", addr);
-    info!("  🌍 Vault Proxy: http://{} -> vault.keepkey.com", proxy_addr);
+    info!("  🌍 Proxy: http://{} -> keepkey.com", proxy_addr);
     info!("  📚 API Documentation: http://{}/docs", addr);
     debug!("  🔌 Device Management: http://{}/api/devices", addr);
     debug!("  🤖 MCP Endpoint: http://{}/mcp", addr);

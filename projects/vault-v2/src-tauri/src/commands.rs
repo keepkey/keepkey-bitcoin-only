@@ -3951,3 +3951,27 @@ pub async fn check_device_pin_ready(
         }
     }
 }
+
+/// Clear all device-related caches (used for backend restart)
+pub async fn clear_all_device_caches() {
+    // Clear PIN flow devices
+    if let Ok(mut pin_flows) = DEVICE_PIN_FLOWS.lock() {
+        println!("  📋 Clearing {} device PIN flow(s)", pin_flows.len());
+        pin_flows.clear();
+    }
+    
+    // Clear PIN sessions
+    if let Ok(mut pin_sessions) = PIN_SESSIONS.lock() {
+        println!("  📋 Clearing {} PIN session(s)", pin_sessions.len());
+        pin_sessions.clear();
+    }
+    
+    // Clear frontend ready state and queued events
+    let mut state = FRONTEND_READY_STATE.write().await;
+    println!("  📋 Clearing {} queued event(s)", state.queued_events.len());
+    state.queued_events.clear();
+    // Don't reset is_ready as frontend is still connected
+    drop(state); // Explicitly drop to release the lock
+    
+    println!("  ✅ All device caches cleared");
+}

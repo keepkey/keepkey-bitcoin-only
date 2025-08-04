@@ -15,10 +15,21 @@ use url;
 
 /// Create the proxy router with wildcard *.keepkey.com support
 pub fn create_proxy_router() -> Router {
+    use tower_http::cors::CorsLayer;
+    
     Router::new()
         .route("/", get(proxy_root_handler).post(proxy_root_post_handler))
         .route("/*path", get(proxy_handler).post(proxy_post_handler).put(proxy_put_handler).delete(proxy_delete_handler).patch(proxy_patch_handler).options(proxy_options_handler).head(proxy_head_handler))
         .fallback(proxy_fallback_handler)
+        // Add CORS layer to proxy server as well
+        .layer(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+                .max_age(std::time::Duration::from_secs(3600))
+                .allow_credentials(false)
+        )
 }
 
 /// Handle GET requests to the root path
@@ -196,8 +207,8 @@ fn determine_target_domain(host: &str, headers: &HeaderMap) -> String {
 fn extract_keepkey_subdomain(host: &str) -> Option<String> {
     // Handle localhost with subdomain simulation for development
     if host.starts_with("localhost") || host.starts_with("127.0.0.1") {
-        // For local development, route to vault.keepkey.com (the real live site)
-        return Some("vault".to_string());
+        // For local development, route to keepkey.com (no subdomain)
+        return None;
     }
     
     // Handle actual subdomain requests (for when deployed)

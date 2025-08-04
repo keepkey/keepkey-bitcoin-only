@@ -14,20 +14,50 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
 export const BrowserView = () => {
-  const [url, setUrl] = useState('https://keepkey.com');
-  const [inputUrl, setInputUrl] = useState('https://keepkey.com');
+  // Use proxy server for keepkey.com to avoid CORS issues
+  const [url, setUrl] = useState('http://localhost:8080');
+  const [inputUrl, setInputUrl] = useState('keepkey.com');
   const [isLoading, setIsLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [hoverTimer, setHoverTimer] = useState<NodeJS.Timeout | null>(null);
+  const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+
+  // Check API connectivity on mount
+  useEffect(() => {
+    checkApiConnection();
+  }, []);
+
+  const checkApiConnection = async () => {
+    try {
+      const response = await fetch('http://localhost:1646/spec/swagger.json');
+      if (response.ok) {
+        setApiStatus('connected');
+        console.log('✅ API server is connected at localhost:1646');
+      } else {
+        setApiStatus('error');
+        console.error('❌ API server returned error:', response.status);
+      }
+    } catch (error) {
+      setApiStatus('error');
+      console.error('❌ Failed to connect to API server:', error);
+    }
+  };
 
   const handleNavigate = async () => {
     if (!inputUrl) return;
     
-    // Simple URL validation and formatting
+    // Use proxy server for KeepKey domains
     let formattedUrl = inputUrl;
-    if (!inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+    
+    // Check if it's a KeepKey domain
+    if (inputUrl.includes('keepkey.com') || inputUrl === 'vault' || inputUrl === 'vault.keepkey.com') {
+      // Always use proxy for KeepKey domains
+      formattedUrl = 'http://localhost:8080';
+    } else if (!inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+      // For non-KeepKey domains, add https://
       formattedUrl = `https://${inputUrl}`;
     }
     
@@ -36,16 +66,17 @@ export const BrowserView = () => {
       await invoke('browser_navigate', { url: formattedUrl });
     } catch (error) {
       console.error('Failed to notify backend of navigation:', error);
-      // Still navigate even if backend call fails
-      setUrl(formattedUrl);
-      setInputUrl(formattedUrl);
-      setIsLoading(true);
     }
+    
+    // Update the UI
+    setUrl(formattedUrl);
+    setIsLoading(true);
   };
 
   const handleHome = () => {
-    const homeUrl = 'https://keepkey.com';
-    setInputUrl(homeUrl);
+    // Use proxy for keepkey.com
+    const homeUrl = 'http://localhost:8080';
+    setInputUrl('keepkey.com');
     setUrl(homeUrl);
     setIsLoading(true);
   };
@@ -124,9 +155,26 @@ export const BrowserView = () => {
         unlisten = await listen('browser:navigate', (event) => {
           const { url: newUrl } = event.payload as { url: string };
           console.log('Received backend navigation command:', newUrl);
-          setUrl(newUrl);
-          setInputUrl(newUrl);
-          setIsLoading(true);
+          
+          // Handle special case for support.keepkey.com
+          if (newUrl.includes('support.keepkey.com')) {
+            // Navigate directly to support URL
+            setUrl(newUrl);
+            setInputUrl('support.keepkey.com');
+            setIsLoading(true);
+            
+            // Also update the iframe directly to ensure navigation
+            setTimeout(() => {
+              const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
+              if (iframe && iframe.src !== newUrl) {
+                iframe.src = newUrl;
+              }
+            }, 50);
+          } else {
+            setUrl(newUrl);
+            setInputUrl(newUrl);
+            setIsLoading(true);
+          }
         });
       } catch (error) {
         console.error('Failed to set up browser event listeners:', error);
@@ -139,6 +187,17 @@ export const BrowserView = () => {
       if (unlisten) unlisten();
     };
   }, []);
+  
+  // Handle pending navigation once component is ready
+  useEffect(() => {
+    if (pendingNavigation) {
+      console.log('Processing pending navigation to:', pendingNavigation);
+      setUrl(pendingNavigation);
+      setInputUrl(pendingNavigation.includes('support.keepkey.com') ? 'support.keepkey.com' : pendingNavigation);
+      setIsLoading(true);
+      setPendingNavigation(null);
+    }
+  }, [pendingNavigation]);
 
       return (
       <Box height="100%" bg="rgba(0, 0, 0, 0.4)" display="flex" flexDirection="column">

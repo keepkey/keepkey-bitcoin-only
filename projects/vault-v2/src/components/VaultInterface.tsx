@@ -47,18 +47,21 @@ export const VaultInterface = () => {
 
   const handleSupportClick = async () => {
     try {
+      // First try to open in integrated browser
       await invoke('vault_open_support');
+      console.log('Opening support in integrated browser');
     } catch (error) {
-      console.error('Failed to open support via backend:', error);
-      // Fallback to direct open
-              try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('open_url', { url: 'https://support.keepkey.com' });
-        } catch (error) {
-          console.error('Failed to open URL:', error);
-          // Fallback to window.open if Tauri command fails
-          window.open('https://support.keepkey.com', '_blank');
-        }
+      console.error('Failed to open support via integrated browser:', error);
+      // Fallback to opening in external browser
+      try {
+        await invoke('open_url', { url: 'https://support.keepkey.com' });
+        console.log('Opening support in external browser');
+      } catch (fallbackError) {
+        console.error('Failed to open URL via Tauri:', fallbackError);
+        // Last resort: use window.open
+        window.open('https://support.keepkey.com', '_blank');
+        console.log('Opening support via window.open');
+      }
     }
   };
 
@@ -158,73 +161,86 @@ export const VaultInterface = () => {
       {/* Main Vault Interface - Hidden when settings is open */}
       {!isSettingsOpen && (
         <Box height="100%" display="flex" flexDirection="column">
-          {/* Top Header Bar */}
+          {/* Top Navigation Bar */}
           <Box
-            height="40px"
-            bg="rgba(26, 32, 44, 0.95)"
-            backdropFilter="blur(10px)"
+            height="60px"
+            bg="gray.900"
             borderBottom="1px solid"
             borderColor="gray.700"
-            display="flex"
-            alignItems="center"
-            justifyContent="center"
             px={4}
+            py={2}
           >
-            <Text 
-              fontSize="sm" 
-              fontWeight="semibold" 
-              color="gray.300"
-              letterSpacing="wide"
-            >
-              KeepKey Vault v{packageJson.version}
-            </Text>
+            <HStack justify="space-between" align="center" height="100%">
+              {/* Left side - Main navigation items */}
+              <HStack spacing={2}>
+                {navItems.slice(0, 2).map((item) => (
+                  <Button
+                    key={item.id}
+                    variant="ghost"
+                    size="sm"
+                    height="40px"
+                    minWidth="80px"
+                    gap={2}
+                    color={
+                      (item.id === currentView) 
+                        ? "blue.400" 
+                        : "gray.400"
+                    }
+                    _hover={{
+                      color: "blue.300",
+                      bg: "gray.800",
+                    }}
+                    _active={{
+                      bg: "gray.700",
+                    }}
+                    onClick={item.onClick}
+                  >
+                    <Box fontSize="md">{item.icon}</Box>
+                    <Text fontSize="sm" fontWeight="medium">
+                      {item.label}
+                    </Text>
+                  </Button>
+                ))}
+              </HStack>
+
+              {/* Center - Logo/Title */}
+              <Text fontSize="lg" fontWeight="bold" color="white">
+                KeepKey Vault
+              </Text>
+
+              {/* Right side - Settings and Support */}
+              <HStack spacing={2}>
+                {navItems.slice(2).map((item) => (
+                  <Button
+                    key={item.id}
+                    variant="ghost"
+                    size="sm"
+                    height="40px"
+                    minWidth="80px"
+                    gap={2}
+                    color="gray.400"
+                    _hover={{
+                      color: "blue.300",
+                      bg: "gray.800",
+                    }}
+                    _active={{
+                      bg: "gray.700",
+                    }}
+                    onClick={item.onClick}
+                  >
+                    <Box fontSize="md">{item.icon}</Box>
+                    <Text fontSize="sm" fontWeight="medium">
+                      {item.label}
+                    </Text>
+                  </Button>
+                ))}
+              </HStack>
+            </HStack>
           </Box>
           
           {/* Main Content Area */}
           <Box flex="1" overflow="hidden">
             {renderCurrentView()}
-          </Box>
-
-          {/* Bottom Navigation */}
-          <Box
-            height="80px"
-            bg="gray.900"
-            borderTop="1px solid"
-            borderColor="gray.700"
-            px={4}
-            py={2}
-          >
-            <HStack justify="space-around" align="center" height="100%">
-              {navItems.map((item) => (
-                <Button
-                  key={item.id}
-                  variant="ghost"
-                  size="sm"
-                  height="60px"
-                  minWidth="60px"
-                  flexDirection="column"
-                  gap={1}
-                  color={
-                    (item.id === currentView) 
-                      ? "blue.400" 
-                      : "gray.400"
-                  }
-                  _hover={{
-                    color: "blue.300",
-                    bg: "gray.800",
-                  }}
-                  _active={{
-                    bg: "gray.700",
-                  }}
-                  onClick={item.onClick}
-                >
-                  <Box fontSize="lg">{item.icon}</Box>
-                  <Text fontSize="xs" fontWeight="medium">
-                    {item.label}
-                  </Text>
-                </Button>
-              ))}
-            </HStack>
           </Box>
         </Box>
       )}
