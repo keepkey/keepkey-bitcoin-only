@@ -155,6 +155,19 @@ jobs:
             fi
           fi
           
+          # Debug password format (safely)
+          echo "Checking certificate password..."
+          echo "Password length: ${#CERT_PASSWORD}"
+          echo "Password starts with: ${CERT_PASSWORD:0:3}..."
+          echo "Password ends with: ...${CERT_PASSWORD: -2}"
+          
+          # Check if password contains expected pattern
+          if [[ "$CERT_PASSWORD" == dsa* ]]; then
+            echo "✅ Password starts with expected prefix"
+          else
+            echo "⚠️ Password does NOT start with expected prefix 'dsa'"
+          fi
+          
           # Import to keychain
           echo "Importing certificate to keychain..."
           # Use printf to handle special characters in password
