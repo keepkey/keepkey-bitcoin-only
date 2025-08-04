@@ -190,4 +190,4 @@ jobs:
           name: ${{ matrix.name }}-${{ github.run_number }}
           path: |
             projects/vault-v2/src-tauri/target/release/bundle/
-          retention-days: 7
+          retention-days: 7# Trigger CI build
