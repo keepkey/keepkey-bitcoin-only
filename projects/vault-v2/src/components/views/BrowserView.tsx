@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Box, 
   Input, 
@@ -9,25 +9,57 @@ import {
   IconButton,
   Spinner
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaArrowRight, FaRedo, FaHome, FaSearch } from 'react-icons/fa';
+import { FaArrowLeft, FaArrowRight, FaRedo, FaHome, FaSearch, FaExternalLinkAlt } from 'react-icons/fa';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
 export const BrowserView = () => {
-  const [url, setUrl] = useState('https://keepkey.com');
-  const [inputUrl, setInputUrl] = useState('https://keepkey.com');
+  // Use proxy server for keepkey.com to avoid CORS issues
+  const [url, setUrl] = useState('http://localhost:8080');
+  const [inputUrl, setInputUrl] = useState('keepkey.com');
   const [isLoading, setIsLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [hoverTimer, setHoverTimer] = useState<NodeJS.Timeout | null>(null);
+  const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [externalLinkMessage, setExternalLinkMessage] = useState<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Check API connectivity on mount
+  useEffect(() => {
+    checkApiConnection();
+  }, []);
+
+  const checkApiConnection = async () => {
+    try {
+      const response = await fetch('http://localhost:1646/spec/swagger.json');
+      if (response.ok) {
+        setApiStatus('connected');
+        console.log('✅ API server is connected at localhost:1646');
+      } else {
+        setApiStatus('error');
+        console.error('❌ API server returned error:', response.status);
+      }
+    } catch (error) {
+      setApiStatus('error');
+      console.error('❌ Failed to connect to API server:', error);
+    }
+  };
 
   const handleNavigate = async () => {
     if (!inputUrl) return;
     
-    // Simple URL validation and formatting
+    // Use proxy server for KeepKey domains
     let formattedUrl = inputUrl;
-    if (!inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+    
+    // Check if it's a KeepKey domain
+    if (inputUrl.includes('keepkey.com') || inputUrl === 'vault' || inputUrl === 'vault.keepkey.com') {
+      // Always use proxy for KeepKey domains
+      formattedUrl = 'http://localhost:8080';
+    } else if (!inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+      // For non-KeepKey domains, add https://
       formattedUrl = `https://${inputUrl}`;
     }
     
@@ -36,16 +68,17 @@ export const BrowserView = () => {
       await invoke('browser_navigate', { url: formattedUrl });
     } catch (error) {
       console.error('Failed to notify backend of navigation:', error);
-      // Still navigate even if backend call fails
-      setUrl(formattedUrl);
-      setInputUrl(formattedUrl);
-      setIsLoading(true);
     }
+    
+    // Update the UI
+    setUrl(formattedUrl);
+    setIsLoading(true);
   };
 
   const handleHome = () => {
-    const homeUrl = 'https://keepkey.com';
-    setInputUrl(homeUrl);
+    // Use proxy for keepkey.com
+    const homeUrl = 'http://localhost:8080';
+    setInputUrl('keepkey.com');
     setUrl(homeUrl);
     setIsLoading(true);
   };
@@ -53,7 +86,7 @@ export const BrowserView = () => {
   const handleRefresh = () => {
     setIsLoading(true);
     // Force iframe reload by changing src
-    const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
+    const iframe = iframeRef.current;
     if (iframe) {
       iframe.src = iframe.src;
     }
@@ -78,14 +111,54 @@ export const BrowserView = () => {
   const handleIframeLoad = () => {
     setIsLoading(false);
     // Try to get the actual URL from iframe (limited by CORS)
-    const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
+    const iframe = iframeRef.current;
     if (iframe) {
       try {
+        // Try to inject a script to handle link clicks (may be blocked by CORS)
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (iframeDoc && iframe.contentWindow?.location.origin === window.location.origin) {
+          // Only works for same-origin content
+          const links = iframeDoc.getElementsByTagName('a');
+          for (let i = 0; i < links.length; i++) {
+            const link = links[i];
+            if (link.target === '_blank' || link.target === '_new') {
+              link.addEventListener('click', (e) => {
+                e.preventDefault();
+                handleExternalLink(link.href);
+              });
+            }
+          }
+        }
         setInputUrl(iframe.contentWindow?.location.href || url);
       } catch (e) {
-        // Cross-origin restrictions prevent accessing iframe URL
+        // Cross-origin restrictions prevent accessing iframe content
+        console.log('Cross-origin iframe, cannot access content');
         setInputUrl(url);
       }
+    }
+  };
+
+  const handleExternalLink = async (linkUrl: string) => {
+    console.log('External link clicked:', linkUrl);
+    
+    // Check if it's a documentation or external link
+    if (linkUrl.includes('docs') || linkUrl.includes('github') || !linkUrl.includes('keepkey.com')) {
+      // Open in external browser
+      try {
+        await invoke('open_url', { url: linkUrl });
+        // Show a temporary message
+        setExternalLinkMessage(`Opening ${linkUrl} in external browser...`);
+        setTimeout(() => setExternalLinkMessage(null), 3000);
+      } catch (error) {
+        console.error('Failed to open external link:', error);
+        // Fallback: navigate in iframe
+        setUrl(linkUrl);
+        setInputUrl(linkUrl);
+      }
+    } else {
+      // Navigate within the iframe
+      setUrl(linkUrl);
+      setInputUrl(linkUrl);
     }
   };
 
@@ -124,9 +197,26 @@ export const BrowserView = () => {
         unlisten = await listen('browser:navigate', (event) => {
           const { url: newUrl } = event.payload as { url: string };
           console.log('Received backend navigation command:', newUrl);
-          setUrl(newUrl);
-          setInputUrl(newUrl);
-          setIsLoading(true);
+          
+          // Handle special case for support.keepkey.com
+          if (newUrl.includes('support.keepkey.com')) {
+            // Navigate directly to support URL
+            setUrl(newUrl);
+            setInputUrl('support.keepkey.com');
+            setIsLoading(true);
+            
+            // Also update the iframe directly to ensure navigation
+            setTimeout(() => {
+              const iframe = iframeRef.current;
+              if (iframe && iframe.src !== newUrl) {
+                iframe.src = newUrl;
+              }
+            }, 50);
+          } else {
+            setUrl(newUrl);
+            setInputUrl(newUrl);
+            setIsLoading(true);
+          }
         });
       } catch (error) {
         console.error('Failed to set up browser event listeners:', error);
@@ -139,6 +229,17 @@ export const BrowserView = () => {
       if (unlisten) unlisten();
     };
   }, []);
+  
+  // Handle pending navigation once component is ready
+  useEffect(() => {
+    if (pendingNavigation) {
+      console.log('Processing pending navigation to:', pendingNavigation);
+      setUrl(pendingNavigation);
+      setInputUrl(pendingNavigation.includes('support.keepkey.com') ? 'support.keepkey.com' : pendingNavigation);
+      setIsLoading(true);
+      setPendingNavigation(null);
+    }
+  }, [pendingNavigation]);
 
       return (
       <Box height="100%" bg="rgba(0, 0, 0, 0.4)" display="flex" flexDirection="column">
@@ -193,6 +294,16 @@ export const BrowserView = () => {
                 onClick={handleHome}
               >
                 <FaHome />
+              </IconButton>
+              <IconButton
+                aria-label="Open in External Browser"
+                size="sm"
+                variant="outline"
+                colorScheme="green"
+                onClick={() => handleExternalLink(url)}
+                title="Open current page in external browser"
+              >
+                <FaExternalLinkAlt />
               </IconButton>
             </Flex>
 
@@ -259,8 +370,28 @@ export const BrowserView = () => {
           </Flex>
         )}
         
+        {externalLinkMessage && (
+          <Flex
+            position="absolute"
+            bottom="20px"
+            left="50%"
+            transform="translateX(-50%)"
+            align="center"
+            gap={2}
+            bg="green.700"
+            px={4}
+            py={2}
+            borderRadius="md"
+            zIndex={10}
+          >
+            <FaExternalLinkAlt color="white" />
+            <Text color="white" fontSize="sm">{externalLinkMessage}</Text>
+          </Flex>
+        )}
+        
         {/* Embedded Website */}
         <iframe
+          ref={iframeRef}
           id="browser-iframe"
           src={url}
           style={{
@@ -269,7 +400,8 @@ export const BrowserView = () => {
             border: 'none',
           }}
           onLoad={handleIframeLoad}
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-top-navigation"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation allow-modals allow-downloads"
+          allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
           title="KeepKey Browser"
         />
       </Box>

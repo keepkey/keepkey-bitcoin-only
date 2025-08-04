@@ -292,7 +292,56 @@ impl DeviceWorker {
         loop {
             if self.transport.is_none() {
                 info!("🔗 Attempting to create transport for device {}", self.device_id);
-                match DeviceQueueFactory::create_transport_for_device(&self.device_info) {
+                
+                // Try to create transport with current device info
+                let mut transport_result = DeviceQueueFactory::create_transport_for_device(&self.device_info);
+                
+                // If failed and PID is 0x0002, try looking for a device with same serial but different PID
+                // This handles the case where device reconnected after bootloader update
+                if transport_result.is_err() && self.device_info.pid == 0x0002 {
+                    info!("🔍 Device with PID 0x0002 not found, checking if device reconnected with different PID...");
+                    
+                    // Try to find the device with same serial number but possibly different PID
+                    // We need to check physical USB devices directly
+                    let usb_devices = rusb::devices().unwrap_or_else(|_| rusb::DeviceList::new().unwrap());
+                    let mut found_reconnected = false;
+                    
+                    for device in usb_devices.iter() {
+                        if let Ok(desc) = device.device_descriptor() {
+                            // Check if it's a KeepKey device (VID 0x2b24)
+                            if desc.vendor_id() == self.device_info.vid {
+                                // Try to read serial number
+                                if let Ok(handle) = device.open() {
+                                    let timeout = std::time::Duration::from_millis(100);
+                                    if let Ok(langs) = handle.read_languages(timeout) {
+                                        if let Some(lang) = langs.first() {
+                                            if let Ok(device_serial) = handle.read_serial_number_string(*lang, &desc, timeout) {
+                                                // Check if serial matches
+                                                if let Some(expected_serial) = &self.device_info.serial_number {
+                                                    if device_serial == *expected_serial && desc.product_id() != self.device_info.pid {
+                                                        info!("🔄 Device reconnected with different PID: 0x{:04x} -> 0x{:04x}", 
+                                                              self.device_info.pid, desc.product_id());
+                                                        info!("📝 Updating device info with new PID for {}", self.device_id);
+                                                        self.device_info.pid = desc.product_id();
+                                                        found_reconnected = true;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if found_reconnected {
+                        // Try again with updated device info
+                        transport_result = DeviceQueueFactory::create_transport_for_device(&self.device_info);
+                    }
+                }
+                
+                match transport_result {
                     Ok(transport) => {
                         self.transport = Some(transport);
                         info!("✅ Transport ready for {}", self.device_id);
@@ -511,6 +560,9 @@ impl DeviceWorker {
         self.cache.clear();
         info!("🧹 Cache cleared for bootloader update");
         
+        // Remember if we started with PID 0x0001 (old bootloader)
+        let started_with_old_bootloader = self.device_info.pid == 0x0001;
+        
         // Get transport
         let transport = self.ensure_transport().await?;
         let mut handler = transport.with_standard_handler();
@@ -538,13 +590,29 @@ impl DeviceWorker {
         info!("📤 Sending FirmwareUpload command...");
         let payload_hash = Sha256::digest(&bootloader_bytes).to_vec();
         
-        match handler.handle(FirmwareUpload {
+        let result = handler.handle(FirmwareUpload {
             payload_hash,
             payload: bootloader_bytes,
-        }.into()) {
+        }.into());
+        
+        // Clear transport after upload completes (device will disconnect)
+        drop(handler);
+        self.transport = None;
+        
+        match result {
             Ok(Message::Success(s)) => {
                 info!("✅ Bootloader update successful: {}", s.message());
                 info!("🔄 Device may reboot. Please wait a moment.");
+                
+                // IMPORTANT: After bootloader update, the device will reconnect with a different PID
+                // Old bootloaders (v1.x) use PID 0x0001, new bootloaders (v2.x) use PID 0x0002
+                if started_with_old_bootloader {
+                    info!("📝 Device will reconnect with PID 0x0002 after bootloader update from v1.x to v2.x");
+                    info!("📝 Updating device info to expect PID 0x0002 for reconnection");
+                    self.device_info.pid = 0x0002;
+                    info!("🔌 Cleared transport to force recreation with new PID after device reconnects");
+                }
+                
                 Ok(true)
             }
             Ok(Message::Failure(f)) => {
@@ -949,16 +1017,24 @@ impl DeviceQueueFactory {
     /// Find the physical device matching device info (static method)
     fn find_physical_device_by_info(device_info: &FriendlyUsbDevice, devices: &[rusb::Device<rusb::GlobalContext>]) -> Result<rusb::Device<rusb::GlobalContext>> {
         if let Some(serial) = &device_info.serial_number {
-            // Match by serial number
+            // Match by serial number (flexible - allows PID change after bootloader update)
             for device in devices {
                 if let Ok(handle) = device.open() {
                     let timeout = std::time::Duration::from_millis(100);
                     if let Ok(langs) = handle.read_languages(timeout) {
                         if let Some(lang) = langs.first() {
                             if let Ok(desc) = device.device_descriptor() {
-                                if let Ok(device_serial) = handle.read_serial_number_string(*lang, &desc, timeout) {
-                                    if device_serial == *serial {
-                                        return Ok(device.clone());
+                                // Only check VID matches (KeepKey vendor ID)
+                                if desc.vendor_id() == device_info.vid {
+                                    if let Ok(device_serial) = handle.read_serial_number_string(*lang, &desc, timeout) {
+                                        if device_serial == *serial {
+                                            // Log if PID changed (happens after bootloader update)
+                                            if desc.product_id() != device_info.pid {
+                                                info!("📝 Device reconnected with different PID: 0x{:04x} -> 0x{:04x}", 
+                                                      device_info.pid, desc.product_id());
+                                            }
+                                            return Ok(device.clone());
+                                        }
                                     }
                                 }
                             }
@@ -983,6 +1059,7 @@ impl DeviceQueueFactory {
             }
         }
         
-        Err(anyhow!("Physical device not found for {}", device_info.unique_id))
+        Err(anyhow!("Physical device not found for {} (VID: 0x{:04x}, PID: 0x{:04x}, Serial: {:?})", 
+                    device_info.unique_id, device_info.vid, device_info.pid, device_info.serial_number))
     }
 } 

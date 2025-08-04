@@ -1,6 +1,28 @@
-# KeepKey Vault v2
+# KeepKey Vault V2 - Bitcoin Only Edition
 
-A modern Tauri-based GUI application for KeepKey hardware wallets, built with clean architectural boundaries and efficient hardware communication.
+A secure, modern desktop wallet application for KeepKey hardware wallets, focused exclusively on Bitcoin support. Built with Tauri, React, and Rust for optimal performance and security.
+
+## 🚀 Features
+
+- **Bitcoin-Only Focus**: Streamlined for Bitcoin transactions without altcoin distractions
+- **Hardware Security**: Full integration with KeepKey hardware wallet
+- **Modern Stack**: Built with Tauri 2.0, React, TypeScript, and Rust
+- **Native Performance**: Desktop application with native OS integration
+- **SegWit Support**: Full support for Legacy (P2PKH), Wrapped SegWit (P2SH-P2WPKH), and Native SegWit (P2WPKH) addresses
+- **Real-time Updates**: Live portfolio tracking and transaction status
+- **Secure Transaction Signing**: Device-based signing with proper UTXO validation
+
+## 🎯 Recent Major Fixes (January 2025)
+
+### Bitcoin Transaction Signing - "Invalid Prevhash 2" Resolution
+Successfully resolved critical transaction signing issues that were preventing KeepKey from signing Bitcoin transactions. Key fixes included:
+
+- **SegWit Transaction Parsing**: Fixed parser to correctly handle SegWit transactions with witness data
+- **Script Type Validation**: Only fetch previous transaction hex for legacy (P2PKH) inputs, not for SegWit inputs
+- **Change Address Security**: Enforced native SegWit (BIP84) for all change addresses to prevent funds loss
+- **API Migration**: Migrated from Blockstream to Mempool.space for improved reliability
+
+See [detailed documentation](docs/bitcoin-transaction-signing-fix.md) for complete technical details.
 
 ## 🏗️ **Architecture Overview**
 

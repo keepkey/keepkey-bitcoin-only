@@ -18,13 +18,17 @@ interface EnterBootloaderModeDialogProps {
   bootloaderCheck: BootloaderCheck
   deviceId: string  
   onClose: () => void
+  onSkip?: () => void
+  isInitialized?: boolean
 }
 
 export const EnterBootloaderModeDialog = ({ 
   isOpen, 
   bootloaderCheck, 
   deviceId,
-  onClose 
+  onClose,
+  onSkip,
+  isInitialized = false
 }: EnterBootloaderModeDialogProps) => {
   return (
     <DialogRoot open={isOpen} onOpenChange={({ open }) => !open && onClose()}>
@@ -78,14 +82,29 @@ export const EnterBootloaderModeDialog = ({
         </DialogBody>
         
         <Box borderTopWidth="1px" borderColor="gray.700" pt={3}>
-          <Button 
-            colorScheme="yellow" 
-            onClick={onClose} 
-            width="full"
-            size="sm"
-          >
-            Got It
-          </Button>
+          <HStack gap={2}>
+            <Button 
+              colorScheme="yellow" 
+              onClick={onClose} 
+              flex={1}
+              size="sm"
+            >
+              Got It
+            </Button>
+            {isInitialized && onSkip && (
+              <Button 
+                variant="outline"
+                colorScheme="gray"
+                onClick={onSkip} 
+                flex={1}
+                size="sm"
+                borderColor="gray.600"
+                _hover={{ bg: "gray.800", borderColor: "gray.500" }}
+              >
+                Skip Update
+              </Button>
+            )}
+          </HStack>
         </Box>
       </DialogContent>
     </DialogRoot>

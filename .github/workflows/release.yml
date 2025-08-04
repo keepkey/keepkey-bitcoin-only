@@ -1,4 +1,4 @@
-name: Release KeepKey Vault v5
+﻿name: Release KeepKey Vault v5
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 jobs:
   create-release:
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -30,127 +31,9 @@ jobs:
           draft: true
           prerelease: false
 
-  build-kkcli:
-    needs: create-release
-    permissions:
-      contents: write
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            name: kkcli-linux-x86_64
-          - platform: ubuntu-24.04
-            target: i686-unknown-linux-gnu
-            name: kkcli-linux-i686
-          - platform: ubuntu-24.04
-            target: aarch64-unknown-linux-gnu
-            name: kkcli-linux-aarch64
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            name: kkcli-windows-x86_64
-          - platform: windows-latest
-            target: aarch64-pc-windows-msvc
-            name: kkcli-windows-aarch64
-
-    runs-on: ${{ matrix.platform }}
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.target }}
-
-    - name: Install dependencies (Ubuntu/Debian)
-      if: startsWith(matrix.platform, 'ubuntu-')
-      run: |
-        sudo apt-get update
-        
-        # Enable multiarch support for 32-bit packages
-        sudo dpkg --add-architecture i386
-        sudo apt-get update
-        
-        sudo apt-get install -y pkg-config libusb-1.0-0-dev libudev-dev protobuf-compiler \
-          libhidapi-dev libhidapi-hidraw0 libhidapi-libusb0 libssl-dev \
-          gcc-multilib g++-multilib libc6-dev-i386 libssl-dev:i386 libssl3:i386
-        
-        # Verify protoc installation
-        protoc --version || (echo "❌ protoc installation failed" && exit 1)
-
-    - name: Install dependencies (macOS)
-      if: matrix.platform == 'macos-latest'
-      run: |
-        echo "Installing macOS dependencies..."
-        # Install protobuf compiler
-        brew install protobuf
-        
-        # Verify protoc installation
-        protoc --version || (echo "❌ protoc installation failed" && exit 1)
-
-    - name: Install dependencies (Windows)
-      if: matrix.platform == 'windows-latest'
-      shell: powershell
-      run: |
-        echo "Installing Windows dependencies..."
-        # Install protobuf compiler
-        choco install protoc --yes
-        
-        # Verify protoc installation
-        protoc --version
-        if ($LASTEXITCODE -ne 0) {
-          echo "❌ protoc installation failed"
-          exit 1
-        }
-
-    - name: Build kkcli
-      working-directory: ./projects/kkcli
-      run: |
-        echo "🔨 Building kkcli for ${{ matrix.target }}..."
-        cargo build --release --target ${{ matrix.target }}
-
-    - name: Package kkcli binary
-      shell: bash
-      run: |
-        echo "📦 Packaging kkcli binary..."
-        cd projects/kkcli/target/${{ matrix.target }}/release
-        
-        if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-          # Windows executable
-          cp kkcli.exe kkcli-${{ matrix.target }}.exe
-          echo "BINARY_NAME=kkcli-${{ matrix.target }}.exe" >> $GITHUB_ENV
-          echo "ASSET_NAME=kkcli-${{ matrix.target }}.exe" >> $GITHUB_ENV
-        else
-          # Unix executable
-          cp kkcli kkcli-${{ matrix.target }}
-          echo "BINARY_NAME=kkcli-${{ matrix.target }}" >> $GITHUB_ENV
-          echo "ASSET_NAME=kkcli-${{ matrix.target }}" >> $GITHUB_ENV
-        fi
-
-    - name: Upload kkcli to release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.release_upload_url }}
-        asset_path: projects/kkcli/target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}
-        asset_name: ${{ env.ASSET_NAME }}
-        asset_content_type: application/octet-stream
-
-    - name: Upload kkcli artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.name }}
-        path: projects/kkcli/target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}
-        retention-days: 7
-
   build-tauri:
-    needs: create-release
+    needs: [create-release]
+    if: always()
     permissions:
       contents: write
     
@@ -161,24 +44,12 @@ jobs:
           - platform: 'macos-latest'
             args: '--target universal-apple-darwin'
             name: 'macOS-universal'
-          - platform: 'ubuntu-24.04'
-            args: ''
-            name: 'Ubuntu-24.04-LTS'
           - platform: 'ubuntu-22.04'
             args: ''
-            name: 'Ubuntu-22.04-LTS'
-          - platform: 'ubuntu-24.04'
-            args: '--target i686-unknown-linux-gnu'
-            name: 'Ubuntu-24.04-LTS-i686'
-          - platform: 'ubuntu-24.04'
-            args: '--target aarch64-unknown-linux-gnu'
-            name: 'Ubuntu-24.04-LTS-aarch64'
+            name: 'Linux-AppImage'
           - platform: 'windows-latest'
             args: ''
             name: 'Windows-x64'
-          - platform: 'windows-latest'
-            args: '--target aarch64-pc-windows-msvc'
-            name: 'Windows-aarch64'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -209,7 +80,7 @@ jobs:
           
           # Check for Apple signing credentials (macOS only)
           if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
-            if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_ID_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
               echo "✅ Apple notarization credentials are set"
               echo "has_apple_notarization=true" >> $GITHUB_OUTPUT
             else
@@ -217,7 +88,7 @@ jobs:
               echo "has_apple_notarization=false" >> $GITHUB_OUTPUT
             fi
             
-            if [ -n "${{ secrets.MACOS_CERTIFICATE_BASE64 }}" ] && [ -n "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" ]; then
+            if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.CERT_PW }}" ]; then
               echo "✅ Apple code signing credentials are set"
               echo "has_apple_codesigning=true" >> $GITHUB_OUTPUT
             else
@@ -248,10 +119,10 @@ jobs:
             
             if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
               echo "   - APPLE_ID: Apple developer account email"
-              echo "   - APPLE_PASSWORD: Apple app-specific password"
+              echo "   - APPLE_ID_PASSWORD: Apple app-specific password"
               echo "   - APPLE_TEAM_ID: Apple developer team ID"
-              echo "   - MACOS_CERTIFICATE_BASE64: base64-encoded Apple certificate"
-              echo "   - MACOS_CERTIFICATE_PASSWORD: Apple certificate password"
+              echo "   - APPLE_CERTIFICATE: base64-encoded Apple certificate"
+              echo "   - CERT_PW: Apple certificate password"
               echo "   - CODESIGN_IDENTITY: Apple code signing identity"
               echo "   - KEYCHAIN_NAME: macOS keychain name"
               echo "   - KEYCHAIN_PASSWORD: macOS keychain password"
@@ -273,14 +144,9 @@ jobs:
         run: |
           sudo apt-get update
           
-          # Enable multiarch support for 32-bit packages
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf protobuf-compiler \
-            pkg-config libusb-1.0-0-dev libudev-dev libhidapi-dev libhidapi-hidraw0 libhidapi-libusb0 libssl-dev \
-            gcc-multilib g++-multilib libc6-dev-i386 libssl-dev:i386 libssl3:i386
+            pkg-config libusb-1.0-0-dev libudev-dev libhidapi-dev libhidapi-hidraw0 libhidapi-libusb0 libssl-dev
           
           # Verify protoc installation
           protoc --version || (echo "❌ protoc installation failed" && exit 1)
@@ -322,6 +188,112 @@ jobs:
         working-directory: ./projects/vault-v2
         run: bun install
 
+      - name: Import Apple Certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.CERT_PW }}
+        run: |
+          # Check if certificate is provided
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "⚠️ APPLE_CERTIFICATE not set, skipping certificate import"
+            echo "To enable code signing, add APPLE_CERTIFICATE secret to your repository"
+            exit 0
+          fi
+          
+          echo "✅ Certificate environment variable is set"
+          echo "Certificate length: ${#APPLE_CERTIFICATE}"
+          
+          # Debug: Check first few characters (safe, won't expose the cert)
+          echo "Certificate starts with: ${APPLE_CERTIFICATE:0:20}..."
+          
+          # Create a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          echo "Creating keychain at $KEYCHAIN_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Import certificate - handle potential newlines in base64
+          echo "Decoding certificate..."
+          # Remove any whitespace/newlines from the base64 string
+          echo "$APPLE_CERTIFICATE" | tr -d '\n\r ' > certificate.base64
+          
+          # Check if base64 file is valid
+          if [ ! -s certificate.base64 ]; then
+            echo "❌ Error: certificate.base64 is empty"
+            exit 1
+          fi
+          
+          echo "Base64 file size: $(wc -c < certificate.base64) bytes"
+          
+          # Decode base64 (macOS uses -D flag)
+          echo "Attempting to decode certificate..."
+          if base64 -D certificate.base64 > certificate.p12 2>/dev/null; then
+            echo "✅ Certificate decoded successfully using base64 -D"
+            ls -la certificate.p12
+          elif base64 --decode certificate.base64 > certificate.p12 2>/dev/null; then
+            echo "✅ Certificate decoded successfully using base64 --decode"
+            ls -la certificate.p12
+          else
+            echo "❌ Error: Failed to decode certificate."
+            echo "Trying alternative method..."
+            # Try with input redirection
+            if base64 -D < certificate.base64 > certificate.p12 2>/dev/null; then
+              echo "✅ Certificate decoded successfully with input redirection"
+              ls -la certificate.p12
+            else
+              echo "❌ All decode methods failed. The certificate may be corrupted."
+              exit 1
+            fi
+          fi
+          
+          # Debug password format (safely)
+          echo "Checking certificate password..."
+          echo "Password length: ${#CERT_PASSWORD}"
+          echo "Password starts with: ${CERT_PASSWORD:0:3}..."
+          echo "Password ends with: ...${CERT_PASSWORD: -2}"
+          
+          # Check if password contains expected pattern
+          if [[ "$CERT_PASSWORD" == dsa* ]]; then
+            echo "✅ Password starts with expected prefix"
+          else
+            echo "⚠️ Password does NOT start with expected prefix 'dsa'"
+          fi
+          
+          # Verify certificate integrity
+          echo "Verifying certificate file..."
+          echo "Certificate MD5: $(md5 -q certificate.p12)"
+          
+          
+          # Import to keychain
+          echo "Importing certificate to keychain..."
+          # Use printf to handle special characters in password
+          security import certificate.p12 -k $KEYCHAIN_PATH -P "${CERT_PASSWORD}" -T /usr/bin/codesign -T /usr/bin/productsign || {
+            echo "❌ Failed to import certificate. Trying with different password format..."
+            # Try without quotes in case of escaping issues
+            security import certificate.p12 -k $KEYCHAIN_PATH -P ${CERT_PASSWORD} -T /usr/bin/codesign -T /usr/bin/productsign || {
+              echo "❌ Certificate import failed. The CERT_PW secret may be incorrect."
+              echo "Make sure CERT_PW is set to the exact password used when creating the .p12 file"
+              exit 1
+            }
+          }
+          
+          # Add keychain to search list
+          security list-keychains -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | sed 's/\"//g')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Verify the certificate was imported
+          echo "Verifying certificate import..."
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
+          
+          # Clean up
+          rm -f certificate.p12 certificate.base64
+          
+          echo "✅ Certificate imported successfully"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -331,17 +303,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && secrets.TAURI_KEY_PASSWORD || '' }}
           # Conditionally set Apple notarization credentials
           APPLE_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_ID_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_TEAM_ID || '' }}
-          # Conditionally set Apple code signing credentials
-          CODESIGN_IDENTITY: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.CODESIGN_IDENTITY || '' }}
-          KEYCHAIN_NAME: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_NAME || '' }}
-          KEYCHAIN_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_PASSWORD || '' }}
-          MACOS_CERTIFICATE_BASE64: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_BASE64 || '' }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
         with:
           projectPath: ./projects/vault-v2
-          releaseId: ${{ needs.create-release.outputs.release_id }}
+          releaseId: ${{ startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.release_id || '' }}
           args: ${{ matrix.args }}
 
       - name: Upload artifacts
@@ -369,7 +335,8 @@ jobs:
           fi
 
   update-release-notes:
-    needs: [create-release, build-kkcli, build-tauri]
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [create-release, build-tauri]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -400,14 +367,9 @@ jobs:
             
             ### Downloads
             
-            **GUI Application:**
-            - macOS: \`.dmg\`
-            - Windows: \`.msi\`
-            - Linux: \`.AppImage\` or \`.deb\`
-            
-            **Command Line:**
-            - Linux: \`kkcli-x86_64-unknown-linux-gnu\`
-            - Windows: \`kkcli-x86_64-pc-windows-msvc.exe\`
+            - **macOS**: Universal app (\`.dmg\`)
+            - **Windows**: x64 installer (\`.msi\`)
+            - **Linux**: AppImage (works on most distributions)
             
             ${signingStatus}`;
             
@@ -419,10 +381,11 @@ jobs:
             });
 
   publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    needs: [create-release, build-kkcli, build-tauri, update-release-notes]
+    needs: [create-release, build-tauri, update-release-notes]
     
     steps:
       - name: Publish release

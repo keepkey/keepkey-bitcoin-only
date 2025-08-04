@@ -49,19 +49,12 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
     try {
       setIsLoading(true)
       setError(null)
-      setDeviceReadyStatus('Verifying device is ready for PIN...')
-      console.log('🔍 Verifying device readiness for PIN unlock:', deviceId)
+      setDeviceReadyStatus('Preparing device for PIN entry...')
+      console.log('🔍 Preparing PIN unlock for device:', deviceId)
       
-      // Use the dedicated device PIN readiness check
-      const isPinReady = await invoke('check_device_pin_ready', { deviceId })
-      console.log('📊 Device PIN ready status:', isPinReady)
-      
-      if (!isPinReady) {
-        // Device is not ready or no longer needs PIN unlock
-        console.log('✅ Device no longer needs PIN unlock or is not ready, closing dialog')
-        onUnlocked()
-        return
-      }
+      // Skip the readiness check - if we're showing this dialog, 
+      // it's because the device needs PIN unlock
+      // The device might already be in PIN flow from a previous GetAddress call
       
       // Device is ready for PIN unlock attempt
       setDeviceReadyStatus('Device ready - requesting PIN matrix...')

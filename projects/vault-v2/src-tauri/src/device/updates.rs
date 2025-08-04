@@ -3,8 +3,14 @@ use std::fs;
 use std::path::PathBuf;
 use semver::Version;
 use uuid;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use std::collections::HashMap;
 use crate::logging::{log_device_request, log_device_response};
 use crate::commands::DeviceQueueManager;
+
+// Track devices that just completed bootloader updates
+pub type BootloaderUpdateTracker = Arc<RwLock<HashMap<String, std::time::Instant>>>;
 
 /// Update device bootloader using the device queue
 #[tauri::command]
@@ -12,6 +18,7 @@ pub async fn update_device_bootloader(
     device_id: String,
     target_version: String,
     queue_manager: State<'_, DeviceQueueManager>,
+    bootloader_tracker: State<'_, BootloaderUpdateTracker>,
 ) -> Result<bool, String> {
     println!("🔄 Starting bootloader update for device {}: target version {}", device_id, target_version);
     
@@ -258,6 +265,8 @@ pub async fn update_device_bootloader(
     match queue_handle.update_bootloader(target_version.clone(), bootloader_bytes).await {
         Ok(success) => {
             println!("✅ Bootloader update successful for device {}", device_id);
+            println!("⚠️  Note: The device will now reboot. It will disconnect and reconnect automatically.");
+            println!("    The frontend should wait for the device:connected event before proceeding.");
             
             // Log the successful response
             let response_data = serde_json::json!({
@@ -268,6 +277,21 @@ pub async fn update_device_bootloader(
             
             if let Err(e) = log_device_response(&device_id, &request_id, true, &response_data, None).await {
                 eprintln!("Failed to log bootloader update success response: {}", e);
+            }
+            
+            // Track that this device just completed a bootloader update
+            {
+                let mut tracker = bootloader_tracker.write().await;
+                tracker.insert(device_id.clone(), std::time::Instant::now());
+                println!("📝 Marked device {} as having just completed bootloader update", device_id);
+            }
+            
+            // Clean up the device queue handle as the device will disconnect
+            {
+                let mut manager = queue_manager.lock().await;
+                if manager.remove(&device_id).is_some() {
+                    println!("♻️ Cleaned up device queue for {} after bootloader update", device_id);
+                }
             }
             
             Ok(success)
@@ -441,19 +465,44 @@ pub async fn update_device_firmware(
     
     println!("📦 Loaded firmware binary: {} bytes", firmware_bytes.len());
     
-    // Get or create device queue handle
+    // Get or create device queue handle with retry logic for reconnecting devices
     let queue_handle = {
         let mut manager = queue_manager.lock().await;
         
         if let Some(handle) = manager.get(&device_id) {
             handle.clone()
         } else {
-            // Find the device by ID
-            let devices = keepkey_rust::features::list_connected_devices();
-            let device_info = devices
-                .iter()
-                .find(|d| d.unique_id == device_id);
+            // Device might be reconnecting after bootloader update, try with retries
+            let mut device_info = None;
+            let max_retries = 5;
+            
+            for retry in 0..max_retries {
+                if retry > 0 {
+                    // Wait before retry to allow device to reconnect
+                    println!("⏳ Waiting for device {} to reconnect (attempt {}/{})", device_id, retry + 1, max_retries);
+                    drop(manager); // Release lock during sleep
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1000 * retry as u64)).await;
+                    manager = queue_manager.lock().await;
+                    
+                    // Check again if handle was created by event controller
+                    if let Some(handle) = manager.get(&device_id) {
+                        println!("✅ Device queue handle found after waiting");
+                        break;
+                    }
+                }
                 
+                let devices = keepkey_rust::features::list_connected_devices();
+                device_info = devices
+                    .iter()
+                    .find(|d| d.unique_id == device_id)
+                    .cloned();
+                    
+                if device_info.is_some() {
+                    println!("✅ Device {} found on attempt {}", device_id, retry + 1);
+                    break;
+                }
+            }
+            
             match device_info {
                 Some(device_info) => {
                     // Spawn a new device worker
@@ -462,19 +511,24 @@ pub async fn update_device_firmware(
                     handle
                 }
                 None => {
-                    let error = format!("Device {} not found", device_id);
-                    
-                    // Log the error response
-                    let response_data = serde_json::json!({
-                        "error": error,
-                        "operation": "update_device_firmware"
-                    });
-                    
-                    if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
-                        eprintln!("Failed to log firmware update error response: {}", e);
+                    // Check if handle was created while we were waiting
+                    if let Some(handle) = manager.get(&device_id) {
+                        handle.clone()
+                    } else {
+                        let error = format!("Device {} not found after {} retries", device_id, max_retries);
+                        
+                        // Log the error response
+                        let response_data = serde_json::json!({
+                            "error": error,
+                            "operation": "update_device_firmware"
+                        });
+                        
+                        if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                            eprintln!("Failed to log firmware update error response: {}", e);
+                        }
+                        
+                        return Err(error);
                     }
-                    
-                    return Err(error);
                 }
             }
         }
@@ -542,6 +596,8 @@ pub async fn update_device_firmware(
     match queue_handle.update_firmware(target_version.clone(), firmware_bytes).await {
         Ok(success) => {
             println!("✅ Firmware update successful for device {}", device_id);
+            println!("⚠️  Note: The device will now reboot. It will disconnect and reconnect automatically.");
+            println!("    The frontend should wait for the device:connected event before proceeding.");
             
             // Log the successful response
             let response_data = serde_json::json!({
@@ -552,6 +608,14 @@ pub async fn update_device_firmware(
             
             if let Err(e) = log_device_response(&device_id, &request_id, true, &response_data, None).await {
                 eprintln!("Failed to log firmware update success response: {}", e);
+            }
+            
+            // Clean up the device queue handle as the device will disconnect
+            {
+                let mut manager = queue_manager.lock().await;
+                if manager.remove(&device_id).is_some() {
+                    println!("♻️ Cleaned up device queue for {} after firmware update", device_id);
+                }
             }
             
             Ok(success)
