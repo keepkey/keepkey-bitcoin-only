@@ -46,21 +46,12 @@
       "minimumSystemVersion": "10.15"
     },
     "windows": {
-      "certificateThumbprint": "986AEBA61CF6616393E74D8CBD3A09E836213BAA",
-      "timestampUrl": "http://timestamp.sectigo.com",
-      "digestAlgorithm": "sha256",
-      "wix": {
-        "skipWebviewInstall": false
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
       },
       "nsis": {
         "installMode": "perMachine",
-        "createDesktopShortcut": true,
-        "createStartMenuShortcut": true,
-        "allowDowngrades": true,
-        "displayLanguageSelector": false,
-        "installerIcon": "icons/icon.ico",
-        "headerImage": "icons/icon.ico",
-        "sidebarImage": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico"
       }
     }
   }

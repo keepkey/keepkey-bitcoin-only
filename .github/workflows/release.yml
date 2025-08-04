@@ -368,7 +368,7 @@ jobs:
             ### Downloads
             
             - **macOS**: Universal app (\`.dmg\`)
-            - **Windows**: x64 installer (\`.msi\`)
+            - **Windows**: x64 installer (\`.exe\`)
             - **Linux**: AppImage (works on most distributions)
             
             ${signingStatus}`;

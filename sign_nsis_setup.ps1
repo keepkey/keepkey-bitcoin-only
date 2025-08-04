@@ -85,7 +85,6 @@ try {
     $signArgs = @(
         "sign",
         "/sha1", $Thumbprint,
-        "/t", $TimestampUrl,
         "/fd", "sha256",
         "/tr", $TimestampUrl,
         "/td", "sha256",

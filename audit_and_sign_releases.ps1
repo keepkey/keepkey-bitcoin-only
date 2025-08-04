@@ -200,7 +200,7 @@ foreach ($result in $signatureResults) {
         "Valid" { "✅" }
         "NotSigned" { "❌" }
         "Error" { "⚠️" }
-        Default { "❓" }
+        Default { "?" }
     }
     
     Write-Host "$statusEmoji $($result.Asset)" -ForegroundColor White
