@@ -1,16 +1,25 @@
 # KeepKey Vault Release Audit and Signing Script
 # Downloads releases, signs them locally with Sectigo EV cert, and re-uploads
 param(
-    [string]$GitHubRepo = "BitHighlander/keepkey-bitcoin-only",
+    [string]$GitHubRepo = "keepkey/keepkey-bitcoin-only",  # Main repo
     [string]$ReleaseTag = "",  # Leave empty to process latest release
     [string]$GitHubToken = "",  # GitHub Personal Access Token for uploads
     [string]$Thumbprint = "986AEBA61CF6616393E74D8CBD3A09E836213BAA",
     [string]$TimestampUrl = "http://timestamp.sectigo.com",
     [switch]$AuditOnly = $false,  # Only audit, don't sign or upload
-    [switch]$Force = $false  # Force re-signing even if already signed
+    [switch]$Force = $false,  # Force re-signing even if already signed
+    [switch]$UseFork = $false  # Use BitHighlander fork for testing
 )
 
 $ErrorActionPreference = "Stop"
+
+# Handle fork/main repo selection
+if ($UseFork) {
+    $GitHubRepo = "BitHighlander/keepkey-bitcoin-only"
+    Write-Host "🔄 Auditing FORK for testing: $GitHubRepo" -ForegroundColor Yellow
+} else {
+    Write-Host "🎯 Auditing MAIN repository: $GitHubRepo" -ForegroundColor Green
+}
 
 Write-Host "=== KeepKey Vault Release Audit & Signing ===" -ForegroundColor Cyan
 Write-Host "Repository: $GitHubRepo" -ForegroundColor Gray

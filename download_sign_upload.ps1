@@ -2,16 +2,25 @@
 # Downloads unsigned release from GitHub, signs with Sectigo, prepares for manual upload
 
 param(
-    [string]$GitHubRepo = "BitHighlander/keepkey-bitcoin-only",
+    [string]$GitHubRepo = "keepkey/keepkey-bitcoin-only",  # Main repo
     [string]$ReleaseTag = "",  # Leave empty for latest release
     [string]$Thumbprint = "986AEBA61CF6616393E74D8CBD3A09E836213BAA",
     [string]$TimestampUrl = "http://timestamp.sectigo.com",
     [string]$OutputDir = "signed_release",
     [switch]$DownloadOnly = $false,  # Only download, don't sign
-    [switch]$CleanStart = $false  # Remove existing output directory
+    [switch]$CleanStart = $false,  # Remove existing output directory
+    [switch]$UseFork = $false  # Use BitHighlander fork for testing
 )
 
 $ErrorActionPreference = "Stop"
+
+# Handle fork/main repo selection
+if ($UseFork) {
+    $GitHubRepo = "BitHighlander/keepkey-bitcoin-only"
+    Write-Host "🔄 Using FORK for testing: $GitHubRepo" -ForegroundColor Yellow
+} else {
+    Write-Host "🎯 Using MAIN repository: $GitHubRepo" -ForegroundColor Green
+}
 
 Write-Host "=== KeepKey Vault Release Download & Sign ===" -ForegroundColor Cyan
 Write-Host "Repository: $GitHubRepo" -ForegroundColor Gray
