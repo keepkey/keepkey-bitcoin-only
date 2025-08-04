@@ -1,6 +1,6 @@
-import { VStack, HStack, Text, Button, Box, Icon, Image, Alert, Progress } from "@chakra-ui/react";
+import { VStack, HStack, Text, Button, Box, Icon, Image, Spinner } from "@chakra-ui/react";
 import { FaShieldAlt, FaExclamationTriangle } from "react-icons/fa";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import holdAndConnectSvg from '../../../assets/svg/hold-and-connect.svg';
 
@@ -10,20 +10,11 @@ interface StepBootloaderUpdateProps {
   onBack: () => void;
 }
 
-// CSS animation for striped progress bar
-const stripeAnimationStyle = `
-  @keyframes stripeAnimation {
-    0% { background-position: 0 0; }
-    100% { background-position: 40px 0; }
-  }
-`;
 
 export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloaderUpdateProps) {
   const [deviceStatus, setDeviceStatus] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [updateProgress, setUpdateProgress] = useState(0);
   const [showBootloaderInstructions, setShowBootloaderInstructions] = useState(false);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Only check device status if we have a deviceId
@@ -139,20 +130,6 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
     }
     
     setIsUpdating(true);
-    setUpdateProgress(0);
-    
-    // Start the 60-second progress animation
-    let progress = 0;
-    progressIntervalRef.current = setInterval(() => {
-      progress += (100 / 60); // 100% over 60 seconds
-      if (progress >= 100) {
-        progress = 100;
-        if (progressIntervalRef.current) {
-          clearInterval(progressIntervalRef.current);
-        }
-      }
-      setUpdateProgress(progress);
-    }, 1000); // Update every second
     
     try {
       // Start bootloader update
@@ -161,13 +138,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
         targetVersion: deviceStatus.bootloaderCheck?.latestVersion || ''
       });
       
-      // Clear the interval when done
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-      setUpdateProgress(100);
-      
-      // Wait a moment to show completion
+      // Wait a moment before moving to next step
       setTimeout(() => {
         onNext();
       }, 500);
@@ -182,27 +153,17 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
       }
       // Don't show any errors to the user
       setIsUpdating(false);
-      // Clear the interval on error
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
     }
   };
-
-  // Cleanup interval on unmount
-  useEffect(() => {
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-    };
-  }, []);
 
 
   if (!deviceStatus) {
     return (
       <VStack gap={6} w="100%" maxW="500px">
-        <Text color="gray.400">Checking device status...</Text>
+        <HStack gap={3}>
+          <Spinner size="sm" color="green.500" />
+          <Text color="gray.400">Follow Directions on device...</Text>
+        </HStack>
       </VStack>
     );
   }
@@ -222,12 +183,12 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
             <HStack gap={2}>
               <Icon as={FaExclamationTriangle} color="yellow.500" boxSize={6} />
               <Text fontSize="xl" fontWeight="bold" color="white">
-                Enter Bootloader Mode
+                Enter Firmware Update Mode
               </Text>
             </HStack>
 
             <Text fontSize="sm" color="gray.300" textAlign="center">
-              To update the bootloader, your device must be in Bootloader Mode
+              To update the firmware, your device must be in Update Mode
             </Text>
 
             <Box display="flex" justifyContent="center" py={2}>
@@ -246,7 +207,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
               <Text fontWeight="semibold" color="yellow.300">Quick Steps:</Text>
               <Text color="gray.200">1. Unplug your KeepKey device</Text>
               <Text color="gray.200">2. Hold the button and plug it back in</Text>
-              <Text color="gray.200">3. Keep holding until "BOOTLOADER MODE" appears</Text>
+              <Text color="gray.200">3. Follow directions on device</Text>
               <Text color="gray.200">4. Release the button</Text>
             </VStack>
 
@@ -280,7 +241,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
           
           <VStack gap={2}>
             <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white" textAlign="center">
-              Bootloader Update
+              Firmware Updater
             </Text>
             {isOldBootloader ? (
               <>
@@ -351,34 +312,25 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
 
           {isUpdating && (
             <Box w="100%">
-              <style>{stripeAnimationStyle}</style>
-              <Text fontSize="sm" color="gray.400" mb={2}>
-                Updating bootloader... Do not disconnect your device
-              </Text>
-              <Box position="relative" h="24px" bg="gray.600" borderRadius="full" overflow="hidden">
-                <Box
-                  position="absolute"
-                  top={0}
-                  left={0}
-                  h="100%"
-                  w={`${updateProgress}%`}
-                  bg="green.500"
-                  borderRadius="full"
-                  transition="width 0.5s ease-out"
-                  backgroundImage="repeating-linear-gradient(
-                    -45deg,
-                    rgba(255, 255, 255, 0.15),
-                    rgba(255, 255, 255, 0.15) 10px,
-                    transparent 10px,
-                    transparent 20px
-                  )"
-                  backgroundSize="40px 40px"
-                  animation="stripeAnimation 1s linear infinite"
-                />
+              <Box mb={3} p={3} bg="blue.900" borderColor="blue.500" borderWidth={1} borderRadius="md">
+                <HStack align="start">
+                  <Icon as={FaExclamationTriangle} color="yellow.400" mt={1} />
+                  <Text fontSize="sm" color="gray.200">
+                    On the KeepKey, it will ask you to verify backup. We will do this after updating, hold the button to skip this for now to continue.
+                  </Text>
+                </HStack>
               </Box>
-              <Text fontSize="xs" color="gray.500" mt={2}>
-                {Math.round(updateProgress)}% - Estimated time remaining: {Math.max(0, 60 - Math.round(updateProgress * 0.6))}s
-              </Text>
+              <VStack gap={4}>
+                <Text fontSize="xl" fontWeight="bold" color="orange.500">
+                  Follow directions on device
+                </Text>
+                <Text fontSize="md" color="gray.400" textAlign="center">
+                  Your KeepKey will guide you through the update process.
+                </Text>
+                <Text fontSize="sm" color="gray.400">
+                  Do not disconnect your device during the update.
+                </Text>
+              </VStack>
             </Box>
           )}
 
@@ -389,7 +341,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
                 size="lg"
                 w="100%"
                 onClick={handleBootloaderUpdate}
-                isLoading={isUpdating}
+                loading={isUpdating}
               >
                 Update Bootloader
               </Button>

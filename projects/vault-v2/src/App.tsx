@@ -56,7 +56,8 @@ function App() {
         const [deviceUpdateComplete, setDeviceUpdateComplete] = useState(false);
         const [onboardingActive, setOnboardingActive] = useState(false);
         const [setupWizardActive, setSetupWizardActive] = useState(false);
-        const { showOnboarding, showError } = useCommonDialogs();
+        const [noDeviceDialogShown, setNoDeviceDialogShown] = useState(false);
+        const { showOnboarding, showError, showNoDevice } = useCommonDialogs();
         const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
         const { hideAll, activeDialog, getQueue, isWizardActive } = useDialog();
         const { fetchedXpubs, portfolio, isSync, reinitialize } = useWallet();
@@ -198,6 +199,43 @@ function App() {
             }
         }, [shouldShowOnboarding, onboardingLoading, showOnboarding, clearCache]);
 
+        // Show "No Device" dialog after 30 seconds if no device is connected
+        useEffect(() => {
+            let timeoutId: NodeJS.Timeout;
+            
+            if (!deviceConnected && !noDeviceDialogShown && !onboardingActive && !setupWizardActive) {
+                console.log("📱 [App] Starting 30-second timer for no device dialog");
+                timeoutId = setTimeout(() => {
+                    if (!deviceConnected) {
+                        console.log("📱 [App] 30 seconds elapsed with no device - showing dialog");
+                        setNoDeviceDialogShown(true);
+                        showNoDevice({
+                            onRetry: async () => {
+                                console.log("📱 [App] User clicked retry - restarting backend");
+                                setNoDeviceDialogShown(false);
+                                // Restart the backend to scan for devices again
+                                try {
+                                    await invoke('restart_backend_startup');
+                                    reinitialize();
+                                } catch (error) {
+                                    console.error("Failed to restart backend:", error);
+                                }
+                            }
+                        });
+                    }
+                }, 30000); // 30 seconds
+            } else if (deviceConnected && noDeviceDialogShown) {
+                // Device connected, reset the flag
+                setNoDeviceDialogShown(false);
+            }
+            
+            return () => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+            };
+        }, [deviceConnected, noDeviceDialogShown, onboardingActive, setupWizardActive, showNoDevice, reinitialize]);
+
         useEffect(() => {
             let unlistenStatusUpdate: (() => void) | undefined;
             let unlistenDeviceReady: (() => void) | undefined;
@@ -288,6 +326,27 @@ function App() {
                         setDeviceUpdateComplete(false);
                     });
 
+                    // Listen for "no device found" event from backend
+                    const unlistenNoDeviceFound = await listen('device:no-device-found', (event) => {
+                        console.log('📱 [App] No device found event received from backend:', event.payload);
+                        if (!deviceConnected && !noDeviceDialogShown) {
+                            setNoDeviceDialogShown(true);
+                            showNoDevice({
+                                onRetry: async () => {
+                                    console.log("📱 [App] User clicked retry - restarting backend");
+                                    setNoDeviceDialogShown(false);
+                                    // Restart the backend to scan for devices again
+                                    try {
+                                        await invoke('restart_backend_startup');
+                                        reinitialize();
+                                    } catch (error) {
+                                        console.error("Failed to restart backend:", error);
+                                    }
+                                }
+                            });
+                        }
+                    });
+
                     console.log('✅ All event listeners set up successfully');
                     
                     // Return cleanup function that removes all listeners
@@ -298,6 +357,7 @@ function App() {
                         if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
                         if (unlistenAccessError) unlistenAccessError();
                         if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
+                        if (unlistenNoDeviceFound) unlistenNoDeviceFound();
                     };
                     
                 } catch (error) {
@@ -311,7 +371,7 @@ function App() {
                 if (unlistenStatusUpdate) unlistenStatusUpdate();
                 if (unlistenDeviceReady) unlistenDeviceReady();
             };
-        }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
+        }, [deviceConnected, noDeviceDialogShown, showNoDevice, reinitialize]); // Add dependencies for the no device listener
 
         const mcpUrl = "http://127.0.0.1:1646/mcp";
 
@@ -381,12 +441,21 @@ function App() {
                     borderRadius="md"
                     bg="rgba(0, 0, 0, 0.5)"
                 >
-                    <Flex gap="2" justifyContent="center" alignItems="center">
-                        <Spinner size="xs" color={deviceConnected ? "green.400" : "gray.400"} />
-                        <Text fontSize="xs" color="gray.300">
-                            {loadingStatus}
-                        </Text>
-                        <EllipsisDots interval={300} /> {/* ⟵ no layout shift */}
+                    <Flex gap="2" justifyContent="center" alignItems="center" direction="column">
+                        <Flex gap="2" justifyContent="center" alignItems="center">
+                            <Spinner size="xs" color={deviceConnected ? "green.400" : "gray.400"} />
+                            <Text fontSize="xs" color="gray.300">
+                                {loadingStatus === "Scanning for devices..." && !deviceConnected 
+                                    ? "Please connect your KeepKey" 
+                                    : loadingStatus}
+                            </Text>
+                            <EllipsisDots interval={300} /> {/* ⟵ no layout shift */}
+                        </Flex>
+                        {loadingStatus === "Scanning for devices..." && !deviceConnected && (
+                            <Text fontSize="xs" color="gray.400" mt={1}>
+                                If your device is already connected, try unplugging and reconnecting it
+                            </Text>
+                        )}
                     </Flex>
                 </Box>
 

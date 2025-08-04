@@ -82,7 +82,7 @@ export function Step2DeviceLabel({
           _hover={{ borderColor: "gray.500" }}
           _focus={{ borderColor: "orange.500", boxShadow: "0 0 0 1px orange.500" }}
           color="white"
-          isDisabled={isLoading}
+          disabled={isLoading}
           onKeyPress={(e) => {
             if (e.key === 'Enter' && label.trim()) {
               handleSubmit();
@@ -102,9 +102,9 @@ export function Step2DeviceLabel({
           size="lg"
           w="100%"
           onClick={handleSubmit}
-          isLoading={isLoading}
+          loading={isLoading}
           loadingText="Setting label..."
-          isDisabled={!label.trim()}
+          disabled={!label.trim()}
         >
           Set Device Name
         </Button>
@@ -114,7 +114,7 @@ export function Step2DeviceLabel({
           size="lg"
           w="100%"
           onClick={handleSkip}
-          isDisabled={isLoading}
+          disabled={isLoading}
           color="gray.400"
           _hover={{ color: "white", bg: "gray.700" }}
         >

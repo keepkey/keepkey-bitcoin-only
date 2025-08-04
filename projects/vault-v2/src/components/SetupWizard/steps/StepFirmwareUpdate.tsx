@@ -1,4 +1,4 @@
-import { VStack, HStack, Text, Button, Box, Icon, Badge, Spinner } from "@chakra-ui/react";
+import { VStack, HStack, Text, Button, Box, Icon, Progress, Badge, Alert, Spinner } from "@chakra-ui/react";
 import { FaDownload, FaExclamationTriangle } from "react-icons/fa";
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -190,7 +190,18 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
     }
   };
 
-  if (!deviceStatus || isVerifying) {
+  if (!deviceStatus) {
+    return (
+      <VStack gap={6} w="100%" maxW="500px">
+        <HStack gap={3}>
+          <Spinner size="sm" color="green.500" />
+          <Text color="gray.400">Follow Directions on device...</Text>
+        </HStack>
+      </VStack>
+    );
+  }
+  
+  if (isVerifying) {
     return (
       <VStack gap={6} w="100%" maxW="500px">
         <Icon as={FaDownload} boxSize={16} color="orange.500" />
@@ -202,7 +213,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
             Checking your device firmware version...
           </Text>
           <Text fontSize="sm" color="orange.400">
-            This verification is mandatory for security
+            This verification is required for setup
           </Text>
         </VStack>
         <Spinner size="lg" color="orange.500" thickness="4px" />
@@ -452,7 +463,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
                 size="lg"
                 w="100%"
                 onClick={handleFirmwareUpdate}
-                isLoading={isUpdating}
+                loading={isUpdating}
               >
                 Update Firmware Now (Required)
               </Button>

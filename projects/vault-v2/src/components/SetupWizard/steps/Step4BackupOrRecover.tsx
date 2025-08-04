@@ -111,7 +111,7 @@ export function Step4BackupOrRecover({
           size="lg"
           w="100%"
           onClick={handleBackupComplete}
-          isLoading={isLoading}
+          loading={isLoading}
           loadingText="Completing setup..."
           _hover={{ transform: "scale(1.02)" }}
         >

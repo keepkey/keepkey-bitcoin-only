@@ -3,12 +3,14 @@ import { useCallback } from 'react';
 import React from 'react';
 import { OnboardingWizard } from '../components/OnboardingWizard/OnboardingWizard';
 import { SetupWizard } from '../components/SetupWizard';
+import { NoDeviceDialog } from '../components/NoDeviceDialog';
 
 // Import dialog components dynamically
 const dialogComponents = {
   onboarding: () => import('../components/OnboardingWizard/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })),
   settings: () => import('../components/SettingsDialog').then(m => ({ default: m.SettingsDialog })),
   walletCreation: () => import('../components/WalletCreationWizard/WalletCreationWizard').then(m => ({ default: m.WalletCreationWizard })),
+  noDevice: () => import('../components/NoDeviceDialog').then(m => ({ default: m.NoDeviceDialog })),
   // Add more dialog imports as needed
 };
 
@@ -75,6 +77,18 @@ export function useCommonDialogs() {
       },
     });
   }, [show, hide, requestAppFocus, releaseAppFocus]);
+
+  const showNoDevice = useCallback((props?: {
+    onRetry?: () => void;
+  }) => {
+    show({
+      id: 'no-device-found',
+      component: NoDeviceDialog,
+      props,
+      priority: 'high',
+      persistent: false,
+    });
+  }, [show]);
   
   // TODO: Implement these dialogs
   const showError = useCallback((title: string, message: string) => {
@@ -91,6 +105,7 @@ export function useCommonDialogs() {
     showOnboarding,
     showSettings,
     showWalletCreation,
+    showNoDevice,
     showError,
     showConfirm,
     hideDialog: hide,

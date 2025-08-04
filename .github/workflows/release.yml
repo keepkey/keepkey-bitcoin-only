@@ -1,13 +1,16 @@
-name: Release KeepKey Vault v5
+﻿name: Release KeepKey Vault v5
 
 on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'release-*'
   workflow_dispatch:
 
 jobs:
   create-release:
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -31,7 +34,8 @@ jobs:
           prerelease: false
 
   build-kkcli:
-    needs: create-release
+    needs: [create-release]
+    if: always()
     permissions:
       contents: write
     
@@ -133,6 +137,7 @@ jobs:
         fi
 
     - name: Upload kkcli to release
+      if: startsWith(github.ref, 'refs/tags/')
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -150,7 +155,8 @@ jobs:
         retention-days: 7
 
   build-tauri:
-    needs: create-release
+    needs: [create-release]
+    if: always()
     permissions:
       contents: write
     
@@ -341,7 +347,7 @@ jobs:
           MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
         with:
           projectPath: ./projects/vault-v2
-          releaseId: ${{ needs.create-release.outputs.release_id }}
+          releaseId: ${{ startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.release_id || '' }}
           args: ${{ matrix.args }}
 
       - name: Upload artifacts
@@ -369,6 +375,7 @@ jobs:
           fi
 
   update-release-notes:
+    if: startsWith(github.ref, 'refs/tags/')
     needs: [create-release, build-kkcli, build-tauri]
     permissions:
       contents: write
@@ -419,6 +426,7 @@ jobs:
             });
 
   publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
