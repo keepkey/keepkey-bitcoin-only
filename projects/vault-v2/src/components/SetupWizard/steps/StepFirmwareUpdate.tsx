@@ -26,12 +26,23 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   const [error, setError] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>('idle');
   const [updateProgress, setUpdateProgress] = useState(0);
+  const [isWaitingForReboot, setIsWaitingForReboot] = useState(false);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const rebootPollRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     checkDeviceStatus();
   }, [deviceId]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (rebootPollRef.current) {
+        clearInterval(rebootPollRef.current);
+      }
+    };
+  }, []);
 
   // Set up event listener for firmware update events
   useEffect(() => {
@@ -135,10 +146,93 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
       // If we get here, the update was successful
       setUpdateState('complete');
       
-      // Wait a moment to show completion
+      // After firmware update, device will reboot - wait longer and let the backend handle reconnection
+      console.log("Firmware update complete - device will reboot, waiting for reconnection...");
+      setIsWaitingForReboot(true);
+      
+      // Wait 10 seconds before starting to poll - device needs time to fully reboot
+      console.log("Waiting 10 seconds for device to reboot...");
       setTimeout(() => {
-        onNext();
-      }, 1500);
+        console.log("Starting to poll for device reconnection...");
+        
+        // Start polling for device reconnection after reboot
+        let pollAttempts = 0;
+        const maxPollAttempts = 20; // 20 attempts over 10 seconds after initial wait
+        
+        rebootPollRef.current = setInterval(async () => {
+        pollAttempts++;
+        console.log(`Polling for device after reboot (attempt ${pollAttempts}/${maxPollAttempts})...`);
+        
+        try {
+          // First try with the original device ID
+          const status = await invoke<any>('get_device_status', { deviceId });
+          
+          if (status?.firmwareCheck?.currentVersion === "7.10.0") {
+            console.log("✅ Device reconnected with firmware 7.10.0!");
+            
+            // Clear the polling interval
+            if (rebootPollRef.current) {
+              clearInterval(rebootPollRef.current);
+              rebootPollRef.current = null;
+            }
+            
+            setIsWaitingForReboot(false);
+            setIsUpdating(false);
+            setDeviceStatus(status);
+            
+            // Move to next step
+            onNext();
+          }
+        } catch (err) {
+          // If the original device ID fails, try to find any connected device
+          try {
+            console.log("Original device ID failed, looking for any connected device...");
+            const devices = await invoke<any[]>('list_devices');
+            
+            if (devices && devices.length > 0) {
+              // Take the first device found
+              const newDeviceId = devices[0].unique_id || devices[0].id;
+              console.log(`Found device with ID: ${newDeviceId}`);
+              
+              // Try to get status with the new device ID
+              const status = await invoke<any>('get_device_status', { deviceId: newDeviceId });
+              
+              if (status?.firmwareCheck?.currentVersion === "7.10.0") {
+                console.log("✅ Device reconnected with firmware 7.10.0 (new ID)!");
+                
+                // Clear the polling interval
+                if (rebootPollRef.current) {
+                  clearInterval(rebootPollRef.current);
+                  rebootPollRef.current = null;
+                }
+                
+                setIsWaitingForReboot(false);
+                setIsUpdating(false);
+                setDeviceStatus(status);
+                
+                // Move to next step
+                onNext();
+              }
+            } else {
+              console.log("No devices found yet, continuing to poll...");
+            }
+          } catch (listErr) {
+            console.log("Device not ready yet, continuing to poll...");
+          }
+        }
+        
+        if (pollAttempts >= maxPollAttempts) {
+          console.error("Device did not reconnect after firmware update");
+          if (rebootPollRef.current) {
+            clearInterval(rebootPollRef.current);
+            rebootPollRef.current = null;
+          }
+          setIsWaitingForReboot(false);
+          setIsUpdating(false);
+          setError("Device did not reconnect after update. Please unplug and reconnect your device.");
+        }
+        }, 500); // Poll every 500ms
+      }, 10000); // Wait 10 seconds before starting to poll
       
     } catch (err) {
       console.error("Failed to update firmware:", err);
@@ -152,25 +246,13 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
     }
   };
 
-  const handleVerifyAndContinue = () => {
-    // Simple check: just verify we're on 7.10.0
-    const currentVersion = deviceStatus?.firmwareCheck?.currentVersion;
-    
-    if (currentVersion === "7.10.0") {
-      console.log("Firmware is 7.10.0, continuing");
-      onNext();
-    } else {
-      console.log("Firmware is not 7.10.0, need to update first");
-      // Don't set error, just don't proceed
-    }
-  };
 
   if (!deviceStatus) {
     return (
       <VStack gap={6} w="100%" maxW="500px">
         <HStack gap={3}>
           <Spinner size="sm" color="green.500" />
-          <Text color="gray.400">Checking device status...</Text>
+          <Text color="gray.400">Follow directions on device...</Text>
         </HStack>
       </VStack>
     );
@@ -193,7 +275,14 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
             <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white" textAlign="center">
               Firmware Update
             </Text>
-            {deviceStatus.needsFirmwareUpdate ? (
+            {!deviceStatus.firmwareCheck ? (
+              <HStack gap={2} justify="center">
+                <Spinner size="sm" color="orange.400" />
+                <Text fontSize={{ base: "sm", md: "md" }} color="orange.400" textAlign="center">
+                  Checking firmware version...
+                </Text>
+              </HStack>
+            ) : deviceStatus.needsFirmwareUpdate ? (
               <>
                 <Text fontSize={{ base: "sm", md: "md" }} color="gray.400" textAlign="center">
                   A new firmware version is available for your KeepKey
@@ -204,13 +293,9 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
                   </Badge>
                 )}
               </>
-            ) : deviceStatus.firmwareCheck?.currentVersion === deviceStatus.firmwareCheck?.latestVersion ? (
+            ) : (
               <Text fontSize={{ base: "sm", md: "md" }} color="green.400" textAlign="center">
                 ✅ Firmware verified - v{deviceStatus.firmwareCheck?.currentVersion}
-              </Text>
-            ) : (
-              <Text fontSize={{ base: "sm", md: "md" }} color="orange.400" textAlign="center">
-                ⚠️ Firmware verification in progress...
               </Text>
             )}
           </VStack>
@@ -236,7 +321,16 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
 
         {/* Right side - Details and actions */}
         <VStack gap={4} flex={{ base: "none", lg: 1 }} w={{ base: "100%", lg: "auto" }}>
-          {deviceStatus.firmwareCheck && (
+          {!deviceStatus.firmwareCheck ? (
+            <Box w="100%" p={4} bg="gray.700" borderRadius="lg">
+              <VStack gap={3}>
+                <Spinner size="md" color="orange.400" />
+                <Text fontSize="sm" color="gray.400">
+                  Detecting firmware version...
+                </Text>
+              </VStack>
+            </Box>
+          ) : (
             <Box w="100%" p={4} bg="gray.700" borderRadius="lg">
               <HStack gap={8} justify="space-between">
                 <VStack gap={1} align="start">
@@ -387,11 +481,30 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
                 </>
               )}
 
-              {updateState === 'complete' && (
+              {updateState === 'complete' && !isWaitingForReboot && (
                 <Box p={4} bg="green.900" borderRadius="md" borderWidth="2px" borderColor="green.500">
                   <Text fontSize="sm" color="green.300" fontWeight="bold">
                     ✅ Firmware update complete!
                   </Text>
+                </Box>
+              )}
+
+              {isWaitingForReboot && (
+                <Box p={4} bg="blue.900" borderRadius="md" borderWidth="2px" borderColor="blue.500">
+                  <VStack gap={2} align="start">
+                    <HStack gap={2}>
+                      <Spinner size="sm" color="blue.300" />
+                      <Text fontSize="sm" color="blue.300" fontWeight="bold">
+                        Device is rebooting...
+                      </Text>
+                    </HStack>
+                    <Text fontSize="xs" color="blue.200">
+                      Your KeepKey is restarting with the new firmware.
+                    </Text>
+                    <Text fontSize="xs" color="blue.200">
+                      This may take a few seconds. Please wait...
+                    </Text>
+                  </VStack>
                 </Box>
               )}
             </Box>
@@ -402,34 +515,54 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
             {deviceStatus.firmwareCheck && (
               <Box w="100%" p={3} bg="gray.800" borderRadius="md" borderWidth="1px" borderColor="gray.600">
                 <HStack gap={2}>
-                  <Text fontSize="sm" color="gray.400">Firmware Verification:</Text>
-                  {deviceStatus.firmwareCheck.currentVersion === deviceStatus.firmwareCheck.latestVersion ? (
-                    <Badge colorScheme="green">✓ Verified</Badge>
+                  <Text fontSize="sm" color="gray.400">Status:</Text>
+                  {!deviceStatus.firmwareCheck.currentVersion || !deviceStatus.firmwareCheck.latestVersion ? (
+                    <Badge colorScheme="orange">Checking...</Badge>
+                  ) : deviceStatus.firmwareCheck.currentVersion === deviceStatus.firmwareCheck.latestVersion ? (
+                    <Badge colorScheme="green">✓ Up to date</Badge>
                   ) : (
-                    <Badge colorScheme="red">Update Required</Badge>
+                    <Badge colorScheme="orange">Update Available</Badge>
                   )}
                 </HStack>
               </Box>
             )}
             
-            {deviceStatus.needsFirmwareUpdate && !isUpdating ? (
+            {!deviceStatus.firmwareCheck ? (
+              <Button
+                size="lg"
+                w="100%"
+                isDisabled
+                leftIcon={<Spinner size="sm" />}
+              >
+                Checking Firmware...
+              </Button>
+            ) : deviceStatus.needsFirmwareUpdate && !isUpdating ? (
               <Button
                 colorScheme="orange"
                 size="lg"
                 w="100%"
                 onClick={handleFirmwareUpdate}
-                loading={isUpdating}
+                isLoading={isUpdating}
               >
-                Update Firmware Now (Required)
+                Update Firmware to v{deviceStatus.firmwareCheck?.latestVersion || "7.10.0"}
               </Button>
-            ) : !deviceStatus.needsFirmwareUpdate && !isUpdating && (
+            ) : deviceStatus.firmwareCheck?.currentVersion === "7.10.0" && !isUpdating ? (
               <Button
                 colorScheme="green"
                 size="lg"
                 w="100%"
-                onClick={handleVerifyAndContinue}
+                onClick={onNext}
               >
-                Verify & Continue
+                Continue Setup
+              </Button>
+            ) : isUpdating ? null : (
+              <Button
+                size="lg"
+                w="100%"
+                isDisabled
+                leftIcon={<Spinner size="sm" />}
+              >
+                Verifying...
               </Button>
             )}
           </VStack>

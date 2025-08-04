@@ -6,10 +6,11 @@ import {
   DialogBody,
   DialogFooter
 } from "./ui/dialog";
-import { Button, VStack, Text, Icon, Box } from '@chakra-ui/react';
+import { Button, VStack, Text, Icon, Box, Spinner, HStack } from '@chakra-ui/react';
 import { FaExclamationTriangle, FaPlug } from 'react-icons/fa';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 
 interface DeviceInvalidStateDialogProps {
   deviceId: string;
@@ -22,6 +23,28 @@ export const DeviceInvalidStateDialog = ({
   error,
   onClose
 }: DeviceInvalidStateDialogProps) => {
+  const [isScanning, setIsScanning] = useState(false);
+  
+  const handleReconnectClick = async () => {
+    console.log("User clicked 'I've Reconnected My Device' - triggering rescan");
+    setIsScanning(true);
+    
+    try {
+      // Trigger a backend restart to rescan for devices
+      console.log("Restarting backend to scan for devices...");
+      await invoke('restart_backend_startup');
+      
+      // Wait a moment for the scan to start
+      setTimeout(() => {
+        console.log("Closing dialog after rescan initiated");
+        onClose();
+      }, 1000);
+    } catch (error) {
+      console.error("Failed to restart backend:", error);
+      // Still close the dialog even if restart failed
+      onClose();
+    }
+  };
   
   // Auto-close when this specific device is disconnected
   useEffect(() => {
@@ -124,11 +147,20 @@ export const DeviceInvalidStateDialog = ({
         <DialogFooter borderTopWidth="1px" borderColor="gray.700" pt={3}>
           <Button 
             colorScheme="blue" 
-            onClick={onClose}
+            onClick={handleReconnectClick}
             size="md"
             w="full"
+            isLoading={isScanning}
+            loadingText="Scanning for device..."
           >
-            I've Reconnected My Device
+            {isScanning ? (
+              <HStack>
+                <Spinner size="sm" />
+                <Text>Scanning...</Text>
+              </HStack>
+            ) : (
+              "I've Reconnected My Device"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

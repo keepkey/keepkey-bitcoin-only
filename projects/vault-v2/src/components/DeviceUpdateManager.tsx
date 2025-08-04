@@ -162,16 +162,31 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         isInBootloaderMode
       })
       
-      // Special handling: If device is already in bootloader mode with correct bootloader version
-      // but needs firmware update, show firmware update dialog directly
+      // CRITICAL: Check if device is in bootloader mode
       if (isInBootloaderMode && !status.needsBootloaderUpdate) {
+        // Device is already in bootloader mode with correct bootloader version
+        // Show firmware update dialog directly
         console.log('🔧 DeviceUpdateManager: Device in bootloader mode with correct bootloader, showing firmware update')
+        setShowEnterBootloaderMode(false)
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(true)
+        setShowWalletCreation(false)
+      } else if (!isInBootloaderMode) {
+        // Device needs firmware update but is NOT in bootloader mode
+        // Must enter bootloader mode first!
+        console.log('🔧 DeviceUpdateManager: Device needs firmware update but NOT in bootloader mode - showing enter bootloader dialog')
+        setShowEnterBootloaderMode(true)  // Show enter bootloader mode dialog
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(false)      // Don't show firmware update yet
+        setShowWalletCreation(false)
+      } else {
+        // Shouldn't happen, but handle edge case
+        console.log('🔧 DeviceUpdateManager: Unexpected state - needs firmware but bootloader needs update too')
+        setShowEnterBootloaderMode(false)
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(true)
+        setShowWalletCreation(false)
       }
-      
-      setShowEnterBootloaderMode(false)
-      setShowBootloaderUpdate(false)
-      setShowFirmwareUpdate(true)
-      setShowWalletCreation(false)
     } else if (status.needsPinUnlock) {
       // Device is initialized but locked with PIN - this is handled by the PIN unlock event listener
       console.log('🔒 DeviceUpdateManager: Device needs PIN unlock - NOT calling onComplete()')
@@ -485,9 +500,41 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       showWalletCreation,
       showEnterBootloaderMode
     })
+    console.log('🔒 Device status after PIN unlock:', {
+      needsFirmwareUpdate: deviceStatus?.needsFirmwareUpdate,
+      needsBootloaderUpdate: deviceStatus?.needsBootloaderUpdate,
+      needsInitialization: deviceStatus?.needsInitialization,
+      firmwareVersion: deviceStatus?.firmwareCheck?.currentVersion,
+      latestVersion: deviceStatus?.firmwareCheck?.latestVersion
+    })
+    
     setShowPinUnlock(false)
     
-    // Automatically start portfolio loading after PIN unlock
+    // CRITICAL: Check if device still needs updates after PIN unlock
+    if (deviceStatus?.needsFirmwareUpdate) {
+      console.log('🔒 Device needs firmware update after PIN unlock - NOT calling onComplete')
+      console.log('🔒 Firmware update needed: v' + deviceStatus.firmwareCheck?.currentVersion + ' -> v' + deviceStatus.firmwareCheck?.latestVersion)
+      
+      // Check if device is in bootloader mode
+      const isInBootloaderMode = deviceStatus?.features?.bootloader_mode || deviceStatus?.features?.bootloaderMode || false
+      
+      if (!isInBootloaderMode) {
+        // Device needs to enter bootloader mode first
+        console.log('🔒 Showing enter bootloader mode dialog for firmware update')
+        setShowEnterBootloaderMode(true)
+        setShowFirmwareUpdate(false)
+      } else {
+        // Device is in bootloader mode, show firmware update
+        console.log('🔒 Showing firmware update dialog')
+        setShowEnterBootloaderMode(false)
+        setShowFirmwareUpdate(true)
+      }
+      
+      // DON'T call onComplete - device needs updates first
+      return
+    }
+    
+    // Only proceed with portfolio loading if device doesn't need updates
     try {
       console.log('🔄 Auto-loading portfolio after PIN unlock...')
       console.log(`📋 Current XPUBs in memory: ${fetchedXpubs.length}`)
@@ -501,8 +548,8 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       // Don't block onComplete - user can manually refresh later
     }
     
-    // Device should now be ready to use
-    console.log('🔒 Calling onComplete after PIN unlock')
+    // Device should now be ready to use (no updates needed)
+    console.log('🔒 Device fully ready after PIN unlock - calling onComplete')
     onComplete?.()
   }
 

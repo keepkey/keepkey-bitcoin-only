@@ -79,9 +79,11 @@ export function DevicePinHorizontal({
       if (!session && mode === 'create') {
         setIsInitializing(true);
         try {
-          // Add 1 second delay to ensure device is ready
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Add 2 second delay to ensure device is ready and user is ready
+          console.log("DevicePinHorizontal: Waiting 2 seconds before starting PIN creation...");
+          await new Promise(resolve => setTimeout(resolve, 2000));
           
+          console.log("DevicePinHorizontal: Starting PIN creation for device:", deviceId);
           const newSession = await PinService.startPinCreation(deviceId, deviceLabel);
           setSession(newSession);
           setStepError(null);
