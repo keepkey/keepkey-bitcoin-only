@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, broadcast};
+use tokio::sync::{mpsc, broadcast, oneshot};
 use tokio::time::interval;
 use tauri::{AppHandle, Emitter};
 use crate::features::{DeviceFeatures, get_device_features_with_fallback};
@@ -46,6 +46,8 @@ pub struct DeviceController {
     retry_counts: Arc<RwLock<HashMap<String, u8>>>,
     /// Devices currently being processed (to prevent overlapping attempts)
     active_fetches: Arc<RwLock<HashMap<String, Instant>>>,
+    /// Cancellation tokens for active feature fetch tasks
+    fetch_cancellation_tokens: Arc<RwLock<HashMap<String, oneshot::Sender<()>>>>,
     /// Blocking actions state
     pub blocking_actions: BlockingActionsState,
     /// App handle for emitting events
@@ -73,6 +75,7 @@ impl DeviceController {
             pending_features: Arc::new(RwLock::new(HashMap::new())),
             retry_counts: Arc::new(RwLock::new(HashMap::new())),
             active_fetches: Arc::new(RwLock::new(HashMap::new())),
+            fetch_cancellation_tokens: Arc::new(RwLock::new(HashMap::new())),
             blocking_actions,
             app_handle,
         };
@@ -93,6 +96,7 @@ impl DeviceController {
         let pending_features = Arc::clone(&self.pending_features);
         let retry_counts = Arc::clone(&self.retry_counts);
         let active_fetches = Arc::clone(&self.active_fetches);
+        let fetch_cancellation_tokens = Arc::clone(&self.fetch_cancellation_tokens);
         let event_tx = self.event_tx.clone();
         
         tokio::spawn(async move {
@@ -113,6 +117,20 @@ impl DeviceController {
                 };
                 
                 for device_id in devices_to_update {
+                    // Check if device is still connected before attempting to fetch features
+                    {
+                        let registry_check = crate::device_registry::get_all_device_entries();
+                        if let Ok(entries) = registry_check {
+                            if !entries.iter().any(|e| e.device.unique_id == device_id) {
+                                log::debug!("Device {} no longer connected, removing from pending", device_id);
+                                pending_features.write().unwrap().remove(&device_id);
+                                retry_counts.write().unwrap().remove(&device_id);
+                                active_fetches.write().unwrap().remove(&device_id);
+                                continue;
+                            }
+                        }
+                    }
+                    
                     // Check if device is already being processed
                     {
                         let active = active_fetches.read().unwrap();
@@ -181,6 +199,11 @@ impl DeviceController {
                             let pending_features_clone = Arc::clone(&pending_features);
                             let retry_counts_clone = Arc::clone(&retry_counts);
                             let active_fetches_clone = Arc::clone(&active_fetches);
+                            let fetch_cancellation_tokens_clone = Arc::clone(&fetch_cancellation_tokens);
+                            
+                            // Create cancellation token for this fetch
+                            let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+                            fetch_cancellation_tokens.write().unwrap().insert(device_id.clone(), cancel_tx);
                             
                             // Mark device as actively being processed
                             active_fetches.write().unwrap().insert(device_id.clone(), Instant::now());
@@ -192,13 +215,24 @@ impl DeviceController {
                                 // Update last attempt time
                                 pending_features_clone.write().unwrap().insert(device_id_clone.clone(), Instant::now());
                                 
-                                // Use tokio::task::spawn_blocking for the USB operation
-                                let result = tokio::time::timeout(
-                                    FEATURE_FETCH_TIMEOUT,
-                                    tokio::task::spawn_blocking(move || {
-                                        get_device_features_with_fallback(&device)
-                                    })
-                                ).await;
+                                // Use tokio::task::spawn_blocking for the USB operation with cancellation support
+                                let result = tokio::select! {
+                                    _ = cancel_rx => {
+                                        log::info!("Feature fetch for device {} was cancelled", device_id_clone);
+                                        // Clean up and exit
+                                        pending_features_clone.write().unwrap().remove(&device_id_clone);
+                                        retry_counts_clone.write().unwrap().remove(&device_id_clone);
+                                        active_fetches_clone.write().unwrap().remove(&device_id_clone);
+                                        fetch_cancellation_tokens_clone.write().unwrap().remove(&device_id_clone);
+                                        return;
+                                    }
+                                    result = tokio::time::timeout(
+                                        FEATURE_FETCH_TIMEOUT,
+                                        tokio::task::spawn_blocking(move || {
+                                            get_device_features_with_fallback(&device)
+                                        })
+                                    ) => result
+                                };
                                 
                                 match result {
                                     Ok(Ok(Ok(features))) => {
@@ -241,8 +275,9 @@ impl DeviceController {
                                             status,
                                         });
                                         
-                                        // Clean up active fetch
+                                        // Clean up active fetch and cancellation token
                                         active_fetches_clone.write().unwrap().remove(&device_id_clone);
+                                        fetch_cancellation_tokens_clone.write().unwrap().remove(&device_id_clone);
                                     }
                                     Ok(Ok(Err(e))) => {
                                         log::warn!("Failed to fetch features for device {}: {}", device_id_clone, e);
@@ -253,15 +288,17 @@ impl DeviceController {
                                             error: e.to_string(),
                                         });
                                         DeviceController::emit_status_message(&event_tx_clone, Some(device_id_clone.clone()), "Please reconnect your keepkey");
-                                        // Clean up active fetch
+                                        // Clean up active fetch and cancellation token
                                         active_fetches_clone.write().unwrap().remove(&device_id_clone);
+                                        fetch_cancellation_tokens_clone.write().unwrap().remove(&device_id_clone);
                                     }
                                     Ok(Err(_)) => {
                                         log::error!("Task panicked while fetching features for device {}", device_id_clone);
                                         retry_counts_clone.write().unwrap().insert(device_id_clone.clone(), retry_count + 1);
                                         
-                                        // Clean up active fetch
+                                        // Clean up active fetch and cancellation token
                                         active_fetches_clone.write().unwrap().remove(&device_id_clone);
+                                        fetch_cancellation_tokens_clone.write().unwrap().remove(&device_id_clone);
                                     }
                                     Err(_) => {
                                         log::warn!("Timeout fetching features for device {}", device_id_clone);
@@ -272,8 +309,9 @@ impl DeviceController {
                                             error: "Operation timed out".to_string(),
                                         });
                                         DeviceController::emit_status_message(&event_tx_clone, Some(device_id_clone.clone()), "Please reconnect your keepkey");
-                                        // Clean up active fetch
+                                        // Clean up active fetch and cancellation token
                                         active_fetches_clone.write().unwrap().remove(&device_id_clone);
+                                        fetch_cancellation_tokens_clone.write().unwrap().remove(&device_id_clone);
                                     }
                                 }
                             });
@@ -335,13 +373,21 @@ impl DeviceController {
                     }
                 }
                 
+                // Cancel any active feature fetch for this device
+                if let Some(cancel_tx) = self.fetch_cancellation_tokens.write().unwrap().remove(&device.unique_id) {
+                    let _ = cancel_tx.send(());
+                    log::info!("Cancelled active feature fetch for disconnected device {}", device.unique_id);
+                }
+                
                 // Remove from pending and active
                 self.pending_features.write().unwrap().remove(&device.unique_id);
                 self.retry_counts.write().unwrap().remove(&device.unique_id);
                 self.active_fetches.write().unwrap().remove(&device.unique_id);
                 
                 // Emit event
-                let _ = self.event_tx.send(DeviceControllerEvent::DeviceDisconnected(device.unique_id));
+                let _ = self.event_tx.send(DeviceControllerEvent::DeviceDisconnected(device.unique_id.clone()));
+                
+                log::info!("♻️ Cleaned up device state for disconnected device: {}", device.unique_id);
             }
         }
         

@@ -32,6 +32,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
   const setupWizardActive = useRef(false)
   const setupWizardDeviceId = useRef<string | null>(null)
   const [persistentDeviceId, setPersistentDeviceId] = useState<string | null>(null)
+  const [setupInProgress, setSetupInProgress] = useState(false) // Track if setup is in progress
 
   // Get wallet context for portfolio loading
   const { refreshPortfolio, fetchedXpubs } = useWallet()
@@ -106,9 +107,13 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
     // IMPORTANT: Check initialization FIRST - setup wizard should take priority over EVERYTHING
     // Even if device is in bootloader mode, if it needs initialization, show setup wizard
     // Check both explicit needsInitialization flag AND the initialized feature flag
+    // SPECIAL CASE: If device is in bootloader mode with "Unknown" firmware, it's likely uninitialized
+    const hasUnknownFirmware = status.firmwareCheck?.currentVersion === 'Unknown' || 
+                               status.firmwareCheck?.currentVersion === undefined;
     const deviceNeedsInitialization = status.needsInitialization || 
                                     status.features?.initialized === false || 
-                                    status.features?.initialized === undefined;
+                                    status.features?.initialized === undefined ||
+                                    (isInBootloaderMode && hasUnknownFirmware);
     
     if (deviceNeedsInitialization) {
       // Check if recovery is in progress - if so, don't interfere
@@ -122,8 +127,11 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       console.log('🔧 DeviceUpdateManager: Initialization check:', {
         needsInitialization: status.needsInitialization,
         initialized: status.features?.initialized,
+        hasUnknownFirmware,
+        currentFirmware: status.firmwareCheck?.currentVersion,
         deviceNeedsInitialization,
-        isInBootloaderMode
+        isInBootloaderMode,
+        reason: hasUnknownFirmware && isInBootloaderMode ? 'Bootloader mode with unknown firmware' : 'Normal initialization needed'
       })
       console.log('🔧 DeviceUpdateManager: Setting showWalletCreation = true')
       setShowEnterBootloaderMode(false)
@@ -133,6 +141,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       setupWizardActive.current = true
       setupWizardDeviceId.current = status.deviceId
       setPersistentDeviceId(status.deviceId) // Save device ID for persistence
+      setSetupInProgress(true) // Mark setup as in progress
       onSetupWizardActiveChange?.(true)
       return; // Exit early - setup wizard takes absolute priority
     } else if (status.needsBootloaderUpdate && status.bootloaderCheck) {
@@ -253,7 +262,14 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         setDeviceStatus(status)
         setConnectedDeviceId(status.deviceId)
         setRetryCount(0) // Reset retry count on successful event
-        handleDeviceStatus(status)
+        
+        // CRITICAL: Don't handle device status if setup is in progress
+        // This prevents the setup wizard from being hidden on reconnection
+        if (!setupInProgress) {
+          handleDeviceStatus(status)
+        } else {
+          console.log('🔧 DeviceUpdateManager: Setup in progress, not handling device status to preserve wizard')
+        }
       })
 
       // Listen for basic device connected events as fallback
@@ -387,22 +403,25 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
           return; // Don't change state during recovery
         }
         
-        // Clear all state when device disconnects (only if not in recovery)
-        // IMPORTANT: Don't hide the setup wizard - it should persist until complete
-        
-        // Only clear device status if setup wizard is not active
-        if (!setupWizardActive.current) {
-          setDeviceStatus(null)
-          setShowWalletCreation(false)
-        } else {
-          console.log('🛡️ DeviceUpdateManager: Setup wizard active - preserving state during disconnect')
-          // Don't clear device status when setup wizard is active
-          // This allows the wizard to continue working even when disconnected
+        // CRITICAL: Check if setup is in progress
+        // If setup wizard is active or in progress, DON'T clear any state
+        if (setupWizardActive.current || setupInProgress) {
+          console.log('🛡️🛡️ DeviceUpdateManager: SETUP IN PROGRESS - PRESERVING ALL STATE')
+          console.log('🛡️ Setup wizard must NOT be abandoned during device disconnect')
+          console.log('🛡️ Keeping wizard visible and waiting for device reconnection')
+          
+          // Keep the device ID for when it reconnects
+          // Don't clear ANY state that would close the setup wizard
+          return; // Exit early - preserve everything
         }
         
+        // Only clear state if setup is NOT in progress
+        console.log('DeviceUpdateManager: No setup in progress, clearing state normally')
+        setDeviceStatus(null)
         setConnectedDeviceId(null)
         setShowBootloaderUpdate(false)
         setShowFirmwareUpdate(false)
+        setShowWalletCreation(false)
         setShowPinUnlock(false)
         setRetryCount(0)
         if (timeoutId) clearTimeout(timeoutId)
@@ -433,7 +452,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       // Cleanup function will be called automatically
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [onComplete])
+  }, [onComplete, setupInProgress, deviceInvalidStateDialog, onSetupWizardActiveChange, refreshPortfolio, fetchedXpubs])
 
   const handleFirmwareUpdate = async () => {
     setIsProcessing(true)
@@ -478,10 +497,12 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
   }
 
   const handleWalletCreationComplete = () => {
+    console.log('✅ Setup wizard completed successfully')
     setShowWalletCreation(false)
     setupWizardActive.current = false
     setupWizardDeviceId.current = null
     setPersistentDeviceId(null) // Clear persistent device ID
+    setSetupInProgress(false) // Clear the setup in progress flag
     onSetupWizardActiveChange?.(false)
     onComplete?.()
   }
@@ -620,10 +641,14 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
           deviceId={persistentDeviceId || deviceStatus?.deviceId || ''}
           onComplete={handleWalletCreationComplete}
           onClose={() => {
+            // NOTE: onClose should only be called when user explicitly cancels
+            // NOT when device disconnects
+            console.log('⚠️ SetupWizard onClose called - user cancelled setup')
             setShowWalletCreation(false)
             setupWizardActive.current = false
             setupWizardDeviceId.current = null
             setPersistentDeviceId(null)
+            setSetupInProgress(false) // Clear setup in progress only on explicit close
             onSetupWizardActiveChange?.(false)
           }}
         />
