@@ -3,8 +3,14 @@ use std::fs;
 use std::path::PathBuf;
 use semver::Version;
 use uuid;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use std::collections::HashMap;
 use crate::logging::{log_device_request, log_device_response};
 use crate::commands::DeviceQueueManager;
+
+// Track devices that just completed bootloader updates
+pub type BootloaderUpdateTracker = Arc<RwLock<HashMap<String, std::time::Instant>>>;
 
 /// Update device bootloader using the device queue
 #[tauri::command]
@@ -12,6 +18,7 @@ pub async fn update_device_bootloader(
     device_id: String,
     target_version: String,
     queue_manager: State<'_, DeviceQueueManager>,
+    bootloader_tracker: State<'_, BootloaderUpdateTracker>,
 ) -> Result<bool, String> {
     println!("🔄 Starting bootloader update for device {}: target version {}", device_id, target_version);
     
@@ -268,6 +275,13 @@ pub async fn update_device_bootloader(
             
             if let Err(e) = log_device_response(&device_id, &request_id, true, &response_data, None).await {
                 eprintln!("Failed to log bootloader update success response: {}", e);
+            }
+            
+            // Track that this device just completed a bootloader update
+            {
+                let mut tracker = bootloader_tracker.write().await;
+                tracker.insert(device_id.clone(), std::time::Instant::now());
+                println!("📝 Marked device {} as having just completed bootloader update", device_id);
             }
             
             Ok(success)

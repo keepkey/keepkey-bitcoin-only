@@ -207,8 +207,14 @@ pub fn run() {
                 std::collections::HashMap::<String, commands::DeviceResponse>::new()
             ));
             
+            // Initialize bootloader update tracker
+            let bootloader_tracker: device::BootloaderUpdateTracker = Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::<String, std::time::Instant>::new()
+            ));
+            
             app.manage(device_queue_manager.clone());
             app.manage(last_responses);
+            app.manage(bootloader_tracker);
             
             // Start event controller with proper management
             let _event_controller = event_controller::spawn_event_controller(&app.handle());

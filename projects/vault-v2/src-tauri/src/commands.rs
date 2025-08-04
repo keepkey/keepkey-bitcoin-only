@@ -10,6 +10,7 @@ use hex;
 use std::io::Cursor;
 // Removed unused imports that were moved to device/updates.rs
 use crate::logging::{log_device_request, log_device_response, log_raw_device_message};
+use crate::device;
 use lazy_static;
 use std::path::PathBuf;
 use std::fs;
@@ -339,6 +340,7 @@ pub async fn test_device_queue() -> Result<String, String> {
 pub async fn get_device_status(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,
+    bootloader_tracker: State<'_, device::updates::BootloaderUpdateTracker>,
 ) -> Result<Option<DeviceStatus>, String> {
     // Rate limit status checks - ignore rapid duplicate requests
     static LAST_STATUS_CHECK: once_cell::sync::Lazy<Arc<tokio::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>> = 
@@ -395,8 +397,25 @@ pub async fn get_device_status(
             let mut last_error = None;
             let mut success_features = None;
             
-            for attempt in 1..=3 {
-                println!("🔄 Attempting to get features for device {} (attempt {}/3)", device_id, attempt);
+            // Check if we just did a bootloader update (device might be rebooting)
+            let just_updated_bootloader = {
+                let tracker = bootloader_tracker.read().await;
+                if let Some(update_time) = tracker.get(&device_id) {
+                    // Check if update was within last 30 seconds
+                    update_time.elapsed() < Duration::from_secs(30)
+                } else {
+                    false
+                }
+            };
+            
+            if just_updated_bootloader {
+                println!("🔄 Device {} just completed bootloader update, using extended retry logic", device_id);
+            }
+            
+            let max_attempts = if just_updated_bootloader { 10 } else { 3 };
+            
+            for attempt in 1..=max_attempts {
+                println!("🔄 Attempting to get features for device {} (attempt {}/{})", device_id, attempt, max_attempts);
                 
                 match tokio::time::timeout(
                     Duration::from_secs(10), // Reduced to 10 seconds per attempt for faster retries
@@ -430,8 +449,14 @@ pub async fn get_device_status(
                 }
                 
                 // Wait before retrying (exponential backoff)
-                if attempt < 3 {
-                    let delay_ms = 500 * attempt as u64; // 500ms, 1000ms
+                if attempt < max_attempts {
+                    let delay_ms = if just_updated_bootloader {
+                        // Longer delays after bootloader update (2s, 3s, 4s, etc.)
+                        2000 + (1000 * attempt as u64)
+                    } else {
+                        // Normal delays (500ms, 1000ms, 1500ms)
+                        500 * attempt as u64
+                    };
                     println!("⏳ Waiting {}ms before retry for device {}", delay_ms, device_id);
                     tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 }
@@ -3906,6 +3931,7 @@ pub async fn test_oob_device_status_evaluation() -> Result<String, String> {
 pub async fn check_device_pin_ready(
     device_id: String,
     queue_manager: tauri::State<'_, DeviceQueueManager>,
+    bootloader_tracker: tauri::State<'_, device::updates::BootloaderUpdateTracker>,
 ) -> Result<bool, String> {
     log::info!("Checking if device {} is ready for PIN operations", device_id);
     
@@ -3916,7 +3942,7 @@ pub async fn check_device_pin_ready(
     }
     
     // Get device status first
-    let device_status = get_device_status(device_id.clone(), queue_manager.clone()).await?;
+    let device_status = get_device_status(device_id.clone(), queue_manager.clone(), bootloader_tracker).await?;
     
     match device_status {
         Some(status) => {
