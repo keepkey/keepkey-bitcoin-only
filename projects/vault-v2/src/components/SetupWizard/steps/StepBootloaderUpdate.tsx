@@ -8,10 +8,11 @@ interface StepBootloaderUpdateProps {
   deviceId: string;
   onNext: () => void;
   onBack: () => void;
+  onBootloaderUpdateComplete?: () => void;
 }
 
 
-export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloaderUpdateProps) {
+export function StepBootloaderUpdate({ deviceId, onNext, onBack, onBootloaderUpdateComplete }: StepBootloaderUpdateProps) {
   const [deviceStatus, setDeviceStatus] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showBootloaderInstructions, setShowBootloaderInstructions] = useState(false);
@@ -122,10 +123,16 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
         targetVersion: deviceStatus.bootloaderCheck?.latestVersion || ''
       });
       
-      // Wait a moment before moving to next step
+      // Notify that bootloader update completed
+      if (onBootloaderUpdateComplete) {
+        onBootloaderUpdateComplete();
+      }
+      
+      // Wait longer for device to reconnect after bootloader update
+      console.log('🔄 Bootloader update complete, waiting for device to reconnect...');
       setTimeout(() => {
         onNext();
-      }, 500);
+      }, 5000); // Increased to 5 seconds
       
     } catch (err) {
       console.error("Failed to update bootloader:", err);

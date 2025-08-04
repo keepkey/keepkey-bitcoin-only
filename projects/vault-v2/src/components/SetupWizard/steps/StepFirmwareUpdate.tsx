@@ -8,6 +8,8 @@ interface StepFirmwareUpdateProps {
   deviceId: string;
   onNext: () => void;
   onBack: () => void;
+  onFirmwareUpdateStart?: () => void;
+  onFirmwareUpdateComplete?: () => void;
 }
 
 type UpdateState = 'idle' | 'loading_firmware' | 'erasing' | 'waiting_confirmation' | 'uploading' | 'complete';
@@ -20,7 +22,7 @@ const stripeAnimationStyle = `
   }
 `;
 
-export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpdateProps) {
+export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateStart, onFirmwareUpdateComplete }: StepFirmwareUpdateProps) {
   const [deviceStatus, setDeviceStatus] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +137,11 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
     // Start with loading state - the event listener will update based on actual events
     setUpdateState('loading_firmware');
     
+    // Notify parent that firmware update is starting
+    if (onFirmwareUpdateStart) {
+      onFirmwareUpdateStart();
+    }
+    
     try {
       // Actually invoke the firmware update
       // The event listener will handle updating the UI based on actual device events
@@ -145,6 +152,11 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
       
       // If we get here, the update was successful
       setUpdateState('complete');
+      
+      // Notify parent that firmware update is complete
+      if (onFirmwareUpdateComplete) {
+        onFirmwareUpdateComplete();
+      }
       
       // After firmware update, device will reboot - wait longer and let the backend handle reconnection
       console.log("Firmware update complete - device will reboot, waiting for reconnection...");

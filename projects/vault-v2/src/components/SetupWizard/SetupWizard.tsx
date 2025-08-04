@@ -7,9 +7,10 @@ import {
   Flex,
   Icon,
 } from "@chakra-ui/react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FaCheckCircle } from "react-icons/fa";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useDialog } from "../../contexts/DialogContext";
 
 // Import individual steps
@@ -26,6 +27,8 @@ interface SetupWizardProps {
   deviceId: string;
   onClose?: () => void;
   onComplete?: () => void;
+  onFirmwareUpdateStart?: () => void;
+  onFirmwareUpdateComplete?: () => void;
 }
 
 interface Step {
@@ -151,7 +154,7 @@ const RECOVER_VISIBLE_STEPS = [
   { id: "create-or-recover", label: "Recover Wallet", number: 3 },
 ];
 
-export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps) {
+export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, onFirmwareUpdateStart, onFirmwareUpdateComplete }: SetupWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [flowType, setFlowType] = useState<'create' | 'recover' | null>(null);
   const [wizardData, setWizardData] = useState<{
@@ -159,9 +162,42 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
     pinSession?: any;
     recoverySettings?: any;
   }>({});
+  const [deviceId, setDeviceId] = useState(initialDeviceId);
+  const justCompletedBootloaderUpdate = useRef(false);
   
   const highlightColor = "orange.500"; // Bitcoin orange
   const { hide } = useDialog();
+  
+  // Listen for device connection events to update device ID after bootloader update
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    
+    const setupListener = async () => {
+      unsubscribe = await listen<{
+        deviceId: string;
+        features: any;
+        status: any;
+      }>('device:features-updated', (event) => {
+        // If we just completed a bootloader update, update to the new device ID
+        if (justCompletedBootloaderUpdate.current && event.payload.deviceId !== deviceId) {
+          console.log('🔄 SetupWizard: Device ID changed after bootloader update:', {
+            oldId: deviceId,
+            newId: event.payload.deviceId
+          });
+          setDeviceId(event.payload.deviceId);
+          justCompletedBootloaderUpdate.current = false;
+        }
+      });
+    };
+    
+    setupListener();
+    
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [deviceId]);
 
   // Determine which steps to use based on flow type
   const ALL_STEPS = flowType === 'recover' ? RECOVER_ALL_STEPS : CREATE_ALL_STEPS;
@@ -239,6 +275,11 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
   const updateWizardData = (data: Partial<typeof wizardData>) => {
     setWizardData(prev => ({ ...prev, ...data }));
   };
+  
+  const handleBootloaderUpdateComplete = () => {
+    console.log('🔄 SetupWizard: Bootloader update completed, expecting device ID change');
+    justCompletedBootloaderUpdate.current = true;
+  };
 
   const StepComponent = ALL_STEPS[currentStep].component;
   
@@ -271,6 +312,9 @@ export function SetupWizard({ deviceId, onClose, onComplete }: SetupWizardProps)
     onBack: handlePrevious,
     onFlowTypeSelect: handleFlowTypeSelection,
     flowType,
+    onBootloaderUpdateComplete: handleBootloaderUpdateComplete,
+    onFirmwareUpdateStart,
+    onFirmwareUpdateComplete,
   };
 
   return (

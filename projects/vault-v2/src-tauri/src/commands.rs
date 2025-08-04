@@ -3935,9 +3935,9 @@ pub async fn check_device_pin_ready(
 ) -> Result<bool, String> {
     log::info!("Checking if device {} is ready for PIN operations", device_id);
     
-    // Check if device is already in PIN flow
+    // Check if device is already in PIN flow - this means PIN is ready
     if is_device_in_pin_flow(&device_id) {
-        log::info!("Device {} is already in PIN flow", device_id);
+        log::info!("Device {} is already in PIN flow - PIN is ready", device_id);
         return Ok(true);
     }
     
@@ -3946,13 +3946,14 @@ pub async fn check_device_pin_ready(
     
     match device_status {
         Some(status) => {
-            // Device must be connected and need PIN unlock
+            // Device must be connected
             if !status.connected {
                 log::info!("Device {} is not connected", device_id);
                 return Ok(false);
             }
             
-            if !status.needs_pin_unlock {
+            // If device doesn't need PIN unlock and isn't in PIN flow, then PIN is not needed
+            if !status.needs_pin_unlock && !is_device_in_pin_flow(&device_id) {
                 log::info!("Device {} does not need PIN unlock", device_id);
                 return Ok(false);
             }
