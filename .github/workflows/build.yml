@@ -172,6 +172,7 @@ jobs:
           # Verify certificate integrity
           echo "Verifying certificate file..."
           echo "Certificate MD5: $(md5 -q certificate.p12)"
+          echo "Certificate size: $(wc -c < certificate.p12) bytes"
           
           
           # Import to keychain
