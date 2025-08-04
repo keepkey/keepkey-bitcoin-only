@@ -9,12 +9,16 @@
 #   make rebuild      - Clean and rebuild everything
 #   make check-deps   - Verify keepkey-rust dependency linking
 #   make test-keepkey-rust - Run keepkey-rust tests
+#   make release      - Bump version across all projects
+#   make release-patch - Bump patch version (X.Y.Z+1)
+#   make release-minor - Bump minor version (X.Y+1.0)
+#   make release-major - Bump major version (X+1.0.0)
 #
 # Dependencies:
 #   - Rust/Cargo (for keepkey-rust and Tauri backend)
 #   - Bun (for frontend dependencies)
 #   - jq (for dependency verification)
-.PHONY: all firmware kkcli rest vault-ui vault test test-rest clean keepkey-rust vault-build rebuild check-deps help
+.PHONY: all firmware kkcli rest vault-ui vault test test-rest clean keepkey-rust vault-build rebuild check-deps help release release-patch release-minor release-major
 
 # Display help information
 help:
@@ -29,6 +33,12 @@ help:
 	@echo "  rebuild       - Clean and rebuild everything"
 	@echo "  check-deps    - Verify keepkey-rust dependency linking"
 	@echo "  test-keepkey-rust - Run keepkey-rust tests"
+	@echo ""
+	@echo "Release targets:"
+	@echo "  release       - Bump version across all projects (prompts for version)"
+	@echo "  release-patch - Bump patch version (X.Y.Z+1)"
+	@echo "  release-minor - Bump minor version (X.Y+1.0)"
+	@echo "  release-major - Bump major version (X+1.0.0)"
 	@echo ""
 	@echo "Dependencies:"
 	@echo "  - Rust/Cargo (for keepkey-rust and Tauri backend)"
@@ -94,3 +104,33 @@ rebuild: clean all
 vault-dev:
 	@echo "🚀 Quick vault-v2 development build..."
 	cd projects/vault-v2 && bun i && tauri dev
+
+# Release targets for version management
+release:
+	@chmod +x scripts/release.sh
+	@./scripts/release.sh $(VERSION)
+
+# Quick release helpers
+release-patch:
+	@CURRENT=$$(grep '"version"' projects/vault-v2/package.json | head -1 | cut -d'"' -f4); \
+	IFS='.' read -r major minor patch <<< "$$CURRENT"; \
+	NEW_PATCH=$$((patch + 1)); \
+	NEW_VERSION="$$major.$$minor.$$NEW_PATCH"; \
+	chmod +x scripts/release.sh; \
+	./scripts/release.sh $$NEW_VERSION
+
+release-minor:
+	@CURRENT=$$(grep '"version"' projects/vault-v2/package.json | head -1 | cut -d'"' -f4); \
+	IFS='.' read -r major minor patch <<< "$$CURRENT"; \
+	NEW_MINOR=$$((minor + 1)); \
+	NEW_VERSION="$$major.$$NEW_MINOR.0"; \
+	chmod +x scripts/release.sh; \
+	./scripts/release.sh $$NEW_VERSION
+
+release-major:
+	@CURRENT=$$(grep '"version"' projects/vault-v2/package.json | head -1 | cut -d'"' -f4); \
+	IFS='.' read -r major minor patch <<< "$$CURRENT"; \
+	NEW_MAJOR=$$((major + 1)); \
+	NEW_VERSION="$$NEW_MAJOR.0.0"; \
+	chmod +x scripts/release.sh; \
+	./scripts/release.sh $$NEW_VERSION

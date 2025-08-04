@@ -178,8 +178,8 @@ export const VaultInterface = () => {
           >
             <HStack justify="space-between" align="center" height="100%">
               {/* Left side - Main navigation items */}
-              <HStack spacing={2}>
-                {navItems.slice(0, 2).map((item) => (
+              <HStack gap={2}>
+                {navItems.slice(0, 1).map((item) => (
                   <Button
                     key={item.id}
                     variant="ghost"
@@ -209,14 +209,19 @@ export const VaultInterface = () => {
                 ))}
               </HStack>
 
-              {/* Center - Logo/Title */}
-              <Text fontSize="lg" fontWeight="bold" color="white">
-                KeepKey Vault
-              </Text>
+              {/* Center - Logo/Title with Version */}
+              <HStack gap={2}>
+                <Text fontSize="lg" fontWeight="bold" color="white">
+                  KeepKey Vault
+                </Text>
+                <Text fontSize="sm" color="gray.400">
+                  v{packageJson.version}
+                </Text>
+              </HStack>
 
               {/* Right side - Settings and Support */}
-              <HStack spacing={2}>
-                {navItems.slice(2).map((item) => (
+              <HStack gap={2}>
+                {navItems.slice(1).map((item) => (
                   <Button
                     key={item.id}
                     variant="ghost"
