@@ -265,7 +265,7 @@ jobs:
           
           # Verify certificate integrity
           echo "Verifying certificate file..."
-          echo "Certificate MD5: $(md5sum certificate.p12 | cut -d' ' -f1)"
+          echo "Certificate MD5: $(md5 -q certificate.p12)"
           
           # Try with hardcoded password as a test
           echo "Testing with known working password..."
