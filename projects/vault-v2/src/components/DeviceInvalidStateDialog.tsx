@@ -150,7 +150,7 @@ export const DeviceInvalidStateDialog = ({
             onClick={handleReconnectClick}
             size="md"
             w="full"
-            isLoading={isScanning}
+            loading={isScanning}
             loadingText="Scanning for device..."
           >
             {isScanning ? (

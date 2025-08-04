@@ -171,7 +171,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
         setShowPinUnlock(false)
-        onComplete()
+        onComplete?.()
       } else if (isInBootloaderMode) {
         // Device needs bootloader update AND is in bootloader mode -> show update dialog
         console.log('Device needs bootloader update and is in bootloader mode')
@@ -200,7 +200,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
         setShowPinUnlock(false)
-        onComplete()
+        onComplete?.()
       } else {
         console.log('Device needs firmware update')
         console.log('🔧 DeviceUpdateManager: Firmware update needed:', {
@@ -668,7 +668,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
             setShowEnterBootloaderMode(false)
             // Device is ready (PIN was already handled before showing this dialog)
             console.log('✅ Device is ready after user skipped bootloader update')
-            onComplete()
+            onComplete?.()
           }}
         />
       )}

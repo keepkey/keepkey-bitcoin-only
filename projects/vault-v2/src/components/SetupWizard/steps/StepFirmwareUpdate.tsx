@@ -543,10 +543,12 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
               <Button
                 size="lg"
                 w="100%"
-                isDisabled
-                leftIcon={<Spinner size="sm" />}
+                disabled
               >
-                Checking Firmware...
+                <HStack>
+                  <Spinner size="sm" />
+                  <Text>Checking Firmware...</Text>
+                </HStack>
               </Button>
             ) : deviceStatus.needsFirmwareUpdate && !isUpdating ? (
               <Button
@@ -554,7 +556,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
                 size="lg"
                 w="100%"
                 onClick={handleFirmwareUpdate}
-                isLoading={isUpdating}
+                loading={isUpdating}
               >
                 Update Firmware to v{deviceStatus.firmwareCheck?.latestVersion || "7.10.0"}
               </Button>
@@ -571,10 +573,12 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
               <Button
                 size="lg"
                 w="100%"
-                isDisabled
-                leftIcon={<Spinner size="sm" />}
+                disabled
               >
-                Verifying...
+                <HStack>
+                  <Spinner size="sm" />
+                  <Text>Verifying...</Text>
+                </HStack>
               </Button>
             )}
           </VStack>
