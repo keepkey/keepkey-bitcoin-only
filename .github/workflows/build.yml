@@ -156,7 +156,17 @@ jobs:
           fi
           
           # Import to keychain
-          security import certificate.p12 -k $KEYCHAIN_PATH -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          echo "Importing certificate to keychain..."
+          # Use printf to handle special characters in password
+          security import certificate.p12 -k $KEYCHAIN_PATH -P "${CERT_PASSWORD}" -T /usr/bin/codesign -T /usr/bin/productsign || {
+            echo "❌ Failed to import certificate. Trying with different password format..."
+            # Try without quotes in case of escaping issues
+            security import certificate.p12 -k $KEYCHAIN_PATH -P ${CERT_PASSWORD} -T /usr/bin/codesign -T /usr/bin/productsign || {
+              echo "❌ Certificate import failed. The CERT_PW secret may be incorrect."
+              echo "Make sure CERT_PW is set to the exact password used when creating the .p12 file"
+              exit 1
+            }
+          }
           
           # Add keychain to search list
           security list-keychains -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | sed 's/\"//g')
