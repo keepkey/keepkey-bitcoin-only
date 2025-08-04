@@ -69,11 +69,51 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
         needsBootloaderUpdate: status?.needsBootloaderUpdate
       });
       
-      // If bootloader doesn't need update, skip to next step
-      if (!status?.needsBootloaderUpdate) {
-        console.log("Bootloader is up to date, skipping to next step");
+      // CRITICAL: Force bootloader version verification
+      const currentBootloaderVersion = status?.bootloaderCheck?.currentVersion || "unknown";
+      const latestBootloaderVersion = status?.bootloaderCheck?.latestVersion || "2.1.5";
+      
+      console.log("🔒 BOOTLOADER VERIFICATION:", {
+        currentVersion: currentBootloaderVersion,
+        latestVersion: latestBootloaderVersion,
+        needsUpdate: status?.needsBootloaderUpdate,
+        isLatest: currentBootloaderVersion === latestBootloaderVersion
+      });
+      
+      // Version 2.0.0 is OLD and MUST be updated!
+      const isOldBootloader = currentBootloaderVersion === "2.0.0" || 
+                             currentBootloaderVersion.startsWith("1.") ||
+                             currentBootloaderVersion === "2.0.1" ||
+                             currentBootloaderVersion === "2.0.2" ||
+                             currentBootloaderVersion === "2.0.3" ||
+                             currentBootloaderVersion === "2.0.4";
+      
+      if (isOldBootloader) {
+        console.log("📦 Bootloader update required: v" + currentBootloaderVersion + " → v2.1.5");
+        // Require the update before proceeding
+        if (!isInBootloaderMode) {
+          console.log("Device needs bootloader update but not in bootloader mode");
+          setShowBootloaderInstructions(true);
+        } else if (isInBootloaderMode && showBootloaderInstructions) {
+          console.log("Device is now in bootloader mode for update");
+          setShowBootloaderInstructions(false);
+        }
+        return; // Stay on this step - update required
+      }
+      
+      // Only skip if bootloader is verified to be on latest version
+      if (currentBootloaderVersion === latestBootloaderVersion) {
+        console.log("✅ Bootloader verified at latest version", latestBootloaderVersion, ", proceeding to next step");
         onNext();
-        return; // Exit early to prevent further checks
+        return;
+      } else if (!status?.needsBootloaderUpdate && currentBootloaderVersion !== "unknown") {
+        // Backend says no update but versions don't match - this is suspicious
+        console.warn("⚠️ Backend says no bootloader update needed but versions don't match!", {
+          current: currentBootloaderVersion,
+          latest: latestBootloaderVersion
+        });
+        // Stay on this step to force user acknowledgment
+        return;
       } else if (!isInBootloaderMode) {
         // Device needs bootloader update but is not in bootloader mode
         console.log("Device needs bootloader update but not in bootloader mode");
@@ -216,6 +256,15 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
     );
   }
 
+  // Check if this is an old bootloader that MUST be updated
+  const currentBootloaderVersion = deviceStatus?.bootloaderCheck?.currentVersion || "unknown";
+  const isOldBootloader = currentBootloaderVersion === "2.0.0" || 
+                         currentBootloaderVersion.startsWith("1.") ||
+                         currentBootloaderVersion === "2.0.1" ||
+                         currentBootloaderVersion === "2.0.2" ||
+                         currentBootloaderVersion === "2.0.3" ||
+                         currentBootloaderVersion === "2.0.4";
+
   return (
     <Box w="100%">
       <HStack 
@@ -225,13 +274,24 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
       >
         {/* Left side - Icon and status */}
         <VStack gap={4} flex={{ base: "none", lg: 1 }} w={{ base: "100%", lg: "auto" }}>
-          <Icon as={FaShieldAlt} boxSize={{ base: 12, md: 16 }} color="blue.500" />
+          <Icon as={FaShieldAlt} 
+                boxSize={{ base: 12, md: 16 }} 
+                color="blue.500" />
           
           <VStack gap={2}>
             <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white" textAlign="center">
               Bootloader Update
             </Text>
-            {deviceStatus.needsBootloaderUpdate ? (
+            {isOldBootloader ? (
+              <>
+                <Text fontSize={{ base: "sm", md: "md" }} color="blue.400" textAlign="center">
+                  Update available for bootloader v{currentBootloaderVersion}
+                </Text>
+                <Text fontSize="xs" color="gray.400" textAlign="center">
+                  Let's update to the latest version for the best experience
+                </Text>
+              </>
+            ) : deviceStatus.needsBootloaderUpdate ? (
               <Text fontSize={{ base: "sm", md: "md" }} color="gray.400" textAlign="center">
                 Your KeepKey bootloader needs to be updated!
               </Text>
@@ -241,6 +301,26 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
               </Text>
             )}
           </VStack>
+          
+          {/* Update info box for old bootloaders */}
+          {isOldBootloader && (
+            <Box w="100%" p={4} bg="blue.900" borderRadius="lg" borderWidth="2px" borderColor="blue.500">
+              <VStack gap={2} align="start">
+                <Text color="blue.300" fontWeight="bold" fontSize="sm">
+                  Update Required:
+                </Text>
+                <Text fontSize="xs" color="blue.200">
+                  • Your device has bootloader v{currentBootloaderVersion}
+                </Text>
+                <Text fontSize="xs" color="blue.200">
+                  • We'll update it to v2.1.5 for improved security
+                </Text>
+                <Text fontSize="xs" color="blue.200">
+                  • This is a required step in the setup process
+                </Text>
+              </VStack>
+            </Box>
+          )}
         </VStack>
 
         {/* Right side - Details and actions */}
@@ -303,7 +383,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
           )}
 
           <VStack gap={3} w="100%">
-            {deviceStatus.needsBootloaderUpdate && !isUpdating && (
+            {(deviceStatus.needsBootloaderUpdate || isOldBootloader) && !isUpdating && (
               <Button
                 colorScheme="blue"
                 size="lg"
@@ -313,6 +393,11 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
               >
                 Update Bootloader
               </Button>
+            )}
+            {!deviceStatus.needsBootloaderUpdate && !isOldBootloader && (
+              <Text fontSize="sm" color="green.400" textAlign="center">
+                ✅ Bootloader verified - v{currentBootloaderVersion}
+              </Text>
             )}
           </VStack>
         </VStack>

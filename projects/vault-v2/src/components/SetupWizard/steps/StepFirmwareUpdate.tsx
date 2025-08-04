@@ -1,4 +1,4 @@
-import { VStack, HStack, Text, Button, Box, Icon, Progress, Badge, Alert } from "@chakra-ui/react";
+import { VStack, HStack, Text, Button, Box, Icon, Badge, Spinner } from "@chakra-ui/react";
 import { FaDownload, FaExclamationTriangle } from "react-icons/fa";
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -26,6 +26,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   const [error, setError] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>('idle');
   const [updateProgress, setUpdateProgress] = useState(0);
+  const [isVerifying, setIsVerifying] = useState(true);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
 
@@ -93,18 +94,47 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   }, [isUpdating]);
 
   const checkDeviceStatus = async () => {
+    setIsVerifying(true);
     try {
+      // Add a minimum delay to ensure proper verification
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
       const status = await invoke<any>('get_device_status', { deviceId });
       setDeviceStatus(status);
       
-      // If firmware doesn't need update, skip to next step
-      if (!status.needsFirmwareUpdate) {
-        console.log("Firmware is up to date, skipping to next step");
-        onNext();
+      // CRITICAL: Force firmware version verification before allowing initialization
+      // We MUST verify we're on the latest firmware, not just check needsFirmwareUpdate flag
+      const currentVersion = status.firmwareCheck?.currentVersion || "unknown";
+      const latestVersion = status.firmwareCheck?.latestVersion || "7.10.0";
+      
+      console.log("🔒 FIRMWARE VERIFICATION:", {
+        currentVersion,
+        latestVersion,
+        needsUpdate: status.needsFirmwareUpdate,
+        isLatest: currentVersion === latestVersion
+      });
+      
+      // Only auto-proceed if we are 100% certain we're on the latest version
+      if (currentVersion === latestVersion) {
+        console.log("✅ Firmware verified at latest version, proceeding to next step");
+        // Add delay to show verification status
+        setTimeout(() => {
+          onNext();
+        }, 2000);
+      } else if (!status.needsFirmwareUpdate && currentVersion !== "unknown") {
+        // Backend says no update needed but versions don't match - force verification
+        console.warn("⚠️ Backend says no update needed but versions don't match!", {
+          current: currentVersion,
+          latest: latestVersion
+        });
+        // Stay on this step to force user to acknowledge firmware status
       }
+      // If needsFirmwareUpdate is true or version is unknown, stay on this step
     } catch (err) {
       console.error("Failed to get device status:", err);
       setError(`Failed to check device status: ${err}`);
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -143,15 +173,39 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
     }
   };
 
-  const handleSkip = () => {
-    console.log("Skipping firmware update");
-    onNext();
+  const handleVerifyAndContinue = () => {
+    // Force verification check before allowing to continue
+    const currentVersion = deviceStatus?.firmwareCheck?.currentVersion || "unknown";
+    const latestVersion = deviceStatus?.firmwareCheck?.latestVersion || "7.10.0";
+    
+    if (currentVersion === latestVersion) {
+      console.log("✅ Firmware verified, continuing to initialization");
+      onNext();
+    } else {
+      setError("⚠️ Firmware verification failed! You must update to the latest firmware before continuing.");
+      console.error("Cannot skip firmware update - not on latest version", {
+        current: currentVersion,
+        latest: latestVersion
+      });
+    }
   };
 
-  if (!deviceStatus) {
+  if (!deviceStatus || isVerifying) {
     return (
       <VStack gap={6} w="100%" maxW="500px">
-        <Text color="gray.400">Checking device status...</Text>
+        <Icon as={FaDownload} boxSize={16} color="orange.500" />
+        <VStack gap={2}>
+          <Text fontSize="xl" fontWeight="bold" color="white">
+            Verifying Firmware
+          </Text>
+          <Text color="gray.400">
+            Checking your device firmware version...
+          </Text>
+          <Text fontSize="sm" color="orange.400">
+            This verification is mandatory for security
+          </Text>
+        </VStack>
+        <Spinner size="lg" color="orange.500" thickness="4px" />
       </VStack>
     );
   }
@@ -184,9 +238,13 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
                   </Badge>
                 )}
               </>
-            ) : (
+            ) : deviceStatus.firmwareCheck?.currentVersion === deviceStatus.firmwareCheck?.latestVersion ? (
               <Text fontSize={{ base: "sm", md: "md" }} color="green.400" textAlign="center">
-                Your firmware is up to date!
+                ✅ Firmware verified - v{deviceStatus.firmwareCheck?.currentVersion}
+              </Text>
+            ) : (
+              <Text fontSize={{ base: "sm", md: "md" }} color="orange.400" textAlign="center">
+                ⚠️ Firmware verification in progress...
               </Text>
             )}
           </VStack>
@@ -374,7 +432,21 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
           )}
 
           <VStack gap={3} w="100%">
-            {deviceStatus.needsFirmwareUpdate && !isUpdating && (
+            {/* Show verification status */}
+            {deviceStatus.firmwareCheck && (
+              <Box w="100%" p={3} bg="gray.800" borderRadius="md" borderWidth="1px" borderColor="gray.600">
+                <HStack gap={2}>
+                  <Text fontSize="sm" color="gray.400">Firmware Verification:</Text>
+                  {deviceStatus.firmwareCheck.currentVersion === deviceStatus.firmwareCheck.latestVersion ? (
+                    <Badge colorScheme="green">✓ Verified</Badge>
+                  ) : (
+                    <Badge colorScheme="red">Update Required</Badge>
+                  )}
+                </HStack>
+              </Box>
+            )}
+            
+            {deviceStatus.needsFirmwareUpdate && !isUpdating ? (
               <Button
                 colorScheme="orange"
                 size="lg"
@@ -382,7 +454,16 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
                 onClick={handleFirmwareUpdate}
                 isLoading={isUpdating}
               >
-                Update Firmware Now
+                Update Firmware Now (Required)
+              </Button>
+            ) : !deviceStatus.needsFirmwareUpdate && !isUpdating && (
+              <Button
+                colorScheme="green"
+                size="lg"
+                w="100%"
+                onClick={handleVerifyAndContinue}
+              >
+                Verify & Continue
               </Button>
             )}
           </VStack>
