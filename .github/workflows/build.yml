@@ -94,11 +94,17 @@ jobs:
         run: bun install
 
       - name: Import Apple Certificate
-        if: matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE != ''
+        if: matrix.platform == 'macos-latest'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           CERT_PASSWORD: ${{ secrets.CERT_PW }}
         run: |
+          # Check if certificate is provided
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "⚠️ APPLE_CERTIFICATE not set, skipping certificate import"
+            exit 0
+          fi
+          
           # Create a temporary keychain
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
