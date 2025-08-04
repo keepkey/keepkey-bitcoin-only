@@ -267,39 +267,6 @@ jobs:
           echo "Verifying certificate file..."
           echo "Certificate MD5: $(md5 -q certificate.p12)"
           
-          # Try different import methods
-          echo "Testing certificate import methods..."
-          
-          # Method 1: Using security import with different syntax
-          echo "Method 1: Standard import"
-          if security import certificate.p12 -k $KEYCHAIN_PATH -P dsaf123sdc123sa -A 2>/dev/null; then
-            echo "✅ Method 1 succeeded!"
-          else
-            echo "❌ Method 1 failed"
-          fi
-          
-          # Method 2: Using openssl to verify first
-          echo "Method 2: Verify with openssl"
-          if openssl pkcs12 -in certificate.p12 -passin pass:dsaf123sdc123sa -noout 2>&1 | grep -q "MAC verified OK"; then
-            echo "✅ OpenSSL verification succeeded!"
-          else
-            echo "❌ OpenSSL verification failed"
-            openssl pkcs12 -in certificate.p12 -passin pass:dsaf123sdc123sa -noout 2>&1 || true
-          fi
-          
-          # Method 3: Try extracting and re-importing
-          echo "Method 3: Extract and import separately"
-          if openssl pkcs12 -in certificate.p12 -passin pass:dsaf123sdc123sa -out temp.pem -nodes 2>/dev/null; then
-            echo "✅ Extraction succeeded"
-            if security import temp.pem -k $KEYCHAIN_PATH -T /usr/bin/codesign 2>/dev/null; then
-              echo "✅ PEM import succeeded!"
-              rm -f temp.pem
-            else
-              echo "❌ PEM import failed"
-            fi
-          else
-            echo "❌ Extraction failed"
-          fi
           
           # Import to keychain
           echo "Importing certificate to keychain..."

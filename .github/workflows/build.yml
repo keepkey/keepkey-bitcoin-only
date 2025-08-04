@@ -173,14 +173,6 @@ jobs:
           echo "Verifying certificate file..."
           echo "Certificate MD5: $(md5 -q certificate.p12)"
           
-          # Try with hardcoded password as a test
-          echo "Testing with known working password..."
-          if security import certificate.p12 -k $KEYCHAIN_PATH -P "dsaf123sdc123sa" -T /usr/bin/codesign -T /usr/bin/productsign 2>/dev/null; then
-            echo "✅ Certificate imported successfully with hardcoded password!"
-            echo "This confirms the certificate is valid but the CERT_PW secret may have hidden characters"
-          else
-            echo "❌ Even hardcoded password failed - certificate may be different"
-          fi
           
           # Import to keychain
           echo "Importing certificate to keychain..."
