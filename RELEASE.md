@@ -124,14 +124,20 @@ The primary version source is `projects/vault-v2/package.json`. All other versio
 
 The project includes automated workflows:
 
-### Release Workflow (`.github/workflows/release.yml`)
-Triggered by:
-- Tags starting with `v*` (e.g., `v2.2.6`)
-- Branches starting with `release-*`
+### Build Workflow (`.github/workflows/build.yml`)
+**Triggered by:**
+- Push to `main`, `master`, or `release-*` branches
+- Pull requests to these branches
 - Manual workflow dispatch
 
-### Build Workflow (`.github/workflows/build.yml`)
-Builds all projects and creates artifacts for:
+**Purpose:** CI/CD builds and testing for all platforms
+
+### Release Workflow (`.github/workflows/release.yml`)
+**Triggered by:**
+- Tags starting with `v*` (e.g., `v2.2.6`)
+- Manual workflow dispatch
+
+**Purpose:** Creates official GitHub releases with artifacts for:
 - Windows (MSI installer)
 - macOS (DMG installer)
 - Linux (AppImage, DEB packages)
