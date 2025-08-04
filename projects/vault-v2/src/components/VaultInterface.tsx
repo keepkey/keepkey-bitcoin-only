@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react';
 import { FaTh, FaGlobe, FaWallet, FaCog, FaQuestionCircle } from 'react-icons/fa';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
@@ -77,12 +77,18 @@ export const VaultInterface = () => {
       icon: <FaWallet />,
       onClick: () => handleViewChange('vault'),
     },
-    {
-      id: 'browser',
-      label: 'Browser',
-      icon: <FaGlobe />,
-      onClick: () => handleViewChange('browser'),
-    },
+    // {
+    //   id: 'browser',
+    //   label: 'Browser',
+    //   icon: <FaGlobe />,
+    //   onClick: async () => {
+    //     handleViewChange('browser');
+    //     // Always navigate to keepkey.com when browser button is clicked
+    //     setTimeout(async () => {
+    //       await emit('browser:navigate', { url: 'http://localhost:8080' });
+    //     }, 100);
+    //   },
+    // },
     {
       id: 'settings',
       label: 'Settings',

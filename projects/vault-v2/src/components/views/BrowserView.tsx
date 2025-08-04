@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Box, 
   Input, 
@@ -9,7 +9,7 @@ import {
   IconButton,
   Spinner
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaArrowRight, FaRedo, FaHome, FaSearch } from 'react-icons/fa';
+import { FaArrowLeft, FaArrowRight, FaRedo, FaHome, FaSearch, FaExternalLinkAlt } from 'react-icons/fa';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -24,6 +24,8 @@ export const BrowserView = () => {
   const [hoverTimer, setHoverTimer] = useState<NodeJS.Timeout | null>(null);
   const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [externalLinkMessage, setExternalLinkMessage] = useState<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Check API connectivity on mount
   useEffect(() => {
@@ -84,7 +86,7 @@ export const BrowserView = () => {
   const handleRefresh = () => {
     setIsLoading(true);
     // Force iframe reload by changing src
-    const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
+    const iframe = iframeRef.current;
     if (iframe) {
       iframe.src = iframe.src;
     }
@@ -109,14 +111,54 @@ export const BrowserView = () => {
   const handleIframeLoad = () => {
     setIsLoading(false);
     // Try to get the actual URL from iframe (limited by CORS)
-    const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
+    const iframe = iframeRef.current;
     if (iframe) {
       try {
+        // Try to inject a script to handle link clicks (may be blocked by CORS)
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (iframeDoc && iframe.contentWindow?.location.origin === window.location.origin) {
+          // Only works for same-origin content
+          const links = iframeDoc.getElementsByTagName('a');
+          for (let i = 0; i < links.length; i++) {
+            const link = links[i];
+            if (link.target === '_blank' || link.target === '_new') {
+              link.addEventListener('click', (e) => {
+                e.preventDefault();
+                handleExternalLink(link.href);
+              });
+            }
+          }
+        }
         setInputUrl(iframe.contentWindow?.location.href || url);
       } catch (e) {
-        // Cross-origin restrictions prevent accessing iframe URL
+        // Cross-origin restrictions prevent accessing iframe content
+        console.log('Cross-origin iframe, cannot access content');
         setInputUrl(url);
       }
+    }
+  };
+
+  const handleExternalLink = async (linkUrl: string) => {
+    console.log('External link clicked:', linkUrl);
+    
+    // Check if it's a documentation or external link
+    if (linkUrl.includes('docs') || linkUrl.includes('github') || !linkUrl.includes('keepkey.com')) {
+      // Open in external browser
+      try {
+        await invoke('open_url', { url: linkUrl });
+        // Show a temporary message
+        setExternalLinkMessage(`Opening ${linkUrl} in external browser...`);
+        setTimeout(() => setExternalLinkMessage(null), 3000);
+      } catch (error) {
+        console.error('Failed to open external link:', error);
+        // Fallback: navigate in iframe
+        setUrl(linkUrl);
+        setInputUrl(linkUrl);
+      }
+    } else {
+      // Navigate within the iframe
+      setUrl(linkUrl);
+      setInputUrl(linkUrl);
     }
   };
 
@@ -165,7 +207,7 @@ export const BrowserView = () => {
             
             // Also update the iframe directly to ensure navigation
             setTimeout(() => {
-              const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
+              const iframe = iframeRef.current;
               if (iframe && iframe.src !== newUrl) {
                 iframe.src = newUrl;
               }
@@ -253,6 +295,16 @@ export const BrowserView = () => {
               >
                 <FaHome />
               </IconButton>
+              <IconButton
+                aria-label="Open in External Browser"
+                size="sm"
+                variant="outline"
+                colorScheme="green"
+                onClick={() => handleExternalLink(url)}
+                title="Open current page in external browser"
+              >
+                <FaExternalLinkAlt />
+              </IconButton>
             </Flex>
 
             {/* Address Bar */}
@@ -318,8 +370,28 @@ export const BrowserView = () => {
           </Flex>
         )}
         
+        {externalLinkMessage && (
+          <Flex
+            position="absolute"
+            bottom="20px"
+            left="50%"
+            transform="translateX(-50%)"
+            align="center"
+            gap={2}
+            bg="green.700"
+            px={4}
+            py={2}
+            borderRadius="md"
+            zIndex={10}
+          >
+            <FaExternalLinkAlt color="white" />
+            <Text color="white" fontSize="sm">{externalLinkMessage}</Text>
+          </Flex>
+        )}
+        
         {/* Embedded Website */}
         <iframe
+          ref={iframeRef}
           id="browser-iframe"
           src={url}
           style={{
@@ -328,7 +400,8 @@ export const BrowserView = () => {
             border: 'none',
           }}
           onLoad={handleIframeLoad}
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-top-navigation"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation allow-modals allow-downloads"
+          allow="accelerometer; camera; encrypted-media; geolocation; gyroscope; microphone; midi; payment; usb"
           title="KeepKey Browser"
         />
       </Box>
