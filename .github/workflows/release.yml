@@ -80,7 +80,7 @@ jobs:
           
           # Check for Apple signing credentials (macOS only)
           if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
-            if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_ID_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
               echo "✅ Apple notarization credentials are set"
               echo "has_apple_notarization=true" >> $GITHUB_OUTPUT
             else
@@ -88,7 +88,7 @@ jobs:
               echo "has_apple_notarization=false" >> $GITHUB_OUTPUT
             fi
             
-            if [ -n "${{ secrets.MACOS_CERTIFICATE_BASE64 }}" ] && [ -n "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" ]; then
+            if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.CERT_PW }}" ]; then
               echo "✅ Apple code signing credentials are set"
               echo "has_apple_codesigning=true" >> $GITHUB_OUTPUT
             else
@@ -119,10 +119,10 @@ jobs:
             
             if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
               echo "   - APPLE_ID: Apple developer account email"
-              echo "   - APPLE_PASSWORD: Apple app-specific password"
+              echo "   - APPLE_ID_PASSWORD: Apple app-specific password"
               echo "   - APPLE_TEAM_ID: Apple developer team ID"
-              echo "   - MACOS_CERTIFICATE_BASE64: base64-encoded Apple certificate"
-              echo "   - MACOS_CERTIFICATE_PASSWORD: Apple certificate password"
+              echo "   - APPLE_CERTIFICATE: base64-encoded Apple certificate"
+              echo "   - CERT_PW: Apple certificate password"
               echo "   - CODESIGN_IDENTITY: Apple code signing identity"
               echo "   - KEYCHAIN_NAME: macOS keychain name"
               echo "   - KEYCHAIN_PASSWORD: macOS keychain password"
@@ -197,14 +197,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && secrets.TAURI_KEY_PASSWORD || '' }}
           # Conditionally set Apple notarization credentials
           APPLE_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_ID_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_TEAM_ID || '' }}
           # Conditionally set Apple code signing credentials
           CODESIGN_IDENTITY: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.CODESIGN_IDENTITY || '' }}
           KEYCHAIN_NAME: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_NAME || '' }}
           KEYCHAIN_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_PASSWORD || '' }}
-          MACOS_CERTIFICATE_BASE64: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_BASE64 || '' }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
+          MACOS_CERTIFICATE_BASE64: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.CERT_PW || '' }}
         with:
           projectPath: ./projects/vault-v2
           releaseId: ${{ startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.release_id || '' }}
