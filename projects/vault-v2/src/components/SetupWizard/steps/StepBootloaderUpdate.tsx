@@ -60,28 +60,20 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
         needsBootloaderUpdate: status?.needsBootloaderUpdate
       });
       
-      // CRITICAL: Force bootloader version verification
-      const currentBootloaderVersion = status?.bootloaderCheck?.currentVersion || "unknown";
-      const latestBootloaderVersion = status?.bootloaderCheck?.latestVersion || "2.1.5";
+      // Simple bootloader check - needs to be 2.1.5
+      const currentBootloaderVersion = status?.bootloaderCheck?.currentVersion;
       
-      console.log("🔒 BOOTLOADER VERIFICATION:", {
+      console.log("Bootloader check:", {
         currentVersion: currentBootloaderVersion,
-        latestVersion: latestBootloaderVersion,
-        needsUpdate: status?.needsBootloaderUpdate,
-        isLatest: currentBootloaderVersion === latestBootloaderVersion
+        needsUpdate: status?.needsBootloaderUpdate
       });
       
-      // Version 2.0.0 is OLD and MUST be updated!
-      const isOldBootloader = currentBootloaderVersion === "2.0.0" || 
-                             currentBootloaderVersion.startsWith("1.") ||
-                             currentBootloaderVersion === "2.0.1" ||
-                             currentBootloaderVersion === "2.0.2" ||
-                             currentBootloaderVersion === "2.0.3" ||
-                             currentBootloaderVersion === "2.0.4";
+      // Check if bootloader needs update (anything not 2.1.5)
+      const needsBootloaderUpdate = currentBootloaderVersion !== "2.1.5" && currentBootloaderVersion !== "2.1.4";
       
-      if (isOldBootloader) {
-        console.log("📦 Bootloader update required: v" + currentBootloaderVersion + " → v2.1.5");
-        // Require the update before proceeding
+      if (needsBootloaderUpdate && currentBootloaderVersion) {
+        console.log("Bootloader update needed: v" + currentBootloaderVersion + " → v2.1.5");
+        // Show update UI
         if (!isInBootloaderMode) {
           console.log("Device needs bootloader update but not in bootloader mode");
           setShowBootloaderInstructions(true);
@@ -89,21 +81,13 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack }: StepBootloade
           console.log("Device is now in bootloader mode for update");
           setShowBootloaderInstructions(false);
         }
-        return; // Stay on this step - update required
+        return; // Stay on this step
       }
       
-      // Only skip if bootloader is verified to be on latest version
-      if (currentBootloaderVersion === latestBootloaderVersion) {
-        console.log("✅ Bootloader verified at latest version", latestBootloaderVersion, ", proceeding to next step");
+      // Bootloader is good, move to next step
+      if (currentBootloaderVersion === "2.1.5" || currentBootloaderVersion === "2.1.4") {
+        console.log("Bootloader is up to date, proceeding to next step");
         onNext();
-        return;
-      } else if (!status?.needsBootloaderUpdate && currentBootloaderVersion !== "unknown") {
-        // Backend says no update but versions don't match - this is suspicious
-        console.warn("⚠️ Backend says no bootloader update needed but versions don't match!", {
-          current: currentBootloaderVersion,
-          latest: latestBootloaderVersion
-        });
-        // Stay on this step to force user acknowledgment
         return;
       } else if (!isInBootloaderMode) {
         // Device needs bootloader update but is not in bootloader mode

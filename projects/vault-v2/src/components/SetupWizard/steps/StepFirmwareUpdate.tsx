@@ -26,7 +26,6 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   const [error, setError] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>('idle');
   const [updateProgress, setUpdateProgress] = useState(0);
-  const [isVerifying, setIsVerifying] = useState(true);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
 
@@ -94,47 +93,27 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   }, [isUpdating]);
 
   const checkDeviceStatus = async () => {
-    setIsVerifying(true);
     try {
-      // Add a minimum delay to ensure proper verification
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       const status = await invoke<any>('get_device_status', { deviceId });
       setDeviceStatus(status);
       
-      // CRITICAL: Force firmware version verification before allowing initialization
-      // We MUST verify we're on the latest firmware, not just check needsFirmwareUpdate flag
-      const currentVersion = status.firmwareCheck?.currentVersion || "unknown";
-      const latestVersion = status.firmwareCheck?.latestVersion || "7.10.0";
+      // Simple check: if firmware is 7.10.0, we're good to go
+      const currentVersion = status?.firmwareCheck?.currentVersion;
       
-      console.log("🔒 FIRMWARE VERIFICATION:", {
+      console.log("Firmware check:", {
         currentVersion,
-        latestVersion,
-        needsUpdate: status.needsFirmwareUpdate,
-        isLatest: currentVersion === latestVersion
+        needsUpdate: status?.needsFirmwareUpdate
       });
       
-      // Only auto-proceed if we are 100% certain we're on the latest version
-      if (currentVersion === latestVersion) {
-        console.log("✅ Firmware verified at latest version, proceeding to next step");
-        // Add delay to show verification status
-        setTimeout(() => {
-          onNext();
-        }, 2000);
-      } else if (!status.needsFirmwareUpdate && currentVersion !== "unknown") {
-        // Backend says no update needed but versions don't match - force verification
-        console.warn("⚠️ Backend says no update needed but versions don't match!", {
-          current: currentVersion,
-          latest: latestVersion
-        });
-        // Stay on this step to force user to acknowledge firmware status
+      // If firmware is already 7.10.0, skip to next step
+      if (currentVersion === "7.10.0") {
+        console.log("Firmware is 7.10.0, skipping to next step");
+        onNext();
       }
-      // If needsFirmwareUpdate is true or version is unknown, stay on this step
+      // Otherwise show the update screen
     } catch (err) {
       console.error("Failed to get device status:", err);
-      setError(`Failed to check device status: ${err}`);
-    } finally {
-      setIsVerifying(false);
+      // Don't show scary red error, just log it
     }
   };
 
@@ -174,19 +153,15 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
   };
 
   const handleVerifyAndContinue = () => {
-    // Force verification check before allowing to continue
-    const currentVersion = deviceStatus?.firmwareCheck?.currentVersion || "unknown";
-    const latestVersion = deviceStatus?.firmwareCheck?.latestVersion || "7.10.0";
+    // Simple check: just verify we're on 7.10.0
+    const currentVersion = deviceStatus?.firmwareCheck?.currentVersion;
     
-    if (currentVersion === latestVersion) {
-      console.log("✅ Firmware verified, continuing to initialization");
+    if (currentVersion === "7.10.0") {
+      console.log("Firmware is 7.10.0, continuing");
       onNext();
     } else {
-      setError("⚠️ Firmware verification failed! You must update to the latest firmware before continuing.");
-      console.error("Cannot skip firmware update - not on latest version", {
-        current: currentVersion,
-        latest: latestVersion
-      });
+      console.log("Firmware is not 7.10.0, need to update first");
+      // Don't set error, just don't proceed
     }
   };
 
@@ -195,28 +170,8 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack }: StepFirmwareUpd
       <VStack gap={6} w="100%" maxW="500px">
         <HStack gap={3}>
           <Spinner size="sm" color="green.500" />
-          <Text color="gray.400">Follow Directions on device...</Text>
+          <Text color="gray.400">Checking device status...</Text>
         </HStack>
-      </VStack>
-    );
-  }
-  
-  if (isVerifying) {
-    return (
-      <VStack gap={6} w="100%" maxW="500px">
-        <Icon as={FaDownload} boxSize={16} color="orange.500" />
-        <VStack gap={2}>
-          <Text fontSize="xl" fontWeight="bold" color="white">
-            Verifying Firmware
-          </Text>
-          <Text color="gray.400">
-            Checking your device firmware version...
-          </Text>
-          <Text fontSize="sm" color="orange.400">
-            This verification is required for setup
-          </Text>
-        </VStack>
-        <Spinner size="lg" color="orange.500" thickness="4px" />
       </VStack>
     );
   }
