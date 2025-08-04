@@ -188,6 +188,35 @@ jobs:
         working-directory: ./projects/vault-v2
         run: bun install
 
+      - name: Import Apple Certificate
+        if: matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.CERT_PW }}
+        run: |
+          # Create a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          # Create the keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Import certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k $KEYCHAIN_PATH -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          
+          # Add keychain to search list
+          security list-keychains -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | sed 's/\"//g')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Verify the certificate was imported
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
+          
+          # Clean up
+          rm -f certificate.p12
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -199,12 +228,6 @@ jobs:
           APPLE_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_ID_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_TEAM_ID || '' }}
-          # Conditionally set Apple code signing credentials
-          CODESIGN_IDENTITY: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.CODESIGN_IDENTITY || '' }}
-          KEYCHAIN_NAME: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_NAME || '' }}
-          KEYCHAIN_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.KEYCHAIN_PASSWORD || '' }}
-          MACOS_CERTIFICATE_BASE64: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && secrets.CERT_PW || '' }}
         with:
           projectPath: ./projects/vault-v2
           releaseId: ${{ startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.release_id || '' }}
