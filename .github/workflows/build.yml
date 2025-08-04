@@ -121,9 +121,10 @@ jobs:
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           
-          # Import certificate - write directly to file to avoid pipe issues
+          # Import certificate - handle potential newlines in base64
           echo "Decoding certificate..."
-          echo "$APPLE_CERTIFICATE" > certificate.base64
+          # Remove any whitespace/newlines from the base64 string
+          echo "$APPLE_CERTIFICATE" | tr -d '\n\r ' > certificate.base64
           
           # Check if base64 file is valid
           if [ ! -s certificate.base64 ]; then
@@ -131,13 +132,27 @@ jobs:
             exit 1
           fi
           
-          # Decode base64
-          if base64 --decode certificate.base64 > certificate.p12 2>/dev/null; then
-            echo "✅ Certificate decoded successfully"
+          echo "Base64 file size: $(wc -c < certificate.base64) bytes"
+          
+          # Decode base64 (macOS uses -D flag)
+          echo "Attempting to decode certificate..."
+          if base64 -D certificate.base64 > certificate.p12 2>/dev/null; then
+            echo "✅ Certificate decoded successfully using base64 -D"
+            ls -la certificate.p12
+          elif base64 --decode certificate.base64 > certificate.p12 2>/dev/null; then
+            echo "✅ Certificate decoded successfully using base64 --decode"
+            ls -la certificate.p12
           else
-            echo "❌ Error: Failed to decode certificate. The APPLE_CERTIFICATE secret may be incorrectly formatted."
-            echo "Make sure the certificate is properly base64 encoded."
-            exit 1
+            echo "❌ Error: Failed to decode certificate."
+            echo "Trying alternative method..."
+            # Try with input redirection
+            if base64 -D < certificate.base64 > certificate.p12 2>/dev/null; then
+              echo "✅ Certificate decoded successfully with input redirection"
+              ls -la certificate.p12
+            else
+              echo "❌ All decode methods failed. The certificate may be corrupted."
+              exit 1
+            fi
           fi
           
           # Import to keychain
