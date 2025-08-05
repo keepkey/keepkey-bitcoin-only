@@ -135,9 +135,6 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
                 <Text color="white" fontSize="xl" fontWeight="semibold">
                   Syncing with your KeepKey
                 </Text>
-                <Text color="gray.400" fontSize="md">
-                  Please make sure your device is unlocked
-                </Text>
                 {syncingTime > 5 && (
                   <Text color="gray.500" fontSize="sm" mt={2}>
                     This is taking longer than usual...

@@ -10,12 +10,14 @@ use hex;
 use std::io::Cursor;
 // Removed unused imports that were moved to device/updates.rs
 use crate::logging::{log_device_request, log_device_response, log_raw_device_message};
+use crate::device;
 use lazy_static;
 use std::path::PathBuf;
 use std::fs;
 use serde_json::Value;
 use log;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use once_cell::sync::Lazy;
 
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
@@ -58,6 +60,7 @@ pub struct BitcoinUtxoInput {
     pub amount: String,               // Amount in satoshis as string
     pub vout: u32,                    // Output index
     pub txid: String,                 // Transaction ID
+    #[serde(alias = "hex")]           // Accept both "prev_tx_hex" and "hex" field names
     pub prev_tx_hex: Option<String>,  // Raw previous transaction hex
 }
 
@@ -337,7 +340,23 @@ pub async fn test_device_queue() -> Result<String, String> {
 pub async fn get_device_status(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,
+    bootloader_tracker: State<'_, device::updates::BootloaderUpdateTracker>,
 ) -> Result<Option<DeviceStatus>, String> {
+    // Rate limit status checks - ignore rapid duplicate requests
+    static LAST_STATUS_CHECK: once_cell::sync::Lazy<Arc<tokio::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>> = 
+        once_cell::sync::Lazy::new(|| Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())));
+    
+    {
+        let mut last_checks = LAST_STATUS_CHECK.lock().await;
+        if let Some(last_check) = last_checks.get(&device_id) {
+            if last_check.elapsed() < Duration::from_millis(500) {
+                // Skip if checked within last 500ms
+                return Ok(None);
+            }
+        }
+        last_checks.insert(device_id.clone(), std::time::Instant::now());
+    }
+    
     println!("Getting device status for: {}", device_id);
     
     let request_id = uuid::Uuid::new_v4().to_string();
@@ -373,41 +392,91 @@ pub async fn get_device_status(
             }
         };
         
-        // Fetch device features through the queue
-        let features = match tokio::time::timeout(
-            Duration::from_secs(30), // Increased from 15 to 30 seconds to match Windows HID timeout
-            queue_handle.get_features()
-        ).await {
-            Ok(Ok(raw_features)) => {
-                // Convert from raw Features message to DeviceFeatures
-                Some(convert_features_to_device_features(raw_features))
+        // Fetch device features through the queue with retry logic
+        let features = {
+            let mut last_error = None;
+            let mut success_features = None;
+            
+            // Check if we just did a bootloader update (device might be rebooting)
+            let just_updated_bootloader = {
+                let tracker = bootloader_tracker.read().await;
+                if let Some(update_time) = tracker.get(&device_id) {
+                    // Check if update was within last 30 seconds
+                    update_time.elapsed() < Duration::from_secs(30)
+                } else {
+                    false
+                }
+            };
+            
+            if just_updated_bootloader {
+                println!("🔄 Device {} just completed bootloader update, using extended retry logic", device_id);
             }
-            Ok(Err(e)) => {
-                println!("Failed to get features for device {}: {}", device_id, e);
+            
+            let max_attempts = if just_updated_bootloader { 10 } else { 3 };
+            
+            for attempt in 1..=max_attempts {
+                println!("🔄 Attempting to get features for device {} (attempt {}/{})", device_id, attempt, max_attempts);
                 
-                // Log failed feature retrieval
-                let device_response_data = serde_json::json!({
-                    "error": format!("Failed to get features: {}", e),
-                    "operation": "get_features_for_device"
-                });
-                
-                if let Err(log_err) = log_device_response(&device_id, &request_id, false, &device_response_data, Some(&format!("Failed to get features: {}", e))).await {
-                    eprintln!("Failed to log device features error response: {}", log_err);
+                match tokio::time::timeout(
+                    Duration::from_secs(10), // Reduced to 10 seconds per attempt for faster retries
+                    queue_handle.get_features()
+                ).await {
+                    Ok(Ok(raw_features)) => {
+                        println!("✅ Successfully got features for device {} on attempt {}", device_id, attempt);
+                        // Convert from raw Features message to DeviceFeatures
+                        success_features = Some(convert_features_to_device_features(raw_features));
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        let error_detail = format!("{:?}", e);
+                        println!("⚠️ Failed to get features for device {} on attempt {}: {}", device_id, attempt, error_detail);
+                        
+                        // Check for specific error conditions
+                        if error_detail.contains("PinRequired") || error_detail.contains("pin") {
+                            last_error = Some("Device requires PIN unlock".to_string());
+                        } else if error_detail.contains("Bootloader") || error_detail.contains("bootloader") {
+                            last_error = Some("Device is in bootloader mode".to_string());
+                        } else if error_detail.contains("Busy") || error_detail.contains("busy") {
+                            last_error = Some("Device is busy, please wait".to_string());
+                        } else {
+                            last_error = Some(format!("Device error: {}", e));
+                        }
+                    }
+                    Err(_) => {
+                        println!("⏱️ Timeout getting features for device {} on attempt {} (10s timeout)", device_id, attempt);
+                        last_error = Some("Device operation timed out".to_string());
+                    }
                 }
                 
-                None
+                // Wait before retrying (exponential backoff)
+                if attempt < max_attempts {
+                    let delay_ms = if just_updated_bootloader {
+                        // Longer delays after bootloader update (2s, 3s, 4s, etc.)
+                        2000 + (1000 * attempt as u64)
+                    } else {
+                        // Normal delays (500ms, 1000ms, 1500ms)
+                        500 * attempt as u64
+                    };
+                    println!("⏳ Waiting {}ms before retry for device {}", delay_ms, device_id);
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                }
             }
-            Err(_) => {
-                println!("Timeout getting features for device {}", device_id);
+            
+            // Handle final result
+            if let Some(features) = success_features {
+                Some(features)
+            } else {
+                // Log the final failure
+                let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
+                println!("❌ All attempts failed for device {}: {}", device_id, error_msg);
                 
-                // Log timeout
                 let device_response_data = serde_json::json!({
-                    "error": "Timeout getting features",
+                    "error": error_msg,
                     "operation": "get_features_for_device"
                 });
                 
-                if let Err(e) = log_device_response(&device_id, &request_id, false, &device_response_data, Some("Timeout getting features")).await {
-                    eprintln!("Failed to log device features timeout response: {}", e);
+                if let Err(log_err) = log_device_response(&device_id, &request_id, false, &device_response_data, Some(&error_msg)).await {
+                    eprintln!("Failed to log device features error response: {}", log_err);
                 }
                 
                 None
@@ -1026,53 +1095,69 @@ pub async fn get_connected_devices_with_features(
                 }
             };
             
-            // Try to fetch features through the queue
-            let features = match tokio::time::timeout(
-                Duration::from_secs(30), // Increased from 15 to 30 seconds to match Windows HID timeout
-                queue_handle.get_features()
-            ).await {
-                Ok(Ok(raw_features)) => {
-                    // Convert from raw Features message to DeviceFeatures
-                    let device_features = convert_features_to_device_features(raw_features);
+            // Try to fetch features through the queue with retry logic
+            let features = {
+                let mut last_error = None;
+                let mut success_features = None;
+                
+                for attempt in 1..=3 {
+                    println!("🔄 Attempting to get features for device {} (attempt {}/3)", device_id, attempt);
                     
-                    // Log successful feature retrieval
-                    let device_response_data = serde_json::json!({
-                        "features": device_features,
-                        "operation": "get_features_for_device"
-                    });
-                    
-                    if let Err(e) = log_device_response(&device_id, &device_request_id, true, &device_response_data, None).await {
-                        eprintln!("Failed to log device features response: {}", e);
+                    match tokio::time::timeout(
+                        Duration::from_secs(30), // 30 seconds per attempt
+                        queue_handle.get_features()
+                    ).await {
+                        Ok(Ok(raw_features)) => {
+                            println!("✅ Successfully got features for device {} on attempt {}", device_id, attempt);
+                            // Convert from raw Features message to DeviceFeatures
+                            let device_features = convert_features_to_device_features(raw_features);
+                            
+                            // Log successful feature retrieval
+                            let device_response_data = serde_json::json!({
+                                "features": device_features,
+                                "operation": "get_features_for_device"
+                            });
+                            
+                            if let Err(e) = log_device_response(&device_id, &device_request_id, true, &device_response_data, None).await {
+                                eprintln!("Failed to log device features response: {}", e);
+                            }
+                            
+                            success_features = Some(device_features);
+                            break;
+                        }
+                        Ok(Err(e)) => {
+                            println!("⚠️ Failed to get features for device {} on attempt {}: {}", device_id, attempt, e);
+                            last_error = Some(format!("Failed to get features: {}", e));
+                        }
+                        Err(_) => {
+                            println!("⏱️ Timeout getting features for device {} on attempt {}", device_id, attempt);
+                            last_error = Some("Timeout getting features".to_string());
+                        }
                     }
                     
-                    Some(device_features)
+                    // Wait before retrying (exponential backoff)
+                    if attempt < 3 {
+                        let delay_ms = 500 * attempt as u64; // 500ms, 1000ms
+                        println!("⏳ Waiting {}ms before retry for device {}", delay_ms, device_id);
+                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    }
                 }
-                Ok(Err(e)) => {
-                    println!("Failed to get features for device {}: {}", device_id, e);
+                
+                // Handle final result
+                if let Some(features) = success_features {
+                    Some(features)
+                } else {
+                    // Log the final failure
+                    let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
+                    println!("❌ All attempts failed for device {}: {}", device_id, error_msg);
                     
-                    // Log failed feature retrieval
                     let device_response_data = serde_json::json!({
-                        "error": format!("Failed to get features: {}", e),
+                        "error": error_msg,
                         "operation": "get_features_for_device"
                     });
                     
-                    if let Err(log_err) = log_device_response(&device_id, &device_request_id, false, &device_response_data, Some(&format!("Failed to get features: {}", e))).await {
+                    if let Err(log_err) = log_device_response(&device_id, &device_request_id, false, &device_response_data, Some(&error_msg)).await {
                         eprintln!("Failed to log device features error response: {}", log_err);
-                    }
-                    
-                    None
-                }
-                Err(_) => {
-                    println!("Timeout getting features for device {}", device_id);
-                    
-                    // Log timeout
-                    let device_response_data = serde_json::json!({
-                        "error": "Timeout getting features",
-                        "operation": "get_features_for_device"
-                    });
-                    
-                    if let Err(e) = log_device_response(&device_id, &device_request_id, false, &device_response_data, Some("Timeout getting features")).await {
-                        eprintln!("Failed to log device features timeout response: {}", e);
                     }
                     
                     None
@@ -1152,9 +1237,10 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             }
         } else {
             // Device is in normal firmware mode - check if it's an OOB device
-            if features.version.starts_with("1.0.") {
-                // OOB device: firmware version 1.0.3 = bootloader version 1.0.3
-                features.version.clone()
+            if features.version.starts_with("1.0.") || features.version == "4.0.0" {
+                // OOB device: firmware version 1.0.3 or 4.0.0 = old bootloader
+                // Firmware 4.0.0 is known to have an old bootloader that needs updating
+                "1.0.3".to_string() // OOB devices have old bootloaders
             } else if let Some(ref bl_version) = features.bootloader_version {
                 // Use explicit bootloader version if available
                 bl_version.clone()
@@ -1216,9 +1302,10 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
         } else {
             // Device is in normal firmware mode - use the actual firmware version
             let current_fw_version = features.version.clone();
-            let needs_update = if current_fw_version.starts_with("1.0.") {
+            let needs_update = if current_fw_version.starts_with("1.0.") || current_fw_version == "4.0.0" {
                 // OOB device - firmware update only after bootloader update
-                false // Bootloader has higher priority
+                // Firmware 4.0.0 is an OOB firmware that needs bootloader update first
+                true // Both bootloader and firmware need updates
             } else {
                 !current_fw_version.starts_with("7.10.")
             };
@@ -1399,8 +1486,24 @@ pub fn parse_transaction_from_hex(hex_data: &str) -> Result<((u32, u32, u32, u32
     // Parse version (4 bytes, little-endian)
     let version = read_u32_le(&mut cursor)?;
     
-    // Parse input count (varint)
-    let input_count = read_varint(&mut cursor)?;
+    // Check for SegWit marker and flag
+    let mut is_segwit = false;
+    let input_count = {
+        let first_byte = read_varint(&mut cursor)?;
+        if first_byte == 0 {
+            // This might be SegWit marker (0x00) followed by flag (0x01)
+            let flag = read_u8(&mut cursor)?;
+            if flag == 1 {
+                is_segwit = true;
+                // Now read the actual input count
+                read_varint(&mut cursor)?
+            } else {
+                return Err("Invalid transaction format: unexpected marker/flag".to_string());
+            }
+        } else {
+            first_byte
+        }
+    };
     
     // Parse inputs
     let mut inputs = Vec::new();
@@ -1460,10 +1563,29 @@ pub fn parse_transaction_from_hex(hex_data: &str) -> Result<((u32, u32, u32, u32
         });
     }
     
+    // If this is a SegWit transaction, skip witness data
+    if is_segwit {
+        // Skip witness data for each input
+        for _ in 0..input_count {
+            let witness_count = read_varint(&mut cursor)?;
+            for _ in 0..witness_count {
+                let witness_len = read_varint(&mut cursor)? as usize;
+                let mut witness_data = vec![0u8; witness_len];
+                read_exact(&mut cursor, &mut witness_data)?;
+            }
+        }
+    }
+    
     // Parse lock time (4 bytes, little-endian)
     let lock_time = read_u32_le(&mut cursor)?;
     
     Ok(((version, input_count as u32, output_count as u32, lock_time), inputs, outputs))
+}
+
+fn read_u8(cursor: &mut Cursor<Vec<u8>>) -> Result<u8, String> {
+    let mut buf = [0u8; 1];
+    read_exact(cursor, &mut buf)?;
+    Ok(buf[0])
 }
 
 fn read_u32_le(cursor: &mut Cursor<Vec<u8>>) -> Result<u32, String> {
@@ -3809,27 +3931,29 @@ pub async fn test_oob_device_status_evaluation() -> Result<String, String> {
 pub async fn check_device_pin_ready(
     device_id: String,
     queue_manager: tauri::State<'_, DeviceQueueManager>,
+    bootloader_tracker: tauri::State<'_, device::updates::BootloaderUpdateTracker>,
 ) -> Result<bool, String> {
     log::info!("Checking if device {} is ready for PIN operations", device_id);
     
-    // Check if device is already in PIN flow
+    // Check if device is already in PIN flow - this means PIN is ready
     if is_device_in_pin_flow(&device_id) {
-        log::info!("Device {} is already in PIN flow", device_id);
+        log::info!("Device {} is already in PIN flow - PIN is ready", device_id);
         return Ok(true);
     }
     
     // Get device status first
-    let device_status = get_device_status(device_id.clone(), queue_manager.clone()).await?;
+    let device_status = get_device_status(device_id.clone(), queue_manager.clone(), bootloader_tracker).await?;
     
     match device_status {
         Some(status) => {
-            // Device must be connected and need PIN unlock
+            // Device must be connected
             if !status.connected {
                 log::info!("Device {} is not connected", device_id);
                 return Ok(false);
             }
             
-            if !status.needs_pin_unlock {
+            // If device doesn't need PIN unlock and isn't in PIN flow, then PIN is not needed
+            if !status.needs_pin_unlock && !is_device_in_pin_flow(&device_id) {
                 log::info!("Device {} does not need PIN unlock", device_id);
                 return Ok(false);
             }
@@ -3853,4 +3977,28 @@ pub async fn check_device_pin_ready(
             Ok(false)
         }
     }
+}
+
+/// Clear all device-related caches (used for backend restart)
+pub async fn clear_all_device_caches() {
+    // Clear PIN flow devices
+    if let Ok(mut pin_flows) = DEVICE_PIN_FLOWS.lock() {
+        println!("  📋 Clearing {} device PIN flow(s)", pin_flows.len());
+        pin_flows.clear();
+    }
+    
+    // Clear PIN sessions
+    if let Ok(mut pin_sessions) = PIN_SESSIONS.lock() {
+        println!("  📋 Clearing {} PIN session(s)", pin_sessions.len());
+        pin_sessions.clear();
+    }
+    
+    // Clear frontend ready state and queued events
+    let mut state = FRONTEND_READY_STATE.write().await;
+    println!("  📋 Clearing {} queued event(s)", state.queued_events.len());
+    state.queued_events.clear();
+    // Don't reset is_ready as frontend is still connected
+    drop(state); // Explicitly drop to release the lock
+    
+    println!("  ✅ All device caches cleared");
 }

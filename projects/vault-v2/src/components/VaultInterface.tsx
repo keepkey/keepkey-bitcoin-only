@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react';
 import { FaTh, FaGlobe, FaWallet, FaCog, FaQuestionCircle } from 'react-icons/fa';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
@@ -10,6 +10,7 @@ import { WalletProvider, useWallet } from '../contexts/WalletContext';
 import Send from './Send';
 import Receive from './Receive';
 import { useDialog } from '../contexts/DialogContext';
+import packageJson from '../../package.json';
 // import { AppHeader } from './AppHeader';
 
 type ViewType = 'apps' | 'browser' | 'pairings' | 'vault' | 'assets' | 'send' | 'receive' | 'portfolio';
@@ -46,18 +47,21 @@ export const VaultInterface = () => {
 
   const handleSupportClick = async () => {
     try {
+      // First try to open in integrated browser
       await invoke('vault_open_support');
+      console.log('Opening support in integrated browser');
     } catch (error) {
-      console.error('Failed to open support via backend:', error);
-      // Fallback to direct open
-              try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('open_url', { url: 'https://support.keepkey.com' });
-        } catch (error) {
-          console.error('Failed to open URL:', error);
-          // Fallback to window.open if Tauri command fails
-          window.open('https://support.keepkey.com', '_blank');
-        }
+      console.error('Failed to open support via integrated browser:', error);
+      // Fallback to opening in external browser
+      try {
+        await invoke('open_url', { url: 'https://support.keepkey.com' });
+        console.log('Opening support in external browser');
+      } catch (fallbackError) {
+        console.error('Failed to open URL via Tauri:', fallbackError);
+        // Last resort: use window.open
+        window.open('https://support.keepkey.com', '_blank');
+        console.log('Opening support via window.open');
+      }
     }
   };
 
@@ -73,12 +77,18 @@ export const VaultInterface = () => {
       icon: <FaWallet />,
       onClick: () => handleViewChange('vault'),
     },
-    {
-      id: 'browser',
-      label: 'Browser',
-      icon: <FaGlobe />,
-      onClick: () => handleViewChange('browser'),
-    },
+    // {
+    //   id: 'browser',
+    //   label: 'Browser',
+    //   icon: <FaGlobe />,
+    //   onClick: async () => {
+    //     handleViewChange('browser');
+    //     // Always navigate to keepkey.com when browser button is clicked
+    //     setTimeout(async () => {
+    //       await emit('browser:navigate', { url: 'http://localhost:8080' });
+    //     }, 100);
+    //   },
+    // },
     {
       id: 'settings',
       label: 'Settings',
@@ -157,51 +167,91 @@ export const VaultInterface = () => {
       {/* Main Vault Interface - Hidden when settings is open */}
       {!isSettingsOpen && (
         <Box height="100%" display="flex" flexDirection="column">
-          {/* Main Content Area */}
-          <Box flex="1" overflow="hidden">
-            {renderCurrentView()}
-          </Box>
-
-          {/* Bottom Navigation */}
+          {/* Top Navigation Bar */}
           <Box
-            height="80px"
+            height="60px"
             bg="gray.900"
-            borderTop="1px solid"
+            borderBottom="1px solid"
             borderColor="gray.700"
             px={4}
             py={2}
           >
-            <HStack justify="space-around" align="center" height="100%">
-              {navItems.map((item) => (
-                <Button
-                  key={item.id}
-                  variant="ghost"
-                  size="sm"
-                  height="60px"
-                  minWidth="60px"
-                  flexDirection="column"
-                  gap={1}
-                  color={
-                    (item.id === currentView) 
-                      ? "blue.400" 
-                      : "gray.400"
-                  }
-                  _hover={{
-                    color: "blue.300",
-                    bg: "gray.800",
-                  }}
-                  _active={{
-                    bg: "gray.700",
-                  }}
-                  onClick={item.onClick}
-                >
-                  <Box fontSize="lg">{item.icon}</Box>
-                  <Text fontSize="xs" fontWeight="medium">
-                    {item.label}
-                  </Text>
-                </Button>
-              ))}
+            <HStack justify="space-between" align="center" height="100%">
+              {/* Left side - Main navigation items */}
+              <HStack gap={2}>
+                {navItems.slice(0, 1).map((item) => (
+                  <Button
+                    key={item.id}
+                    variant="ghost"
+                    size="sm"
+                    height="40px"
+                    minWidth="80px"
+                    gap={2}
+                    color={
+                      (item.id === currentView) 
+                        ? "blue.400" 
+                        : "gray.400"
+                    }
+                    _hover={{
+                      color: "blue.300",
+                      bg: "gray.800",
+                    }}
+                    _active={{
+                      bg: "gray.700",
+                    }}
+                    onClick={item.onClick}
+                  >
+                    <Box fontSize="md">{item.icon}</Box>
+                    <Text fontSize="sm" fontWeight="medium">
+                      {item.label}
+                    </Text>
+                  </Button>
+                ))}
+              </HStack>
+
+              {/* Center - Logo/Title with Version */}
+              <HStack gap={2}>
+                <Text fontSize="lg" fontWeight="bold" color="white">
+                  KeepKey Vault
+                </Text>
+                <Text fontSize="sm" color="gray.400">
+                  v{packageJson.version}
+                </Text>
+              </HStack>
+
+              {/* Right side - Settings and Support */}
+              <HStack gap={2}>
+                {navItems.slice(1).map((item) => (
+                  <Button
+                    key={item.id}
+                    variant="ghost"
+                    size="sm"
+                    height="40px"
+                    minWidth="80px"
+                    gap={2}
+                    color="gray.400"
+                    _hover={{
+                      color: "blue.300",
+                      bg: "gray.800",
+                    }}
+                    _active={{
+                      bg: "gray.700",
+                    }}
+                    onClick={item.onClick}
+                  >
+                    <Box fontSize="md">{item.icon}</Box>
+                    <Text fontSize="sm" fontWeight="medium">
+                      {item.label}
+                    </Text>
+                  </Button>
+                ))}
+              </HStack>
             </HStack>
+          </Box>
+          
+          {/* Main Content Area */}
+          <Box flex="1" overflow="hidden">
+            {renderCurrentView()}
           </Box>
         </Box>
       )}

@@ -43,9 +43,14 @@ fn vault_open_support(app: tauri::AppHandle) -> Result<(), String> {
         "view": "browser"
     })).map_err(|e| format!("Failed to emit view change event: {}", e))?;
     
-    app.emit("browser:navigate", serde_json::json!({
-        "url": "https://support.keepkey.com"
-    })).map_err(|e| format!("Failed to emit navigation event: {}", e))?;
+    // Add a small delay to ensure the browser view is mounted before navigation
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        
+        let _ = app.emit("browser:navigate", serde_json::json!({
+            "url": "https://support.keepkey.com"
+        }));
+    });
     
     Ok(())
 }
@@ -77,49 +82,105 @@ async fn open_url(app_handle: tauri::AppHandle, url: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn restart_backend_startup(app: tauri::AppHandle) -> Result<(), String> {
-    println!("Restarting backend startup process");
-    // Emit event to indicate restart
-    match app.emit("application:state", serde_json::json!({
-        "status": "Restarting...",
+async fn restart_backend_startup(app: tauri::AppHandle) -> Result<(), String> {
+    println!("🔄 PERFORMING COMPREHENSIVE BACKEND RESTART");
+    
+    // Emit restart status
+    let _ = app.emit("application:state", serde_json::json!({
+        "status": "Restarting backend services...",
         "connected": false,
         "features": null
-    })) {
-        Ok(_) => {
-            // Simulate restart process
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(1000));
-                let _ = app.emit("application:state", serde_json::json!({
-                    "status": "Device ready",
-                    "connected": true,
-                    "features": {
-                        "label": "KeepKey",
-                        "vendor": "KeepKey",
-                        "model": "KeepKey",
-                        "firmware_variant": "keepkey",
-                        "device_id": "keepkey-001",
-                        "language": "english",
-                        "bootloader_mode": false,
-                        "version": "7.7.0",
-                        "firmware_hash": null,
-                        "bootloader_hash": null,
-                        "initialized": true,
-                        "imported": false,
-                        "no_backup": false,
-                        "pin_protection": true,
-                        "pin_cached": false,
-                        "passphrase_protection": false,
-                        "passphrase_cached": false,
-                        "wipe_code_protection": false,
-                        "auto_lock_delay_ms": null,
-                        "policies": []
-                    }
-                }));
-            });
-            Ok(())
-        },
-        Err(e) => Err(format!("Failed to emit restart event: {}", e))
+    }));
+    
+    // 1. Clear all device queues
+    if let Some(queue_manager_state) = app.try_state::<Arc<tokio::sync::Mutex<std::collections::HashMap<String, keepkey_rust::device_queue::DeviceQueueHandle>>>>() {
+        let mut manager = queue_manager_state.inner().lock().await;
+        println!("  📋 Clearing {} device queue(s)...", manager.len());
+        
+        // Note: Device workers will be cleaned up when dropped
+        for (device_id, _handle) in manager.iter() {
+            println!("    🛑 Removing device worker for: {}", device_id);
+            // Workers will be stopped when the handle is dropped
+        }
+        
+        // Clear the queue manager
+        manager.clear();
+        println!("  ✅ All device queues cleared");
     }
+    
+    // 2. Clear response tracking
+    if let Some(responses_state) = app.try_state::<Arc<tokio::sync::Mutex<std::collections::HashMap<String, commands::DeviceResponse>>>>() {
+        let mut responses = responses_state.inner().lock().await;
+        println!("  📋 Clearing {} cached response(s)...", responses.len());
+        responses.clear();
+        println!("  ✅ Response cache cleared");
+    }
+    
+    // 3. Clear any cached device states
+    println!("  📋 Clearing device state caches...");
+    commands::clear_all_device_caches().await;
+    // The function will print its own completion message
+    
+    // 4. Stop and restart the event controller (if we had a handle to it)
+    // Note: Current implementation doesn't store event controller handle, 
+    // but we can emit a signal to restart device scanning
+    println!("  🔄 Triggering device rescan...");
+    
+    // 5. Small delay to let everything settle
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    
+    // 6. Emit scanning status to trigger new device discovery
+    let _ = app.emit("application:state", serde_json::json!({
+        "status": "Scanning for devices...",
+        "connected": false,
+        "features": null
+    }));
+    
+    // 7. Force a device rescan by listing devices
+    let devices = keepkey_rust::features::list_connected_devices();
+    let device_count = devices.len();
+    println!("  🔍 Found {} device(s) after restart", device_count);
+    
+    // 8. Emit device events for any found devices
+    for device in devices {
+        println!("  📡 Re-emitting device:connected for {}", device.unique_id);
+        let _ = app.emit("device:connected", &device);
+        
+        // Also trigger feature fetch for each device
+        let app_for_device = app.clone();
+        let device_for_task = device.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            
+            // Try to get features for the device
+            println!("  🔍 Attempting to get features for {} after restart", device_for_task.unique_id);
+            // Note: We'll let the event controller handle feature fetching
+            // Just emit the device connected event
+            let _ = app_for_device.emit("device:ready", serde_json::json!({
+                "device": device_for_task,
+                "status": "reconnected_after_restart"
+            }));
+        });
+    }
+    
+    println!("✅ BACKEND RESTART COMPLETE");
+    
+    // Final status update
+    if device_count == 0 {
+        let _ = app.emit("application:state", serde_json::json!({
+            "status": "No devices found. Please connect your KeepKey.",
+            "connected": false,
+            "features": null
+        }));
+    } else {
+        let _ = app.emit("application:state", serde_json::json!({
+            "status": format!("Found {} device(s)", device_count),
+            "connected": true,
+            "features": null
+        }));
+    }
+    
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -146,8 +207,14 @@ pub fn run() {
                 std::collections::HashMap::<String, commands::DeviceResponse>::new()
             ));
             
+            // Initialize bootloader update tracker
+            let bootloader_tracker: device::BootloaderUpdateTracker = Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::<String, std::time::Instant>::new()
+            ));
+            
             app.manage(device_queue_manager.clone());
             app.manage(last_responses);
+            app.manage(bootloader_tracker);
             
             // Start event controller with proper management
             let _event_controller = event_controller::spawn_event_controller(&app.handle());

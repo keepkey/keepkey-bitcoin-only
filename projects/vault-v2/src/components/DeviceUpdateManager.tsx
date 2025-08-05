@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
 import { FirmwareUpdateDialog } from './FirmwareUpdateDialog'
-import { WalletCreationWizard } from './WalletCreationWizard/WalletCreationWizard'
+import { SetupWizard } from './SetupWizard'
 import { EnterBootloaderModeDialog } from './EnterBootloaderModeDialog'
 import { PinUnlockDialog } from './PinUnlockDialog'
 import type { DeviceStatus, DeviceFeatures } from '../types/device'
@@ -13,9 +13,11 @@ import { useDeviceInvalidStateDialog } from '../contexts/DialogContext'
 interface DeviceUpdateManagerProps {
   // Optional callback when all updates/setup is complete
   onComplete?: () => void
+  // Optional callback to notify when setup wizard active state changes
+  onSetupWizardActiveChange?: (active: boolean) => void
 }
 
-export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) => {
+export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: DeviceUpdateManagerProps) => {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | null>(null)
   const [showEnterBootloaderMode, setShowEnterBootloaderMode] = useState(false)
   const [showBootloaderUpdate, setShowBootloaderUpdate] = useState(false)
@@ -25,6 +27,14 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
   const [isProcessing, setIsProcessing] = useState(false)
   const [connectedDeviceId, setConnectedDeviceId] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
+  
+  // Use ref to track setup wizard state for persistence
+  const setupWizardActive = useRef(false)
+  const setupWizardDeviceId = useRef<string | null>(null)
+  const [persistentDeviceId, setPersistentDeviceId] = useState<string | null>(null)
+  const [setupInProgress, setSetupInProgress] = useState(false) // Track if setup is in progress
+  const justCompletedBootloaderUpdate = useRef(false) // Track if we just did a bootloader update
+  const firmwareUpdateInProgress = useRef(false) // Track if firmware update is happening
 
   // Get wallet context for portfolio loading
   const { refreshPortfolio, fetchedXpubs } = useWallet()
@@ -90,8 +100,79 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     })
     
     // Determine which dialog to show based on priority
-    if (status.needsBootloaderUpdate && status.bootloaderCheck) {
-      if (isInBootloaderMode) {
+    // IMPORTANT: If setup wizard is already showing, don't interrupt it
+    if (setupWizardActive.current) {
+      console.log('🔧 DeviceUpdateManager: Setup wizard is already showing - keeping it visible')
+      return; // Don't change state while setup wizard is active
+    }
+    
+    // IMPORTANT: Check initialization FIRST - setup wizard should take priority over EVERYTHING
+    // Even if device is in bootloader mode, if it needs initialization, show setup wizard
+    // Check both explicit needsInitialization flag AND the initialized feature flag
+    // SPECIAL CASE: If device is in bootloader mode with "Unknown" firmware, it's likely uninitialized
+    const hasUnknownFirmware = status.firmwareCheck?.currentVersion === 'Unknown' || 
+                               status.firmwareCheck?.currentVersion === undefined;
+    const deviceNeedsInitialization = status.needsInitialization || 
+                                    status.features?.initialized === false || 
+                                    status.features?.initialized === undefined ||
+                                    (isInBootloaderMode && hasUnknownFirmware);
+    
+    if (deviceNeedsInitialization) {
+      // Check if recovery is in progress - if so, don't interfere
+      if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
+        console.log('🛡️ DeviceUpdateManager: Recovery in progress - IGNORING initialization request')
+        console.log('🛡️ DeviceUpdateManager: Keeping current state to protect recovery')
+        return; // Don't change any state during recovery
+      }
+      
+      console.log('🔧 DeviceUpdateManager: Device needs initialization - SHOULD SHOW SETUP WIZARD')
+      console.log('🔧 DeviceUpdateManager: Initialization check:', {
+        needsInitialization: status.needsInitialization,
+        initialized: status.features?.initialized,
+        hasUnknownFirmware,
+        currentFirmware: status.firmwareCheck?.currentVersion,
+        deviceNeedsInitialization,
+        isInBootloaderMode,
+        reason: hasUnknownFirmware && isInBootloaderMode ? 'Bootloader mode with unknown firmware' : 'Normal initialization needed'
+      })
+      console.log('🔧 DeviceUpdateManager: Setting showWalletCreation = true')
+      setShowEnterBootloaderMode(false)
+      setShowBootloaderUpdate(false)
+      setShowFirmwareUpdate(false)
+      setShowWalletCreation(true)
+      setupWizardActive.current = true
+      setupWizardDeviceId.current = status.deviceId
+      setPersistentDeviceId(status.deviceId) // Save device ID for persistence
+      setSetupInProgress(true) // Mark setup as in progress
+      onSetupWizardActiveChange?.(true)
+      return; // Exit early - setup wizard takes absolute priority
+    } else if (status.needsPinUnlock) {
+      // PIN UNLOCK HAS PRIORITY OVER ALL UPDATES
+      // Device is initialized but locked with PIN - this is handled by the PIN unlock event listener
+      console.log('🔒 DeviceUpdateManager: Device needs PIN unlock - PRIORITY OVER UPDATES')
+      // Don't call onComplete() here - PIN unlock dialog will be shown via the pin-unlock-needed event
+      // Just ensure other dialogs are hidden
+      setShowEnterBootloaderMode(false)
+      setShowBootloaderUpdate(false)
+      setShowFirmwareUpdate(false)
+      setShowWalletCreation(false)
+      // showPinUnlock will be set by the pin-unlock-needed event listener
+      return; // Exit early - PIN has priority
+    } else if (status.needsBootloaderUpdate && status.bootloaderCheck) {
+      // Only update bootloader if device is NOT initialized
+      // Initialized devices can skip bootloader updates
+      const isInitialized = status.features?.initialized === true
+      if (isInitialized) {
+        console.log('🔧 Device is initialized - skipping bootloader update')
+        // Device is ready (PIN was already handled above)
+        console.log('✅ Device is ready after skipping bootloader update')
+        setShowEnterBootloaderMode(false)
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(false)
+        setShowWalletCreation(false)
+        setShowPinUnlock(false)
+        onComplete?.()
+      } else if (isInBootloaderMode) {
         // Device needs bootloader update AND is in bootloader mode -> show update dialog
         console.log('Device needs bootloader update and is in bootloader mode')
         setShowEnterBootloaderMode(false)
@@ -106,43 +187,57 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
       }
-    } else if (status.needsFirmwareUpdate && status.firmwareCheck) {
-      console.log('Device needs firmware update')
-      console.log('🔧 DeviceUpdateManager: Firmware update needed:', {
-        needsFirmwareUpdate: status.needsFirmwareUpdate,
-        firmwareCheck: status.firmwareCheck,
-        currentVersion: status.firmwareCheck?.currentVersion,
-        latestVersion: status.firmwareCheck?.latestVersion,
-        features: status.features
-      })
-      setShowEnterBootloaderMode(false)
-      setShowBootloaderUpdate(false)
-      setShowFirmwareUpdate(true)
-      setShowWalletCreation(false)
-    } else if (status.needsInitialization) {
-      // Check if recovery is in progress - if so, don't interfere
-      if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
-        console.log('🛡️ DeviceUpdateManager: Recovery in progress - IGNORING initialization request')
-        console.log('🛡️ DeviceUpdateManager: Keeping current state to protect recovery')
-        return; // Don't change any state during recovery
+    } else if (status.needsFirmwareUpdate) {  // Removed the && status.firmwareCheck check to handle bootloader mode
+      // Only update firmware if device is NOT initialized
+      // Initialized devices can skip firmware updates
+      const isInitialized = status.features?.initialized === true
+      if (isInitialized) {
+        console.log('🔧 Device is initialized - skipping firmware update')
+        // Device is ready (PIN was already handled above)
+        console.log('✅ Device is ready after skipping firmware update')
+        setShowEnterBootloaderMode(false)
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(false)
+        setShowWalletCreation(false)
+        setShowPinUnlock(false)
+        onComplete?.()
+      } else {
+        console.log('Device needs firmware update')
+        console.log('🔧 DeviceUpdateManager: Firmware update needed:', {
+          needsFirmwareUpdate: status.needsFirmwareUpdate,
+          firmwareCheck: status.firmwareCheck,
+          currentVersion: status.firmwareCheck?.currentVersion,
+          latestVersion: status.firmwareCheck?.latestVersion,
+          features: status.features,
+          isInBootloaderMode
+        })
+        
+        // CRITICAL: Check if device is in bootloader mode
+        if (isInBootloaderMode && !status.needsBootloaderUpdate) {
+          // Device is already in bootloader mode with correct bootloader version
+          // Show firmware update dialog directly
+          console.log('🔧 DeviceUpdateManager: Device in bootloader mode with correct bootloader, showing firmware update')
+          setShowEnterBootloaderMode(false)
+          setShowBootloaderUpdate(false)
+          setShowFirmwareUpdate(true)
+          setShowWalletCreation(false)
+        } else if (!isInBootloaderMode) {
+          // Device needs firmware update but is NOT in bootloader mode
+          // Must enter bootloader mode first!
+          console.log('🔧 DeviceUpdateManager: Device needs firmware update but NOT in bootloader mode - showing enter bootloader dialog')
+          setShowEnterBootloaderMode(true)  // Show enter bootloader mode dialog
+          setShowBootloaderUpdate(false)
+          setShowFirmwareUpdate(false)      // Don't show firmware update yet
+          setShowWalletCreation(false)
+        } else {
+          // Shouldn't happen, but handle edge case
+          console.log('🔧 DeviceUpdateManager: Unexpected state - needs firmware but bootloader needs update too')
+          setShowEnterBootloaderMode(false)
+          setShowBootloaderUpdate(false)
+          setShowFirmwareUpdate(true)
+          setShowWalletCreation(false)
+        }
       }
-      
-      console.log('🔧 DeviceUpdateManager: Device needs initialization - SHOULD SHOW ONBOARDING WIZARD')
-      console.log('🔧 DeviceUpdateManager: Setting showWalletCreation = true')
-      setShowEnterBootloaderMode(false)
-      setShowBootloaderUpdate(false)
-      setShowFirmwareUpdate(false)
-      setShowWalletCreation(true)
-    } else if (status.needsPinUnlock) {
-      // Device is initialized but locked with PIN - this is handled by the PIN unlock event listener
-      console.log('🔒 DeviceUpdateManager: Device needs PIN unlock - NOT calling onComplete()')
-      // Don't call onComplete() here - PIN unlock dialog will be shown via the pin-unlock-needed event
-      // Just ensure other dialogs are hidden
-      setShowEnterBootloaderMode(false)
-      setShowBootloaderUpdate(false)
-      setShowFirmwareUpdate(false)
-      setShowWalletCreation(false)
-      // showPinUnlock will be set by the pin-unlock-needed event listener
     } else {
       // Device is ready
       console.log('🔧 DeviceUpdateManager: Device is ready, no updates needed')
@@ -173,6 +268,18 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         console.log('🔧 DeviceUpdateManager: Device features updated event received:', event.payload)
         const { status } = event.payload
         console.log('🔧 DeviceUpdateManager: Extracted status from event:', status)
+        
+        // If we just completed a bootloader update and setup is in progress,
+        // update the persistent device ID to the new one
+        if (justCompletedBootloaderUpdate.current && setupInProgress && status.deviceId !== persistentDeviceId) {
+          console.log('🔄 Device ID changed after bootloader update:', {
+            oldId: persistentDeviceId,
+            newId: status.deviceId
+          })
+          setPersistentDeviceId(status.deviceId)
+          setupWizardDeviceId.current = status.deviceId
+          justCompletedBootloaderUpdate.current = false // Reset the flag
+        }
         console.log('🔧 DeviceUpdateManager: Device status details:', {
           deviceId: status.deviceId,
           connected: status.connected,
@@ -199,7 +306,14 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         setDeviceStatus(status)
         setConnectedDeviceId(status.deviceId)
         setRetryCount(0) // Reset retry count on successful event
-        handleDeviceStatus(status)
+        
+        // CRITICAL: Don't handle device status if setup is in progress
+        // This prevents the setup wizard from being hidden on reconnection
+        if (!setupInProgress) {
+          handleDeviceStatus(status)
+        } else {
+          console.log('🔧 DeviceUpdateManager: Setup in progress, not handling device status to preserve wizard')
+        }
       })
 
       // Listen for basic device connected events as fallback
@@ -253,7 +367,21 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       }>('device:invalid-state', (event) => {
         console.log('⏱️ Device invalid state detected:', event.payload)
         
-        // CRITICAL: Clear ALL existing dialogs first
+        // CRITICAL: If setup is in progress, IGNORE invalid state errors
+        // This happens during firmware updates when device reboots
+        if (setupWizardActive.current || setupInProgress || showWalletCreation || firmwareUpdateInProgress.current) {
+          console.log('🛡️🛡️ IGNORING invalid state during setup - device is rebooting')
+          console.log('🛡️ Setup/Update must continue, not showing invalid state dialog')
+          console.log('🛡️ Protection flags:', {
+            setupWizardActive: setupWizardActive.current,
+            setupInProgress,
+            showWalletCreation,
+            firmwareUpdateInProgress: firmwareUpdateInProgress.current
+          })
+          return; // Exit early - don't show dialog or clear state during setup
+        }
+        
+        // Only clear dialogs if setup is NOT in progress
         setShowBootloaderUpdate(false)
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
@@ -333,7 +461,20 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
           return; // Don't change state during recovery
         }
         
-        // Clear all state when device disconnects (only if not in recovery)
+        // CRITICAL: Check if setup is in progress
+        // If setup wizard is active or in progress, DON'T clear any state
+        if (setupWizardActive.current || setupInProgress) {
+          console.log('🛡️🛡️ DeviceUpdateManager: SETUP IN PROGRESS - PRESERVING ALL STATE')
+          console.log('🛡️ Setup wizard must NOT be abandoned during device disconnect')
+          console.log('🛡️ Keeping wizard visible and waiting for device reconnection')
+          
+          // Keep the device ID for when it reconnects
+          // Don't clear ANY state that would close the setup wizard
+          return; // Exit early - preserve everything
+        }
+        
+        // Only clear state if setup is NOT in progress
+        console.log('DeviceUpdateManager: No setup in progress, clearing state normally')
         setDeviceStatus(null)
         setConnectedDeviceId(null)
         setShowBootloaderUpdate(false)
@@ -369,7 +510,7 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       // Cleanup function will be called automatically
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [onComplete])
+  }, [onComplete, setupInProgress, deviceInvalidStateDialog, onSetupWizardActiveChange, refreshPortfolio, fetchedXpubs])
 
   const handleFirmwareUpdate = async () => {
     setIsProcessing(true)
@@ -414,7 +555,13 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
   }
 
   const handleWalletCreationComplete = () => {
+    console.log('✅ Setup wizard completed successfully')
     setShowWalletCreation(false)
+    setupWizardActive.current = false
+    setupWizardDeviceId.current = null
+    setPersistentDeviceId(null) // Clear persistent device ID
+    setSetupInProgress(false) // Clear the setup in progress flag
+    onSetupWizardActiveChange?.(false)
     onComplete?.()
   }
 
@@ -432,9 +579,41 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       showWalletCreation,
       showEnterBootloaderMode
     })
+    console.log('🔒 Device status after PIN unlock:', {
+      needsFirmwareUpdate: deviceStatus?.needsFirmwareUpdate,
+      needsBootloaderUpdate: deviceStatus?.needsBootloaderUpdate,
+      needsInitialization: deviceStatus?.needsInitialization,
+      firmwareVersion: deviceStatus?.firmwareCheck?.currentVersion,
+      latestVersion: deviceStatus?.firmwareCheck?.latestVersion
+    })
+    
     setShowPinUnlock(false)
     
-    // Automatically start portfolio loading after PIN unlock
+    // CRITICAL: Check if device still needs updates after PIN unlock
+    if (deviceStatus?.needsFirmwareUpdate) {
+      console.log('🔒 Device needs firmware update after PIN unlock - NOT calling onComplete')
+      console.log('🔒 Firmware update needed: v' + deviceStatus.firmwareCheck?.currentVersion + ' -> v' + deviceStatus.firmwareCheck?.latestVersion)
+      
+      // Check if device is in bootloader mode
+      const isInBootloaderMode = deviceStatus?.features?.bootloader_mode || deviceStatus?.features?.bootloaderMode || false
+      
+      if (!isInBootloaderMode) {
+        // Device needs to enter bootloader mode first
+        console.log('🔒 Showing enter bootloader mode dialog for firmware update')
+        setShowEnterBootloaderMode(true)
+        setShowFirmwareUpdate(false)
+      } else {
+        // Device is in bootloader mode, show firmware update
+        console.log('🔒 Showing firmware update dialog')
+        setShowEnterBootloaderMode(false)
+        setShowFirmwareUpdate(true)
+      }
+      
+      // DON'T call onComplete - device needs updates first
+      return
+    }
+    
+    // Only proceed with portfolio loading if device doesn't need updates
     try {
       console.log('🔄 Auto-loading portfolio after PIN unlock...')
       console.log(`📋 Current XPUBs in memory: ${fetchedXpubs.length}`)
@@ -448,8 +627,8 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
       // Don't block onComplete - user can manually refresh later
     }
     
-    // Device should now be ready to use
-    console.log('🔒 Calling onComplete after PIN unlock')
+    // Device should now be ready to use (no updates needed)
+    console.log('🔒 Device fully ready after PIN unlock - calling onComplete')
     onComplete?.()
   }
 
@@ -458,8 +637,9 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     // Don't call onComplete - user cancelled PIN entry
   }
 
-  if (!deviceStatus) {
-    console.log('🔧 DeviceUpdateManager: No deviceStatus, returning null')
+  // If setup wizard is active, we should still render it even without deviceStatus
+  if (!deviceStatus && !setupWizardActive.current && !persistentDeviceId) {
+    console.log('🔧 DeviceUpdateManager: No deviceStatus, no active wizard, and no persistentDeviceId, returning null')
     return null
   }
 
@@ -469,21 +649,31 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
     showBootloaderUpdate,
     showEnterBootloaderMode,
     showPinUnlock,
-    deviceStatus: deviceStatus?.needsInitialization
+    deviceStatus: deviceStatus?.needsInitialization,
+    persistentDeviceId,
+    setupWizardActive: setupWizardActive.current
   })
 
   return (
     <>
-      {showEnterBootloaderMode && deviceStatus.bootloaderCheck && deviceStatus.deviceId && (
+      {showEnterBootloaderMode && deviceStatus?.bootloaderCheck && deviceStatus?.deviceId && (
         <EnterBootloaderModeDialog
           isOpen={showEnterBootloaderMode}
           bootloaderCheck={deviceStatus.bootloaderCheck}
           deviceId={deviceStatus.deviceId}
           onClose={handleEnterBootloaderModeClose}
+          isInitialized={deviceStatus?.features?.initialized === true}
+          onSkip={() => {
+            console.log('🔧 User skipped bootloader update')
+            setShowEnterBootloaderMode(false)
+            // Device is ready (PIN was already handled before showing this dialog)
+            console.log('✅ Device is ready after user skipped bootloader update')
+            onComplete?.()
+          }}
         />
       )}
 
-      {showBootloaderUpdate && deviceStatus.bootloaderCheck && deviceStatus.deviceId && (
+      {showBootloaderUpdate && deviceStatus?.bootloaderCheck && deviceStatus?.deviceId && (
         <BootloaderUpdateDialog
           isOpen={showBootloaderUpdate}
           bootloaderCheck={deviceStatus.bootloaderCheck}
@@ -495,10 +685,14 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         />
       )}
 
-      {showFirmwareUpdate && deviceStatus?.firmwareCheck && (
+      {showFirmwareUpdate && deviceStatus && (
         <FirmwareUpdateDialog
           isOpen={showFirmwareUpdate}
-          firmwareCheck={deviceStatus.firmwareCheck}
+          firmwareCheck={deviceStatus.firmwareCheck || {
+            currentVersion: 'Unknown',
+            latestVersion: '7.10.0',
+            needsUpdate: true
+          }}
           deviceStatus={deviceStatus}
           onUpdateStart={handleFirmwareUpdate}
           onSkip={handleFirmwareSkip}
@@ -508,15 +702,34 @@ export const DeviceUpdateManager = ({ onComplete }: DeviceUpdateManagerProps) =>
         />
       )}
 
-      {showWalletCreation && deviceStatus.deviceId && (
-        <WalletCreationWizard
-          deviceId={deviceStatus.deviceId}
+      {showWalletCreation && (persistentDeviceId || deviceStatus?.deviceId) && (
+        <SetupWizard
+          deviceId={persistentDeviceId || deviceStatus?.deviceId || ''}
           onComplete={handleWalletCreationComplete}
-          onClose={() => setShowWalletCreation(false)}
+          onClose={() => {
+            // NOTE: onClose should only be called when user explicitly cancels
+            // NOT when device disconnects
+            console.log('⚠️ SetupWizard onClose called - user cancelled setup')
+            setShowWalletCreation(false)
+            setupWizardActive.current = false
+            setupWizardDeviceId.current = null
+            setPersistentDeviceId(null)
+            setSetupInProgress(false) // Clear setup in progress only on explicit close
+            firmwareUpdateInProgress.current = false // Also clear firmware update flag
+            onSetupWizardActiveChange?.(false)
+          }}
+          onFirmwareUpdateStart={() => {
+            console.log('🔄 Firmware update starting in setup wizard')
+            firmwareUpdateInProgress.current = true
+          }}
+          onFirmwareUpdateComplete={() => {
+            console.log('✅ Firmware update complete in setup wizard')
+            firmwareUpdateInProgress.current = false
+          }}
         />
       )}
 
-      {showPinUnlock && deviceStatus.deviceId && (
+      {showPinUnlock && deviceStatus?.deviceId && (
         <PinUnlockDialog
           isOpen={showPinUnlock}
           deviceId={deviceStatus.deviceId}

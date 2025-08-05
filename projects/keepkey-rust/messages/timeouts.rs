@@ -57,6 +57,7 @@ impl Message {
             if Message::is_hid_transport_mode() {
                 return match self {
                     Message::ButtonAck(_) => LONG_TIMEOUT,
+                    Message::FirmwareErase(_) => LONG_TIMEOUT,
                     Message::FirmwareUpload(_) => LONG_TIMEOUT,
                     Message::Initialize(_) => WINDOWS_HID_QUICK_TIMEOUT, // 10 seconds for Windows HID
                     Message::GetFeatures(_) => WINDOWS_HID_QUICK_TIMEOUT, // 10 seconds for Windows HID
@@ -69,6 +70,7 @@ impl Message {
         // For Initialize messages or when in legacy device mode, use appropriate timeout
         match self {
             Message::ButtonAck(_) => LONG_TIMEOUT,
+            Message::FirmwareErase(_) => LONG_TIMEOUT, // Firmware erase needs time for device confirmation
             Message::FirmwareUpload(_) => LONG_TIMEOUT, // Bootloader updates need more time
             Message::Initialize(_) if Message::is_legacy_device_mode() => LEGACY_DEVICE_TIMEOUT,
             Message::Initialize(_) => QUICK_TIMEOUT, // Initialize is usually very fast
@@ -84,6 +86,7 @@ impl Message {
         {
             if Message::is_hid_transport_mode() {
                 return match self {
+                    Message::FirmwareErase(_) => LONG_TIMEOUT,
                     Message::FirmwareUpload(_) => LONG_TIMEOUT,
                     Message::Initialize(_) => WINDOWS_HID_QUICK_TIMEOUT, // 10 seconds for Windows HID
                     Message::GetFeatures(_) => WINDOWS_HID_QUICK_TIMEOUT, // 10 seconds for Windows HID
@@ -94,6 +97,7 @@ impl Message {
         }
         
         match self {
+            Message::FirmwareErase(_) => LONG_TIMEOUT,
             Message::FirmwareUpload(_) => LONG_TIMEOUT,
             Message::Initialize(_) if Message::is_legacy_device_mode() => LEGACY_DEVICE_TIMEOUT,
             Message::Initialize(_) => QUICK_TIMEOUT,

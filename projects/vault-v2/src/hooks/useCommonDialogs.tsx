@@ -2,13 +2,15 @@ import { useDialog } from '../contexts/DialogContext';
 import { useCallback } from 'react';
 import React from 'react';
 import { OnboardingWizard } from '../components/OnboardingWizard/OnboardingWizard';
-import { WalletCreationWizard } from '../components/WalletCreationWizard/WalletCreationWizard';
+import { SetupWizard } from '../components/SetupWizard';
+import { NoDeviceDialog } from '../components/NoDeviceDialog';
 
 // Import dialog components dynamically
 const dialogComponents = {
   onboarding: () => import('../components/OnboardingWizard/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })),
   settings: () => import('../components/SettingsDialog').then(m => ({ default: m.SettingsDialog })),
   walletCreation: () => import('../components/WalletCreationWizard/WalletCreationWizard').then(m => ({ default: m.WalletCreationWizard })),
+  noDevice: () => import('../components/NoDeviceDialog').then(m => ({ default: m.NoDeviceDialog })),
   // Add more dialog imports as needed
 };
 
@@ -49,19 +51,20 @@ export function useCommonDialogs() {
     console.trace('🏦 [useCommonDialogs] Call stack trace:');
     
     show({
-      id: 'wallet-creation',
-      component: WalletCreationWizard, // Direct component instead of lazy loading for better UX
+      id: 'setup-wizard',
+      component: SetupWizard, // Using new SetupWizard component
       props: {
         ...props,
+        deviceId: props?.deviceId || 'mock-device-id',
         onComplete: () => {
-          console.log(`🏦 [useCommonDialogs] showWalletCreation onComplete called`);
+          console.log(`🏦 [useCommonDialogs] SetupWizard onComplete called`);
           if (props?.onWizardComplete) props.onWizardComplete();
-          hide('wallet-creation');
+          hide('setup-wizard');
         },
         onClose: () => {
-          console.log(`🏦 [useCommonDialogs] showWalletCreation onClose called`);
+          console.log(`🏦 [useCommonDialogs] SetupWizard onClose called`);
           if (props?.onWizardClose) props.onWizardClose();
-          hide('wallet-creation');
+          hide('setup-wizard');
         }
       },
       priority: 'critical', // High priority since it's device setup
@@ -74,6 +77,18 @@ export function useCommonDialogs() {
       },
     });
   }, [show, hide, requestAppFocus, releaseAppFocus]);
+
+  const showNoDevice = useCallback((props?: {
+    onRetry?: () => void;
+  }) => {
+    show({
+      id: 'no-device-found',
+      component: NoDeviceDialog,
+      props,
+      priority: 'high',
+      persistent: false,
+    });
+  }, [show]);
   
   // TODO: Implement these dialogs
   const showError = useCallback((title: string, message: string) => {
@@ -90,6 +105,7 @@ export function useCommonDialogs() {
     showOnboarding,
     showSettings,
     showWalletCreation,
+    showNoDevice,
     showError,
     showConfirm,
     hideDialog: hide,
