@@ -119,22 +119,20 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
           </Flex>
         </Flex>
 
-        <Box borderTop="1px" borderColor="gray.200" my={4} />
-
-        <Box p={3} bg="blue.50" borderRadius="md" borderLeft="4px" borderLeftColor="blue.400">
-          <Text fontWeight="bold" fontSize="sm" mb={2}>
-            About Passphrase Protection
-          </Text>
-          <Text fontSize="sm" mb={2}>
-            When enabled, you'll be prompted for a passphrase to access your wallet. Different
-            passphrases create completely different wallets, allowing for:
-          </Text>
-          <Box pl={4}>
-            <Text fontSize="sm">• Hidden wallets for additional privacy</Text>
-            <Text fontSize="sm">• Plausible deniability under duress</Text>
-            <Text fontSize="sm">• Multiple wallet configurations from one seed</Text>
-          </Box>
-        </Box>
+        {/*<Box p={3} borderRadius="md" borderLeft="4px" borderLeftColor="blue.400">*/}
+        {/*  <Text fontWeight="bold" fontSize="sm" mb={2}>*/}
+        {/*    About Passphrase Protection*/}
+        {/*  </Text>*/}
+        {/*  <Text fontSize="sm" mb={2}>*/}
+        {/*    When enabled, you'll be prompted for a passphrase to access your wallet. Different*/}
+        {/*    passphrases create completely different wallets, allowing for:*/}
+        {/*  </Text>*/}
+        {/*  <Box pl={4}>*/}
+        {/*    <Text fontSize="sm">• Hidden wallets for additional privacy</Text>*/}
+        {/*    <Text fontSize="sm">• Plausible deniability under duress</Text>*/}
+        {/*    <Text fontSize="sm">• Multiple wallet configurations from one seed</Text>*/}
+        {/*  </Box>*/}
+        {/*</Box>*/}
 
         {isUpdating && (
           <Box p={3} bg="blue.50" borderRadius="md" borderLeft="4px" borderLeftColor="blue.400">
