@@ -632,9 +632,15 @@ export function usePassphraseDialog() {
       const dialogId = `passphrase-${props.deviceId || 'default'}`;
       console.log(`🔐 [PassphraseDialog] show() called for device:`, props.deviceId);
       
+      // Check if dialog is already showing
+      if (isShowing(dialogId)) {
+        console.log(`🔐 [PassphraseDialog] Dialog already showing for device:`, props.deviceId);
+        return;
+      }
+      
       show({
         id: dialogId,
-        component: React.lazy(() => import('../components/PassphraseModal').then(m => ({ default: m.PassphraseModal }))),
+        component: React.lazy(() => import('../components/SimplePassphraseModal')),
         props: {
           isOpen: true,
           deviceId: props.deviceId,

@@ -13,6 +13,30 @@ The KeepKey device protocol already supports passphrase functionality through th
 3. **PassphraseStateRequest** - Optionally manage passphrase state
 4. **PassphraseStateAck** - Acknowledge passphrase state
 
+### Two-Way Communication Flow
+
+The passphrase system uses a bidirectional communication pattern:
+
+#### Enabling Passphrase Protection
+1. **Host → Device**: User toggles passphrase protection in settings
+2. **Host → Device**: `ApplySettings` message with `use_passphrase=true`
+3. **Device → Host**: Device responds with `PassphraseRequest` 
+4. **Host**: Opens passphrase entry modal for user
+5. **User**: Enters and confirms passphrase
+6. **Host → Device**: `PassphraseAck` with entered passphrase
+7. **Device**: Stores passphrase protection flag (not the passphrase itself)
+8. **Device → Host**: Success response
+9. **Host**: Updates UI to show passphrase enabled
+
+#### Using Passphrase-Protected Device
+1. **Host → Device**: Any operation requiring private keys (sign, derive address, etc.)
+2. **Device → Host**: `PassphraseRequest` if passphrase not cached
+3. **Host**: Opens passphrase entry modal
+4. **User**: Enters passphrase
+5. **Host → Device**: `PassphraseAck` with passphrase
+6. **Device**: Derives keys using seed + passphrase
+7. **Device → Host**: Continues with requested operation
+
 ### HDWallet Integration
 The hdwallet-core and hdwallet-keepkey packages have existing passphrase support:
 - `sendPassphrase(passphrase: string)` method in wallet interface
@@ -68,6 +92,37 @@ The keepkey-desktop-v3 has basic passphrase handling in:
 ```
 
 ### Message Flow
+
+#### Enable/Disable Passphrase Flow
+```mermaid
+sequenceDiagram
+    participant User
+    participant Settings UI
+    participant Backend
+    participant Device
+    
+    User->>Settings UI: Toggle passphrase protection
+    Settings UI->>Backend: enable_passphrase_protection(enabled)
+    Backend->>Device: ApplySettings(use_passphrase=true)
+    
+    alt Enabling Passphrase
+        Device->>Backend: PassphraseRequest
+        Backend->>Settings UI: Emit passphrase_request event
+        Settings UI->>Settings UI: Open PassphraseModal
+        User->>Settings UI: Enter & confirm passphrase
+        Settings UI->>Backend: send_passphrase(passphrase)
+        Backend->>Device: PassphraseAck(passphrase)
+        Device->>Backend: Success
+        Backend->>Settings UI: Operation complete
+        Settings UI->>User: Show "Passphrase Enabled"
+    else Disabling Passphrase
+        Device->>Backend: Success
+        Backend->>Settings UI: Operation complete
+        Settings UI->>User: Show "Passphrase Disabled"
+    end
+```
+
+#### Regular Operation with Passphrase
 ```mermaid
 sequenceDiagram
     participant User
@@ -75,16 +130,23 @@ sequenceDiagram
     participant Backend
     participant Device
     
-    User->>UI: Initiate operation requiring passphrase
+    User->>UI: Initiate operation (e.g., sign transaction)
     UI->>Backend: Request operation
     Backend->>Device: Send operation message
-    Device->>Backend: PassphraseRequest
-    Backend->>UI: Emit passphrase_request event
-    UI->>User: Show passphrase modal
-    User->>UI: Enter passphrase
-    UI->>Backend: Send passphrase
-    Backend->>Device: PassphraseAck(passphrase)
-    Device->>Backend: Continue operation
+    
+    alt Passphrase Required
+        Device->>Backend: PassphraseRequest
+        Backend->>UI: Emit passphrase_request event
+        UI->>User: Show passphrase modal
+        User->>UI: Enter passphrase
+        UI->>Backend: send_passphrase(passphrase)
+        Backend->>Device: PassphraseAck(passphrase)
+    end
+    
+    Device->>Device: Derive keys with seed + passphrase
+    Device->>Backend: Operation result
+    Backend->>UI: Return result
+    UI->>User: Show operation complete
 ```
 
 ## Implementation Phases

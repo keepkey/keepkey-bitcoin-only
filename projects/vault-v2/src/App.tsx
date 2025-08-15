@@ -105,7 +105,7 @@ function App() {
             }
         }, [activeDialog, getQueue]);
         
-        // Clear any stuck dialogs when showing VaultInterface
+        // Clear any stuck dialogs when showing VaultInterface (but not passphrase dialogs)
         useEffect(() => {
             console.log('📱 [App] Dialog cleanup effect triggered with:', {
                 loadingStatus,
@@ -119,7 +119,13 @@ function App() {
             if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
                 const queue = getQueue();
                 console.log('📱 [App] All conditions met! Dialog queue length:', queue.length);
-                if (queue.length > 0) {
+                
+                // Check if any passphrase dialogs are in the queue
+                const hasPassphraseDialog = queue.some(d => d.id.includes('passphrase'));
+                
+                if (hasPassphraseDialog) {
+                    console.log('📱 [App] Passphrase dialog detected - NOT clearing dialogs, blocking UI');
+                } else if (queue.length > 0) {
                     console.warn('📱 [App] Clearing stuck dialogs before showing VaultInterface:', queue.map(d => d.id));
                     hideAll();
                 } else {
@@ -395,15 +401,19 @@ function App() {
 
         const mcpUrl = "http://127.0.0.1:1646/mcp";
 
-        // Show the main vault interface ONLY when device is ready AND updates are complete
+        // Show the main vault interface ONLY when device is ready AND updates are complete AND no passphrase dialog
+        const queue = getQueue();
+        const hasPassphraseDialog = queue.some(d => d.id.includes('passphrase'));
+        
         console.log('📱 [App] Checking if should show VaultInterface:', {
             loadingStatus,
             deviceConnected,
             deviceUpdateComplete,
-            shouldShow: loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete
+            hasPassphraseDialog,
+            shouldShow: loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete && !hasPassphraseDialog
         });
         
-        if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
+        if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete && !hasPassphraseDialog) {
             console.log('📱 [App] ✅ All conditions met - showing VaultInterface!');
             return <VaultInterface />;
         }

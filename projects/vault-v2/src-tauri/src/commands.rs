@@ -3750,6 +3750,85 @@ pub async fn send_pin_matrix_ack(
     }
 }
 
+/// Send passphrase to device in response to PassphraseRequest
+#[tauri::command]
+pub async fn send_passphrase(
+    device_id: String,
+    passphrase: String,
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    log::info!("Sending passphrase for device: {} (length: {})", device_id, passphrase.len());
+    
+    // Get device queue handle
+    let queue_manager_guard = queue_manager.lock().await;
+    let queue_handle = queue_manager_guard.get(&device_id)
+        .ok_or_else(|| format!("Device not found: {}", device_id))?
+        .clone();
+    drop(queue_manager_guard);  // Release lock early
+        
+    // Create PassphraseAck message
+    let passphrase_ack = keepkey_rust::messages::PassphraseAck { passphrase };
+    
+    // Send the passphrase response
+    match queue_handle.send_raw(passphrase_ack.into(), true).await {
+        Ok(response) => {
+            log::info!("✅ Passphrase sent, got response: {:?}", response.message_type());
+            
+            // The device should now continue with the original operation
+            // In most cases, we'll get the PublicKey/Address response directly
+            handle_passphrase_response(response, device_id.clone(), app.clone())
+        }
+        Err(e) => {
+            log::error!("Failed to send passphrase for device {}: {}", device_id, e);
+            Err(format!("Failed to send passphrase: {}", e))
+        }
+    }
+}
+
+// Helper function to handle passphrase response
+fn handle_passphrase_response(
+    response: keepkey_rust::messages::Message,
+    device_id: String,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    match response {
+        keepkey_rust::messages::Message::PublicKey(public_key) => {
+            // This was likely from a GetXpub request
+            log::info!("✅ Received PublicKey after passphrase");
+            
+            // Extract xpub and emit it to frontend
+            let xpub = public_key.xpub.unwrap_or_default();
+            if !xpub.is_empty() {
+                // Emit xpub event to frontend
+                let payload = serde_json::json!({
+                    "deviceId": device_id,
+                    "xpub": xpub,
+                });
+                let _ = app.emit("passphrase_xpub_received", payload);
+            }
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Address(address) => {
+            // This was from a GetAddress request  
+            log::info!("✅ Received Address after passphrase: {}", address.address);
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Success(_) => {
+            log::info!("✅ Passphrase accepted, operation completed");
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Failure(f) => {
+            log::error!("❌ Device rejected passphrase: {:?}", f.message);
+            Err(format!("Passphrase rejected: {}", f.message.unwrap_or_default()))
+        }
+        _ => {
+            log::warn!("Unexpected response after passphrase: {:?}", response.message_type());
+            Ok(true) // Assume success if no failure
+        }
+    }
+}
+
 /// Trigger a PIN request by making an authenticated request (GetAddress)
 #[tauri::command] 
 pub async fn trigger_pin_request(
@@ -4014,44 +4093,6 @@ pub async fn handle_passphrase_request(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn send_passphrase(
-    passphrase: String,
-    device_id: String,
-    queue_manager: State<'_, DeviceQueueManager>,
-) -> Result<(), String> {
-    log::info!("Sending passphrase to device {}", device_id);
-    
-    // Get the device queue handle
-    let queue_handle = {
-        let manager = queue_manager.lock().await;
-        manager.get(&device_id).cloned()
-    };
-    
-    let queue_handle = queue_handle
-        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
-    
-    // Create PassphraseAck message
-    let passphrase_ack = keepkey_rust::messages::PassphraseAck {
-        passphrase: passphrase.clone(),
-    };
-    let message = Message::PassphraseAck(passphrase_ack);
-    
-    // Send the passphrase acknowledgment
-    queue_handle
-        .send_raw(message, false)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to send passphrase to device: {}", e);
-            format!("Failed to send passphrase: {}", e)
-        })?;
-    
-    // Clear passphrase from memory (Rust automatically drops it when it goes out of scope)
-    drop(passphrase);
-    
-    log::info!("Passphrase sent successfully to device {}", device_id);
-    Ok(())
-}
 
 #[tauri::command]
 pub async fn enable_passphrase_protection(

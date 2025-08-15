@@ -276,7 +276,7 @@ pub async fn add_to_device_queue(
             // Create GetPublicKey message for xpub
             let get_public_key = keepkey_rust::messages::Message::GetPublicKey(
                 keepkey_rust::messages::GetPublicKey {
-                    address_n: path_parts,
+                    address_n: path_parts.clone(),
                     coin_name: Some("Bitcoin".to_string()),
                     script_type: None, // Default script type
                     ecdsa_curve_name: Some("secp256k1".to_string()),
@@ -285,7 +285,7 @@ pub async fn add_to_device_queue(
                 }
             );
             
-            // Send raw message to get xpub
+            // Send raw message to get xpub with passphrase support
             let response = queue_handle
                 .send_raw(get_public_key, false)
                 .await
@@ -300,6 +300,40 @@ pub async fn add_to_device_queue(
                     } else {
                         Ok(xpub)
                     }
+                }
+                keepkey_rust::messages::Message::PassphraseRequest(_) => {
+                    println!("🔐 Device requested passphrase for xpub");
+                    
+                    // Store the pending GetPublicKey operation (clone path_parts to avoid move)
+                    let get_public_key_msg = keepkey_rust::messages::Message::GetPublicKey(
+                        keepkey_rust::messages::GetPublicKey {
+                            address_n: path_parts.clone(),
+                            coin_name: Some("Bitcoin".to_string()),
+                            script_type: None,
+                            ecdsa_curve_name: Some("secp256k1".to_string()),
+                            show_display: Some(false),
+                            ..Default::default()
+                        }
+                    );
+                    
+                    super::pending_operations::store_pending_operation(
+                        request.device_id.clone(),
+                        request.request_id.clone(),
+                        get_public_key_msg,
+                    ).await;
+                    
+                    // Emit passphrase request event to frontend
+                    let payload = serde_json::json!({
+                        "requestId": request.request_id.clone(),
+                        "deviceId": request.device_id.clone(),
+                    });
+                    
+                    if let Err(e) = app.emit("passphrase_request", payload) {
+                        eprintln!("Failed to emit passphrase_request event: {}", e);
+                    }
+                    
+                    // Return a specific error that the frontend can recognize
+                    Err("PASSPHRASE_REQUIRED".to_string())
                 }
                 keepkey_rust::messages::Message::Failure(failure) => {
                     Err(format!("Device returned error: {}", failure.message.unwrap_or_default()))
@@ -534,6 +568,22 @@ pub async fn add_to_device_queue(
                             }
                             Err(e) => break Err(e),
                         }
+                    }
+                    keepkey_rust::messages::Message::PassphraseRequest(_) => {
+                        println!("🔐 Device requested passphrase during signing");
+                        
+                        // Emit passphrase request event to frontend
+                        let payload = serde_json::json!({
+                            "requestId": request.request_id.clone(),
+                            "deviceId": request.device_id.clone(),
+                        });
+                        
+                        if let Err(e) = app.emit("passphrase_request", payload) {
+                            eprintln!("Failed to emit passphrase_request event: {}", e);
+                        }
+                        
+                        // Return a specific error that the frontend can recognize
+                        break Err("PASSPHRASE_REQUIRED".to_string());
                     }
                     keepkey_rust::messages::Message::Failure(failure) => {
                         let error = format!("Device returned error: {}", failure.message.unwrap_or_default());

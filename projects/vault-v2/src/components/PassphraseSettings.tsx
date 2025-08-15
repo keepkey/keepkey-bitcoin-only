@@ -4,14 +4,22 @@ import {
   Text,
   Flex,
   Spinner,
+  useDisclosure,
 } from '@chakra-ui/react';
 // Removed icon import to fix component errors
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { usePassphraseDialog } from '../contexts/DialogContext';
 
 interface PassphraseSettingsProps {
   deviceId: string;
   isPassphraseEnabled?: boolean;
   onPassphraseToggle?: (enabled: boolean) => void;
+}
+
+interface PassphraseRequestPayload {
+  requestId: string;
+  deviceId: string;
 }
 
 export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
@@ -21,10 +29,64 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
 }) => {
   const [isEnabled, setIsEnabled] = useState(initialEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
+  const passphraseDialog = usePassphraseDialog();
+  const [pendingEnable, setPendingEnable] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setIsEnabled(initialEnabled);
   }, [initialEnabled]);
+
+  // Listen for passphrase requests from the device during enable/disable flow
+  useEffect(() => {
+    const unlisten = listen<PassphraseRequestPayload>('passphrase_request', (event) => {
+      console.log('Passphrase request received during settings update:', event.payload);
+      
+      // If we're in the middle of enabling passphrase protection and device requests passphrase
+      if (pendingEnable && event.payload.deviceId === deviceId) {
+        // Open the passphrase entry modal
+        passphraseDialog.show({
+          deviceId: deviceId,
+          onSubmit: () => {
+            console.log('Passphrase submitted successfully');
+            
+            // Complete the passphrase enable flow
+            if (pendingEnable) {
+              setIsEnabled(true);
+              setPendingEnable(false);
+              
+              if (onPassphraseToggle) {
+                onPassphraseToggle(true);
+              }
+              
+              setStatusMessage('Passphrase protection has been enabled');
+              setTimeout(() => setStatusMessage(null), 3000);
+              
+              // Refresh device features to update cache
+              setTimeout(async () => {
+                try {
+                  await invoke('refresh_device_features', { deviceId });
+                } catch (err) {
+                  console.error('Failed to refresh device features:', err);
+                }
+              }, 1000);
+            }
+            
+            setIsUpdating(false);
+          },
+          onDialogClose: () => {
+            console.log('Passphrase dialog closed');
+            setPendingEnable(false);
+            setIsUpdating(false);
+          }
+        });
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [pendingEnable, deviceId, passphraseDialog]);
 
   const handleTogglePassphrase = async () => {
     if (isUpdating) return;
@@ -32,92 +94,105 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     const newState = !isEnabled;
     setIsUpdating(true);
     
+    if (newState) {
+      // When enabling, we expect the device to request a passphrase
+      setPendingEnable(true);
+      
+      // Show info about the flow
+      setStatusMessage('You will be prompted to set a passphrase on your device');
+    }
+    
     try {
+      // Send the enable/disable command to the device
+      // This will trigger a PassphraseRequest from the device if enabling
       await invoke('enable_passphrase_protection', {
         deviceId,
         enabled: newState,
       });
       
-      setIsEnabled(newState);
-      
-      if (onPassphraseToggle) {
-        onPassphraseToggle(newState);
-      }
-
-      console.log(`Passphrase protection has been ${newState ? 'enabled' : 'disabled'}`);
-      
-      // Restart the app to apply the new settings
-      setTimeout(async () => {
-        try {
-          await invoke('restart_app');
-        } catch (restartErr) {
-          console.error('Failed to restart app:', restartErr);
-          setIsUpdating(false);
+      // If disabling, we're done
+      if (!newState) {
+        setIsEnabled(false);
+        setPendingEnable(false);
+        
+        if (onPassphraseToggle) {
+          onPassphraseToggle(false);
         }
-      }, 1000);
+        
+        setStatusMessage('Passphrase protection has been disabled');
+        setTimeout(() => setStatusMessage(null), 3000);
+        
+        setIsUpdating(false);
+      }
+      // If enabling, wait for the passphrase modal to complete
     } catch (err) {
       console.error('Failed to update passphrase protection:', err);
+      setPendingEnable(false);
       
-      console.error('Failed to update passphrase protection');
+      setStatusMessage(`Error: ${err instanceof Error ? err.message : 'Failed to update passphrase protection'}`);
+      setTimeout(() => setStatusMessage(null), 5000);
+      
       setIsUpdating(false);
     }
   };
 
+
   return (
-    <Box p={4} borderWidth={1} borderRadius="md">
-      <Flex direction="column" gap={4}>
-        <Text fontSize="lg" fontWeight="bold">
-          Passphrase Protection
-        </Text>
-        
-        <Flex align="center" justify="space-between">
-          <Flex direction="column">
-            <Text fontWeight="medium">
-              BIP39 Passphrase
-            </Text>
-            <Text fontSize="sm" color="gray.600">
-              Add an extra word to your recovery phrase for additional security
-            </Text>
-            {isEnabled && (
-              <Text fontSize="xs" color="green.600" mt={1}>
-                Currently enabled
-              </Text>
-            )}
-          </Flex>
+    <>
+      <Box p={4} borderWidth={1} borderRadius="md">
+        <Flex direction="column" gap={4}>
+          <Text fontSize="lg" fontWeight="bold">
+            Passphrase Protection
+          </Text>
           
-          <Flex align="center" gap={2}>
-            {isUpdating && (
-              <Spinner size="sm" color="blue.500" />
-            )}
-            <Box position="relative">
-              <input
-                type="checkbox"
-                checked={isEnabled}
-                onChange={handleTogglePassphrase}
-                disabled={isUpdating}
-                style={{ 
-                  transform: 'scale(1.5)',
-                  transition: 'all 0.2s ease-in-out',
-                  opacity: isUpdating ? 0.6 : 1,
-                  cursor: isUpdating ? 'not-allowed' : 'pointer'
-                }}
-              />
-              {isUpdating && (
-                <Box 
-                  position="absolute" 
-                  top="50%" 
-                  left="50%" 
-                  transform="translate(-50%, -50%)"
-                  pointerEvents="none"
-                >
-                  <Text fontSize="xs" color="blue.500" fontWeight="bold">
-                    {isEnabled ? 'Enabling...' : 'Disabling...'}
-                  </Text>
-                </Box>
+          <Flex align="center" justify="space-between">
+            <Flex direction="column">
+              <Text fontWeight="medium">
+                BIP39 Passphrase
+              </Text>
+              <Text fontSize="sm" color="gray.600">
+                Add an extra word to your recovery phrase for additional security
+              </Text>
+              {isEnabled && (
+                <Text fontSize="xs" color="green.600" mt={1}>
+                  Currently enabled
+                </Text>
               )}
-            </Box>
+            </Flex>
+            
+            <Flex align="center" gap={2}>
+              {isUpdating && (
+                <Spinner size="sm" color="blue.500" />
+              )}
+              <Box position="relative">
+                <input
+                  type="checkbox"
+                  checked={isEnabled}
+                  onChange={handleTogglePassphrase}
+                  disabled={isUpdating}
+                  style={{ 
+                    transform: 'scale(1.5)',
+                    transition: 'all 0.2s ease-in-out',
+                    opacity: isUpdating ? 0.6 : 1,
+                    cursor: isUpdating ? 'not-allowed' : 'pointer'
+                  }}
+                />
+                {isUpdating && (
+                  <Box 
+                    position="absolute" 
+                    top="50%" 
+                    left="50%" 
+                    transform="translate(-50%, -50%)"
+                    pointerEvents="none"
+                  >
+                    <Text fontSize="xs" color="blue.500" fontWeight="bold">
+                      {pendingEnable ? 'Enabling...' : 'Disabling...'}
+                    </Text>
+                  </Box>
+                )}
+              </Box>
+            </Flex>
           </Flex>
-        </Flex>
 
         {/*<Box p={3} borderRadius="md" borderLeft="4px" borderLeftColor="blue.400">*/}
         {/*  <Text fontWeight="bold" fontSize="sm" mb={2}>*/}
@@ -134,17 +209,22 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
         {/*  </Box>*/}
         {/*</Box>*/}
 
-        {isUpdating && (
-          <Box p={3} bg="blue.50" borderRadius="md" borderLeft="4px" borderLeftColor="blue.400">
+        {(isUpdating || statusMessage) && (
+          <Box p={3} bg={statusMessage?.startsWith('Error') ? "red.50" : "blue.50"} 
+               borderRadius="md" 
+               borderLeft="4px" 
+               borderLeftColor={statusMessage?.startsWith('Error') ? "red.400" : "blue.400"}>
             <Flex align="center" gap={2}>
-              <Spinner size="sm" color="blue.500" />
-              <Text fontWeight="bold" fontSize="sm">
-                Updating passphrase protection settings...
+              {isUpdating && <Spinner size="sm" color="blue.500" />}
+              <Text fontWeight="bold" fontSize="sm" color={statusMessage?.startsWith('Error') ? "red.600" : "blue.600"}>
+                {statusMessage || 'Updating passphrase protection settings...'}
               </Text>
             </Flex>
-            <Text fontSize="sm" mt={2} color="blue.600">
-              The application will restart automatically to apply changes.
-            </Text>
+            {isUpdating && !statusMessage && (
+              <Text fontSize="sm" mt={2} color="blue.600">
+                Please follow the instructions on your device.
+              </Text>
+            )}
           </Box>
         )}
 
@@ -164,5 +244,6 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
         </Text>
       </Flex>
     </Box>
+    </>
   );
 };

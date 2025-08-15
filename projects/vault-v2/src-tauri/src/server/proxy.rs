@@ -2,7 +2,7 @@ use axum::{
     extract::{Host, Path as AxumPath, Query, Request},
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::Response,
-    routing::{any, delete, get, head, options, patch, post, put},
+    routing::get,
     Router,
     body::Body,
 };
