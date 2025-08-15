@@ -59,15 +59,24 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
                 onPassphraseToggle(true);
               }
               
-              setStatusMessage('Passphrase protection has been enabled');
-              setTimeout(() => setStatusMessage(null), 3000);
+              setStatusMessage('Passphrase protection enabled - restarting app...');
               
-              // Refresh device features to update cache
+              // Refresh device features and restart app after passphrase is enabled
               setTimeout(async () => {
                 try {
                   await invoke('refresh_device_features', { deviceId });
+                  
+                  // Restart the app since device now requires passphrase for all operations
+                  console.log('Restarting app after enabling passphrase protection');
+                  setTimeout(() => {
+                    window.location.reload();
+                  }, 1000);
                 } catch (err) {
                   console.error('Failed to refresh device features:', err);
+                  // Still restart even if refresh fails
+                  setTimeout(() => {
+                    window.location.reload();
+                  }, 1000);
                 }
               }, 1000);
             }

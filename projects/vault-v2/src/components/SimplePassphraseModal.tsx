@@ -168,9 +168,11 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
             style={{
               width: '100%',
               padding: '8px 12px',
-              border: '1px solid #d1d5db',
+              border: '1px solid #6b7280',
               borderRadius: '6px',
               fontSize: '14px',
+              backgroundColor: '#374151',
+              color: 'white',
             }}
           />
         </div>
@@ -190,9 +192,11 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
             style={{
               width: '100%',
               padding: '8px 12px',
-              border: '1px solid #d1d5db',
+              border: '1px solid #6b7280',
               borderRadius: '6px',
               fontSize: '14px',
+              backgroundColor: '#374151',
+              color: 'white',
             }}
           />
         </div>
