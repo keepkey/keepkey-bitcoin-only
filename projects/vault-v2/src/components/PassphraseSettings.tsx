@@ -3,6 +3,7 @@ import {
   Box,
   Text,
   Flex,
+  Spinner,
 } from '@chakra-ui/react';
 // Removed icon import to fix component errors
 import { invoke } from '@tauri-apps/api/core';
@@ -32,7 +33,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     setIsUpdating(true);
     
     try {
-      await invoke('set_passphrase_protection', {
+      await invoke('enable_passphrase_protection', {
         deviceId,
         enabled: newState,
       });
@@ -44,11 +45,20 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       }
 
       console.log(`Passphrase protection has been ${newState ? 'enabled' : 'disabled'}`);
+      
+      // Restart the app to apply the new settings
+      setTimeout(async () => {
+        try {
+          await invoke('restart_app');
+        } catch (restartErr) {
+          console.error('Failed to restart app:', restartErr);
+          setIsUpdating(false);
+        }
+      }, 1000);
     } catch (err) {
       console.error('Failed to update passphrase protection:', err);
       
       console.error('Failed to update passphrase protection');
-    } finally {
       setIsUpdating(false);
     }
   };
@@ -75,15 +85,38 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
             )}
           </Flex>
           
-          <Box>
-            <input
-              type="checkbox"
-              checked={isEnabled}
-              onChange={handleTogglePassphrase}
-              disabled={isUpdating}
-              style={{ transform: 'scale(1.5)' }}
-            />
-          </Box>
+          <Flex align="center" gap={2}>
+            {isUpdating && (
+              <Spinner size="sm" color="blue.500" />
+            )}
+            <Box position="relative">
+              <input
+                type="checkbox"
+                checked={isEnabled}
+                onChange={handleTogglePassphrase}
+                disabled={isUpdating}
+                style={{ 
+                  transform: 'scale(1.5)',
+                  transition: 'all 0.2s ease-in-out',
+                  opacity: isUpdating ? 0.6 : 1,
+                  cursor: isUpdating ? 'not-allowed' : 'pointer'
+                }}
+              />
+              {isUpdating && (
+                <Box 
+                  position="absolute" 
+                  top="50%" 
+                  left="50%" 
+                  transform="translate(-50%, -50%)"
+                  pointerEvents="none"
+                >
+                  <Text fontSize="xs" color="blue.500" fontWeight="bold">
+                    {isEnabled ? 'Enabling...' : 'Disabling...'}
+                  </Text>
+                </Box>
+              )}
+            </Box>
+          </Flex>
         </Flex>
 
         <Box borderTop="1px" borderColor="gray.200" my={4} />
@@ -103,7 +136,21 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
           </Box>
         </Box>
 
-        {isEnabled && (
+        {isUpdating && (
+          <Box p={3} bg="blue.50" borderRadius="md" borderLeft="4px" borderLeftColor="blue.400">
+            <Flex align="center" gap={2}>
+              <Spinner size="sm" color="blue.500" />
+              <Text fontWeight="bold" fontSize="sm">
+                Updating passphrase protection settings...
+              </Text>
+            </Flex>
+            <Text fontSize="sm" mt={2} color="blue.600">
+              The application will restart automatically to apply changes.
+            </Text>
+          </Box>
+        )}
+
+        {isEnabled && !isUpdating && (
           <Box p={3} bg="orange.50" borderRadius="md" borderLeft="4px" borderLeftColor="orange.400">
             <Text fontWeight="bold" fontSize="sm" mb={2}>
               Important Security Notes
