@@ -5,6 +5,7 @@ import { listen } from '@tauri-apps/api/event'
 import { FaUsb, FaDownload, FaWallet, FaShieldAlt, FaExclamationTriangle, FaTools, FaTrash, FaCheckCircle } from 'react-icons/fa'
 import type { DeviceFeatures, DeviceStatus } from '../types/device'
 import { useTroubleshootingWizard } from '../contexts/DialogContext'
+import { PassphraseSettings } from './PassphraseSettings'
 const TAG = " | KeepKeyDeviceList | "
 interface Device {
   id: string
@@ -333,6 +334,21 @@ export const KeepKeyDeviceList = ({
                     <Text color="white">{device.features.model}</Text>
                   </HStack>
                 )}
+              </Box>
+            )}
+
+            {/* Passphrase Settings - Only show for initialized devices */}
+            {device.features?.initialized && isDeviceCommunicating(device) && (
+              <Box pt={3}>
+                <PassphraseSettings 
+                  deviceId={device.id}
+                  isPassphraseEnabled={device.features?.passphraseProtection || false}
+                  onPassphraseToggle={(enabled) => {
+                    console.log(`Passphrase protection ${enabled ? 'enabled' : 'disabled'} for device ${device.id}`);
+                    // Refresh device list to update the UI
+                    loadDevices();
+                  }}
+                />
               </Box>
             )}
 

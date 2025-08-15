@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use keepkey_rust::{
     device_queue::{DeviceQueueFactory, DeviceQueueHandle},
     features::DeviceFeatures,
+    messages::Message,
 };
 use uuid;
 use hex;
@@ -16,8 +17,7 @@ use std::path::PathBuf;
 use std::fs;
 use serde_json::Value;
 use log;
-use std::time::{Duration, Instant};
-use once_cell::sync::Lazy;
+use std::time::Duration;
 
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
@@ -1848,6 +1848,8 @@ pub async fn debug_onboarding_state() -> Result<String, String> {
 pub async fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
     log::info!("Restarting application...");
     app.restart();
+    // Note: This line will never be reached as app.restart() exits the process
+    #[allow(unreachable_code)]
     Ok(())
 }
 
@@ -3977,6 +3979,114 @@ pub async fn check_device_pin_ready(
             Ok(false)
         }
     }
+}
+
+// Passphrase handling structures
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PassphraseRequestPayload {
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    #[serde(rename = "deviceId")]
+    pub device_id: String,
+}
+
+#[tauri::command]
+pub async fn handle_passphrase_request(
+    app_handle: AppHandle,
+    device_id: String,
+) -> Result<(), String> {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    log::info!("Passphrase request for device {}, request_id: {}", device_id, request_id);
+    
+    let payload = PassphraseRequestPayload {
+        request_id,
+        device_id,
+    };
+    
+    // Emit passphrase request event to frontend
+    app_handle
+        .emit("passphrase_request", payload)
+        .map_err(|e| {
+            log::error!("Failed to emit passphrase request: {}", e);
+            e.to_string()
+        })?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn send_passphrase(
+    passphrase: String,
+    device_id: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Sending passphrase to device {}", device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Create PassphraseAck message
+    let passphrase_ack = keepkey_rust::messages::PassphraseAck {
+        passphrase: passphrase.clone(),
+    };
+    let message = Message::PassphraseAck(passphrase_ack);
+    
+    // Send the passphrase acknowledgment
+    queue_handle
+        .send_raw(message, false)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to send passphrase to device: {}", e);
+            format!("Failed to send passphrase: {}", e)
+        })?;
+    
+    // Clear passphrase from memory (Rust automatically drops it when it goes out of scope)
+    drop(passphrase);
+    
+    log::info!("Passphrase sent successfully to device {}", device_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn enable_passphrase_protection(
+    device_id: String,
+    enabled: bool,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Setting passphrase protection to {} for device {}", enabled, device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Create ApplySettings message to enable/disable passphrase
+    let apply_settings = keepkey_rust::messages::ApplySettings {
+        use_passphrase: Some(enabled),
+        ..Default::default()
+    };
+    let message = Message::ApplySettings(apply_settings);
+    
+    queue_handle
+        .send_raw(message, false)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to set passphrase protection: {}", e);
+            format!("Failed to set passphrase protection: {}", e)
+        })?;
+    
+    log::info!("Passphrase protection set to {} for device {}", enabled, device_id);
+    Ok(())
 }
 
 /// Clear all device-related caches (used for backend restart)

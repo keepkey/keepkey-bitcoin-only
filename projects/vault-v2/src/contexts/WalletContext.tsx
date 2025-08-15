@@ -12,7 +12,7 @@ import { listen } from '@tauri-apps/api/event';
 // Import organized types and services
 import { Asset, Portfolio, QueueStatus } from '../types';
 import { PortfolioAPI, DeviceQueueAPI, PioneerAPI } from '../lib';
-import { usePinUnlockDialog } from './DialogContext';
+import { usePinUnlockDialog, usePassphraseDialog } from './DialogContext';
 
 const TAG = " | WalletContext | ";
 
@@ -88,6 +88,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   
   // PIN unlock dialog hook
   const pinUnlockDialog = usePinUnlockDialog();
+  
+  // Passphrase dialog hook
+  const passphraseDialog = usePassphraseDialog();
 
   const refreshPortfolio = useCallback(async () => {
     const tag = TAG + " | refreshPortfolio | ";

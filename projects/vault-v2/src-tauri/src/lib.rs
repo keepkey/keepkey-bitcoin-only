@@ -295,6 +295,10 @@ pub fn run() {
             commands::cancel_pin_creation,
             commands::initialize_device_wallet,
             commands::complete_wallet_creation,
+            // Passphrase commands
+            commands::handle_passphrase_request,
+            commands::send_passphrase,
+            commands::enable_passphrase_protection,
             // PIN unlock commands  
             commands::start_pin_unlock,
             commands::send_pin_unlock_response,

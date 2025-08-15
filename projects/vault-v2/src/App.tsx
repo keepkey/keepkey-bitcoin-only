@@ -13,7 +13,7 @@ import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
 import { VaultInterface } from './components/VaultInterface';
 import { useWallet } from './contexts/WalletContext';
-import { DialogProvider, useDialog } from './contexts/DialogContext'
+import { DialogProvider, useDialog, usePassphraseDialog } from './contexts/DialogContext'
 
 // Define the expected structure of DeviceFeatures from Rust
 interface DeviceFeatures {
@@ -61,6 +61,7 @@ function App() {
         const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
         const { hideAll, activeDialog, getQueue, isWizardActive } = useDialog();
         const { fetchedXpubs, portfolio, isSync, reinitialize } = useWallet();
+        const passphraseDialog = usePassphraseDialog();
         
         // Check wallet context state and sync with local state
         useEffect(() => {
@@ -326,6 +327,24 @@ function App() {
                         setDeviceUpdateComplete(false);
                     });
 
+                    // Listen for passphrase request events from device
+                    const unlistenPassphraseRequest = await listen('passphrase_request', (event) => {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        const payload = event.payload as any;
+                        console.log('🔐 [App] Passphrase request received:', payload);
+                        
+                        // Show passphrase dialog
+                        passphraseDialog.show({
+                            deviceId: payload.deviceId,
+                            onSubmit: () => {
+                                console.log('🔐 [App] Passphrase submitted successfully');
+                            },
+                            onDialogClose: () => {
+                                console.log('🔐 [App] Passphrase dialog closed');
+                            }
+                        });
+                    });
+
                     // Listen for "no device found" event from backend
                     const unlistenNoDeviceFound = await listen('device:no-device-found', (event) => {
                         console.log('📱 [App] No device found event received from backend:', event.payload);
@@ -357,6 +376,7 @@ function App() {
                         if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
                         if (unlistenAccessError) unlistenAccessError();
                         if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
+                        if (unlistenPassphraseRequest) unlistenPassphraseRequest();
                         if (unlistenNoDeviceFound) unlistenNoDeviceFound();
                     };
                     

@@ -620,6 +620,39 @@ export function useDeviceInvalidStateDialog() {
   };
 }
 
+// Pre-configured dialog for Passphrase Entry
+export function usePassphraseDialog() {
+  const { show, hide, isShowing } = useDialog();
+  return {
+    show: (props: {
+      deviceId?: string;
+      onSubmit?: () => void;
+      onDialogClose?: () => void;
+    }) => {
+      const dialogId = `passphrase-${props.deviceId || 'default'}`;
+      console.log(`🔐 [PassphraseDialog] show() called for device:`, props.deviceId);
+      
+      show({
+        id: dialogId,
+        component: React.lazy(() => import('../components/PassphraseModal').then(m => ({ default: m.PassphraseModal }))),
+        props: {
+          isOpen: true,
+          deviceId: props.deviceId,
+          onClose: () => {
+            console.log(`🔐 [PassphraseDialog] Dialog closed`);
+            if (props.onDialogClose) props.onDialogClose();
+            hide(dialogId);
+          },
+        },
+        priority: 'high', // Passphrase dialog should have high priority
+        persistent: true, // Cannot be closed by clicking outside
+      });
+    },
+    hide: (deviceId?: string) => hide(`passphrase-${deviceId || 'default'}`),
+    isShowing: (deviceId?: string) => isShowing(`passphrase-${deviceId || 'default'}`),
+  };
+}
+
 // Pre-configured dialog for PIN Unlock
 export function usePinUnlockDialog() {
   const { show, hide, isShowing } = useDialog();
