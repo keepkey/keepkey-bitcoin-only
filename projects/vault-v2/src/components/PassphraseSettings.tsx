@@ -61,19 +61,20 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
               
               setStatusMessage('Passphrase protection enabled - restarting app...');
               
-              // Refresh device features and restart app after passphrase is enabled
+              // Restart backend and app after passphrase is enabled
               setTimeout(async () => {
                 try {
-                  await invoke('refresh_device_features', { deviceId });
+                  // Use the backend restart command to properly reset device state
+                  await invoke('restart_backend_startup');
                   
-                  // Restart the app since device now requires passphrase for all operations
+                  // Wait a moment for backend restart, then reload the app
                   console.log('Restarting app after enabling passphrase protection');
                   setTimeout(() => {
                     window.location.reload();
-                  }, 1000);
+                  }, 2000);
                 } catch (err) {
-                  console.error('Failed to refresh device features:', err);
-                  // Still restart even if refresh fails
+                  console.error('Failed to restart backend:', err);
+                  // Still restart even if backend restart fails
                   setTimeout(() => {
                     window.location.reload();
                   }, 1000);
@@ -108,7 +109,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       setPendingEnable(true);
       
       // Show info about the flow
-      setStatusMessage('You will be prompted to set a passphrase on your device');
+      setStatusMessage('Press and hold the button on your KeepKey to change the device Passphrase.');
     }
     
     try {
@@ -157,10 +158,10 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
           <Flex align="center" justify="space-between">
             <Flex direction="column">
               <Text fontWeight="medium">
-                BIP39 Passphrase
+                Enable Passphrase
               </Text>
               <Text fontSize="sm" color="gray.600">
-                Add an extra word to your recovery phrase for additional security
+                Enable the ability to have multiple wallets, accessible by using a unique passphrase for each wallet.
               </Text>
               {isEnabled && (
                 <Text fontSize="xs" color="green.600" mt={1}>
@@ -226,14 +227,9 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
             <Flex align="center" gap={2}>
               {isUpdating && <Spinner size="sm" color="blue.500" />}
               <Text fontWeight="bold" fontSize="sm" color={statusMessage?.startsWith('Error') ? "red.600" : "blue.600"}>
-                {statusMessage || 'Updating passphrase protection settings...'}
+                {statusMessage || (pendingEnable ? 'Press and hold the button on your KeepKey to change the device Passphrase.' : 'Updating passphrase protection settings...')}
               </Text>
             </Flex>
-            {isUpdating && !statusMessage && (
-              <Text fontSize="sm" mt={2} color="blue.600">
-                Please follow the instructions on your device.
-              </Text>
-            )}
           </Box>
         )}
 
