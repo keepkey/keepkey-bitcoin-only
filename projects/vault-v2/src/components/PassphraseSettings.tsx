@@ -6,20 +6,13 @@ import {
   Spinner,
   Switch,
 } from '@chakra-ui/react';
-// Removed icon import to fix component errors
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { usePassphraseDialog } from '../contexts/DialogContext';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 interface PassphraseSettingsProps {
   deviceId: string;
   isPassphraseEnabled?: boolean;
   onPassphraseToggle?: (enabled: boolean) => void;
-}
-
-interface PassphraseRequestPayload {
-  requestId: string;
-  deviceId: string;
 }
 
 export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
@@ -29,8 +22,6 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
 }) => {
   const [isEnabled, setIsEnabled] = useState(initialEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
-  const passphraseDialog = usePassphraseDialog();
-  const [pendingEnable, setPendingEnable] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   // Debug log the initial prop value
@@ -47,67 +38,9 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     console.log(`[PassphraseSettings] Device ${deviceId} - passphrase protection state: ${isEnabled ? 'enabled' : 'disabled'}`);
   }, [isEnabled, deviceId]);
 
-  // Listen for passphrase requests from the device during enable/disable flow
-  useEffect(() => {
-    const unlisten = listen<PassphraseRequestPayload>('passphrase_request', (event) => {
-      console.log('Passphrase request received during settings update:', event.payload);
-      
-      // If we're in the middle of enabling passphrase protection and device requests passphrase
-      if (pendingEnable && event.payload.deviceId === deviceId) {
-        // Open the passphrase entry modal
-        passphraseDialog.show({
-          deviceId: deviceId,
-          onSubmit: () => {
-            console.log('Passphrase submitted successfully');
-            
-            // Complete the passphrase enable flow
-            if (pendingEnable) {
-              setIsEnabled(true);
-              setPendingEnable(false);
-              
-              // Notify parent component to refresh device state
-              if (onPassphraseToggle) {
-                onPassphraseToggle(true);
-              }
-              
-              setStatusMessage('Passphrase protection enabled - restarting app...');
-              
-              // Restart backend and app after passphrase is enabled
-              setTimeout(async () => {
-                try {
-                  // Use the backend restart command to properly reset device state
-                  await invoke('restart_backend_startup');
-                  
-                  // Wait a moment for backend restart, then reload the app
-                  console.log('Restarting app after enabling passphrase protection');
-                  setTimeout(() => {
-                    window.location.reload();
-                  }, 2000);
-                } catch (err) {
-                  console.error('Failed to restart backend:', err);
-                  // Still restart even if backend restart fails
-                  setTimeout(() => {
-                    window.location.reload();
-                  }, 1000);
-                }
-              }, 1000);
-            }
-            
-            setIsUpdating(false);
-          },
-          onDialogClose: () => {
-            console.log('Passphrase dialog closed');
-            setPendingEnable(false);
-            setIsUpdating(false);
-          }
-        });
-      }
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [pendingEnable, deviceId, passphraseDialog]);
+  // Note: Removed passphrase_request listener since enabling passphrase protection
+  // now directly succeeds with ApplySettings and doesn't require passphrase entry
+  // during the enable flow. The app will restart and prompt for passphrase on next use.
 
   const handleTogglePassphrase = async () => {
     if (isUpdating) return;
@@ -116,58 +49,67 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     setIsUpdating(true);
     
     if (newState) {
-      // When enabling, we expect the device to request a passphrase
-      setPendingEnable(true);
-      
       // Show info about the flow
-      setStatusMessage('Press and hold the button on your KeepKey to change the device Passphrase.');
+      setStatusMessage('Press and hold the button on your KeepKey to confirm enabling passphrase protection.');
     }
     
     try {
       // Send the enable/disable command to the device
-      // This will trigger a PassphraseRequest from the device if enabling
       await invoke('enable_passphrase_protection', {
         deviceId,
         enabled: newState,
       });
       
-      // If disabling, restart the app after disabling
-      if (!newState) {
+      // Handle both enable and disable with restart
+      if (newState) {
+        // If enabling, update state and restart immediately
+        setIsEnabled(true);
+        
+        if (onPassphraseToggle) {
+          onPassphraseToggle(true);
+        }
+        
+        setStatusMessage('Passphrase protection enabled successfully! Restarting app...');
+        
+        // Restart entire app after a short delay to show success message
+        setTimeout(async () => {
+          try {
+            console.log('Restarting entire app after enabling passphrase protection');
+            await relaunch();
+          } catch (err) {
+            console.error('Failed to restart app:', err);
+            // Fallback to window reload if relaunch fails
+            window.location.reload();
+          }
+        }, 2000);
+        
+        setIsUpdating(false);
+      } else {
+        // If disabling, tell user to unplug device and restart the app
         setIsEnabled(false);
-        setPendingEnable(false);
         
         if (onPassphraseToggle) {
           onPassphraseToggle(false);
         }
         
-        setStatusMessage('Passphrase protection disabled - restarting app...');
+        setStatusMessage('Passphrase protection disabled - Please unplug your KeepKey and reconnect it. Restarting app...');
         
-        // Restart backend and app after passphrase is disabled
+        // Give user time to see the unplug message, then restart entire app
         setTimeout(async () => {
           try {
-            // Use the backend restart command to properly reset device state
-            await invoke('restart_backend_startup');
-            
-            // Wait a moment for backend restart, then reload the app
-            console.log('Restarting app after disabling passphrase protection');
-            setTimeout(() => {
-              window.location.reload();
-            }, 2000);
+            console.log('Restarting entire app after disabling passphrase protection');
+            await relaunch();
           } catch (err) {
-            console.error('Failed to restart backend:', err);
-            // Still restart even if backend restart fails
-            setTimeout(() => {
-              window.location.reload();
-            }, 1000);
+            console.error('Failed to restart app:', err);
+            // Fallback to window reload if relaunch fails
+            window.location.reload();
           }
-        }, 1000);
+        }, 3000); // Increased to 3 seconds to give user time to see the unplug message
         
         setIsUpdating(false);
       }
-      // If enabling, wait for the passphrase modal to complete
     } catch (err) {
       console.error('Failed to update passphrase protection:', err);
-      setPendingEnable(false);
       
       setStatusMessage(`Error: ${err instanceof Error ? err.message : 'Failed to update passphrase protection'}`);
       setTimeout(() => setStatusMessage(null), 5000);
@@ -217,27 +159,22 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
           </Flex>
 
           {(isUpdating || statusMessage) && (
-            <Box p={3} bg={statusMessage?.startsWith('Error') ? "red.50" : "blue.50"} 
+            <Box p={3} 
+                 bg={statusMessage?.startsWith('Error') ? "red.50" : 
+                     statusMessage?.includes('unplug') ? "orange.50" : "blue.50"} 
                  borderRadius="md" 
                  borderLeft="4px" 
-                 borderLeftColor={statusMessage?.startsWith('Error') ? "red.400" : "blue.400"}>
+                 borderLeftColor={statusMessage?.startsWith('Error') ? "red.400" : 
+                                  statusMessage?.includes('unplug') ? "orange.400" : "blue.400"}>
               <Flex align="center" gap={2}>
-                {isUpdating && <Spinner size="sm" color="blue.500" />}
-                <Text fontWeight="bold" fontSize="sm" color={statusMessage?.startsWith('Error') ? "red.600" : "blue.600"}>
-                  {statusMessage ? statusMessage : pendingEnable ? 'Press and hold the button on your KeepKey to change the device Passphrase.' : 'Updating passphrase protection settings...'}
+                {isUpdating && !statusMessage?.includes('unplug') && <Spinner size="sm" color="blue.500" />}
+                <Text fontWeight="bold" 
+                      fontSize={statusMessage?.includes('unplug') ? "md" : "sm"} 
+                      color={statusMessage?.startsWith('Error') ? "red.600" : 
+                             statusMessage?.includes('unplug') ? "orange.600" : "blue.600"}>
+                  {statusMessage || 'Updating passphrase protection settings...'}
                 </Text>
               </Flex>
-            </Box>
-          )}
-
-          {isEnabled && !isUpdating && (
-            <Box p={3} bg="orange.50" borderRadius="md" borderLeft="4px" borderLeftColor="orange.400">
-              <Text fontWeight="bold" fontSize="sm" mb={2}>
-                Important Security Notes
-              </Text>
-              <Text fontSize="sm" mb={1}>• Write down your passphrase separately from your recovery phrase</Text>
-              <Text fontSize="sm" mb={1}>• Use a strong, memorable passphrase</Text>
-              <Text fontSize="sm">• Your passphrase cannot be recovered if lost</Text>
             </Box>
           )}
 
