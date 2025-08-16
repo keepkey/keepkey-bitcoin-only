@@ -4,6 +4,7 @@ import {
   Text,
   Flex,
   Spinner,
+  Switch,
   useDisclosure,
 } from '@chakra-ui/react';
 // Removed icon import to fix component errors
@@ -33,9 +34,15 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
   const [pendingEnable, setPendingEnable] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // Sync local state with device features state
   useEffect(() => {
     setIsEnabled(initialEnabled);
   }, [initialEnabled]);
+
+  // Log passphrase protection status changes for debugging
+  useEffect(() => {
+    console.log(`[PassphraseSettings] Device ${deviceId} - passphrase protection: ${isEnabled ? 'enabled' : 'disabled'}`);
+  }, [isEnabled, deviceId]);
 
   // Listen for passphrase requests from the device during enable/disable flow
   useEffect(() => {
@@ -55,6 +62,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
               setIsEnabled(true);
               setPendingEnable(false);
               
+              // Notify parent component to refresh device state
               if (onPassphraseToggle) {
                 onPassphraseToggle(true);
               }
@@ -174,33 +182,13 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
               {isUpdating && (
                 <Spinner size="sm" color="blue.500" />
               )}
-              <Box position="relative">
-                <input
-                  type="checkbox"
-                  checked={isEnabled}
-                  onChange={handleTogglePassphrase}
-                  disabled={isUpdating}
-                  style={{ 
-                    transform: 'scale(1.5)',
-                    transition: 'all 0.2s ease-in-out',
-                    opacity: isUpdating ? 0.6 : 1,
-                    cursor: isUpdating ? 'not-allowed' : 'pointer'
-                  }}
-                />
-                {isUpdating && (
-                  <Box 
-                    position="absolute" 
-                    top="50%" 
-                    left="50%" 
-                    transform="translate(-50%, -50%)"
-                    pointerEvents="none"
-                  >
-                    <Text fontSize="xs" color="blue.500" fontWeight="bold">
-                      {pendingEnable ? 'Enabling...' : 'Disabling...'}
-                    </Text>
-                  </Box>
-                )}
-              </Box>
+              <Switch
+                isChecked={isEnabled}
+                onChange={handleTogglePassphrase}
+                isDisabled={isUpdating}
+                colorScheme="blue"
+                size="lg"
+              />
             </Flex>
           </Flex>
 
