@@ -4,12 +4,14 @@ import { invoke } from '@tauri-apps/api/core';
 interface SimplePassphraseModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSubmit?: () => void;
   deviceId?: string;
 }
 
 export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
   isOpen,
   onClose,
+  onSubmit,
   deviceId,
 }) => {
   const [passphrase, setPassphrase] = useState('');
@@ -43,6 +45,12 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
       // Clear sensitive data
       setPassphrase('');
       
+      // Call onSubmit callback if provided (for PassphraseSettings flow)
+      if (onSubmit) {
+        onSubmit();
+      }
+      
+      // Close the modal
       onClose();
     } catch (err) {
       console.error('Failed to send passphrase:', err);
