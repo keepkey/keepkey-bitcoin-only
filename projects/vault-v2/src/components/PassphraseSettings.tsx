@@ -5,7 +5,6 @@ import {
   Flex,
   Spinner,
   Switch,
-  useDisclosure,
 } from '@chakra-ui/react';
 // Removed icon import to fix component errors
 import { invoke } from '@tauri-apps/api/core';
@@ -156,9 +155,8 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
 
 
   return (
-    <>
-      <Box p={4} borderWidth={1} borderRadius="md">
-        <Flex direction="column" gap={4}>
+    <Box p={4} borderWidth={1} borderRadius="md">
+      <Flex direction="column" gap={4}>
           <Text fontSize="lg" fontWeight="bold">
             Passphrase Protection
           </Text>
@@ -182,61 +180,48 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
               {isUpdating && (
                 <Spinner size="sm" color="blue.500" />
               )}
-              <Switch
-                isChecked={isEnabled}
-                onChange={handleTogglePassphrase}
-                isDisabled={isUpdating}
-                colorScheme="blue"
+              <Switch.Root
+                checked={isEnabled}
+                onCheckedChange={handleTogglePassphrase}
+                disabled={isUpdating}
+                colorPalette="blue"
                 size="lg"
-              />
+              >
+                <Switch.HiddenInput />
+                <Switch.Control />
+              </Switch.Root>
             </Flex>
           </Flex>
 
-        {/*<Box p={3} borderRadius="md" borderLeft="4px" borderLeftColor="blue.400">*/}
-        {/*  <Text fontWeight="bold" fontSize="sm" mb={2}>*/}
-        {/*    About Passphrase Protection*/}
-        {/*  </Text>*/}
-        {/*  <Text fontSize="sm" mb={2}>*/}
-        {/*    When enabled, you'll be prompted for a passphrase to access your wallet. Different*/}
-        {/*    passphrases create completely different wallets, allowing for:*/}
-        {/*  </Text>*/}
-        {/*  <Box pl={4}>*/}
-        {/*    <Text fontSize="sm">• Hidden wallets for additional privacy</Text>*/}
-        {/*    <Text fontSize="sm">• Plausible deniability under duress</Text>*/}
-        {/*    <Text fontSize="sm">• Multiple wallet configurations from one seed</Text>*/}
-        {/*  </Box>*/}
-        {/*</Box>*/}
+          {(isUpdating || statusMessage) && (
+            <Box p={3} bg={statusMessage?.startsWith('Error') ? "red.50" : "blue.50"} 
+                 borderRadius="md" 
+                 borderLeft="4px" 
+                 borderLeftColor={statusMessage?.startsWith('Error') ? "red.400" : "blue.400"}>
+              <Flex align="center" gap={2}>
+                {isUpdating && <Spinner size="sm" color="blue.500" />}
+                <Text fontWeight="bold" fontSize="sm" color={statusMessage?.startsWith('Error') ? "red.600" : "blue.600"}>
+                  {statusMessage ? statusMessage : pendingEnable ? 'Press and hold the button on your KeepKey to change the device Passphrase.' : 'Updating passphrase protection settings...'}
+                </Text>
+              </Flex>
+            </Box>
+          )}
 
-        {(isUpdating || statusMessage) && (
-          <Box p={3} bg={statusMessage?.startsWith('Error') ? "red.50" : "blue.50"} 
-               borderRadius="md" 
-               borderLeft="4px" 
-               borderLeftColor={statusMessage?.startsWith('Error') ? "red.400" : "blue.400"}>
-            <Flex align="center" gap={2}>
-              {isUpdating && <Spinner size="sm" color="blue.500" />}
-              <Text fontWeight="bold" fontSize="sm" color={statusMessage?.startsWith('Error') ? "red.600" : "blue.600"}>
-                {statusMessage || (pendingEnable ? 'Press and hold the button on your KeepKey to change the device Passphrase.' : 'Updating passphrase protection settings...')}
+          {isEnabled && !isUpdating && (
+            <Box p={3} bg="orange.50" borderRadius="md" borderLeft="4px" borderLeftColor="orange.400">
+              <Text fontWeight="bold" fontSize="sm" mb={2}>
+                Important Security Notes
               </Text>
-            </Flex>
-          </Box>
-        )}
+              <Text fontSize="sm" mb={1}>• Write down your passphrase separately from your recovery phrase</Text>
+              <Text fontSize="sm" mb={1}>• Use a strong, memorable passphrase</Text>
+              <Text fontSize="sm">• Your passphrase cannot be recovered if lost</Text>
+            </Box>
+          )}
 
-        {isEnabled && !isUpdating && (
-          <Box p={3} bg="orange.50" borderRadius="md" borderLeft="4px" borderLeftColor="orange.400">
-            <Text fontWeight="bold" fontSize="sm" mb={2}>
-              Important Security Notes
-            </Text>
-            <Text fontSize="sm" mb={1}>• Write down your passphrase separately from your recovery phrase</Text>
-            <Text fontSize="sm" mb={1}>• Use a strong, memorable passphrase</Text>
-            <Text fontSize="sm">• Your passphrase cannot be recovered if lost</Text>
-          </Box>
-        )}
-
-        <Text fontSize="xs" color="gray.500" textAlign="center">
-          Device: {deviceId.slice(-8)}
-        </Text>
+          <Text fontSize="xs" color="gray.500" textAlign="center">
+            Device: {deviceId.slice(-8)}
+          </Text>
       </Flex>
     </Box>
-    </>
   );
 };
