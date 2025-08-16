@@ -171,6 +171,16 @@ export const KeepKeyDeviceList = ({
           .filter(entry => entry.device.is_keepkey)
           .map(async (entry) => {
             console.log('connectedDevices: ',connectedDevices)
+            // Debug log the features to see passphrase protection status
+            if (entry.features) {
+              console.log(`[KeepKeyDeviceList] Device ${entry.device.unique_id} FULL features object:`, entry.features);
+              console.log(`[KeepKeyDeviceList] Checking passphrase fields:`, {
+                passphraseProtection: entry.features.passphraseProtection,
+                passphrase_protection: entry.features.passphrase_protection,
+                passphraseCached: entry.features.passphraseCached,
+                passphrase_cached: entry.features.passphrase_cached,
+              });
+            }
             const device: Device = {
               id: entry.device.unique_id,
               name: entry.device.name || 'KeepKey Device',
@@ -340,11 +350,14 @@ export const KeepKeyDeviceList = ({
             {/* Passphrase Settings - Only show for initialized devices */}
             {device.features?.initialized && isDeviceCommunicating(device) && (
               <Box pt={3}>
+                {console.log(`[KeepKeyDeviceList] Rendering PassphraseSettings - device.features.passphraseProtection: ${device.features?.passphraseProtection}`, 
+                  `(type: ${typeof device.features?.passphraseProtection})`,
+                  `passphrase_protection: ${(device.features as any)?.passphrase_protection}`)}
                 <PassphraseSettings 
                   deviceId={device.id}
-                  isPassphraseEnabled={device.features?.passphraseProtection || false}
+                  isPassphraseEnabled={Boolean(device.features?.passphraseProtection || (device.features as any)?.passphrase_protection)}
                   onPassphraseToggle={(enabled) => {
-                    console.log(`Passphrase protection ${enabled ? 'enabled' : 'disabled'} for device ${device.id}`);
+                    console.log(`[KeepKeyDeviceList] Passphrase protection ${enabled ? 'enabled' : 'disabled'} for device ${device.id}`);
                     // Refresh device list to update the UI
                     loadDevices();
                   }}

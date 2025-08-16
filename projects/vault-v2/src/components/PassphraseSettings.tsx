@@ -33,14 +33,18 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
   const [pendingEnable, setPendingEnable] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // Debug log the initial prop value
+  console.log(`[PassphraseSettings] Component mounted/updated - deviceId: ${deviceId}, initialEnabled prop: ${initialEnabled}`);
+
   // Sync local state with device features state
   useEffect(() => {
+    console.log(`[PassphraseSettings] Syncing state - initialEnabled changed to: ${initialEnabled}`);
     setIsEnabled(initialEnabled);
   }, [initialEnabled]);
 
   // Log passphrase protection status changes for debugging
   useEffect(() => {
-    console.log(`[PassphraseSettings] Device ${deviceId} - passphrase protection: ${isEnabled ? 'enabled' : 'disabled'}`);
+    console.log(`[PassphraseSettings] Device ${deviceId} - passphrase protection state: ${isEnabled ? 'enabled' : 'disabled'}`);
   }, [isEnabled, deviceId]);
 
   // Listen for passphrase requests from the device during enable/disable flow
