@@ -19,7 +19,19 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  console.log('🔐 [SimplePassphraseModal] Component rendered with props:', {
+    isOpen,
+    deviceId,
+    hasOnClose: !!onClose,
+    hasOnSubmit: !!onSubmit
+  });
+
+  if (!isOpen) {
+    console.log('🔐 [SimplePassphraseModal] Not rendering because isOpen is false');
+    return null;
+  }
+
+  console.log('🔐 [SimplePassphraseModal] ✅ Rendering passphrase modal');
 
   const handleSubmit = async () => {
     // Basic validation

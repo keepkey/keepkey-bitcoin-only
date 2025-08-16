@@ -117,20 +117,32 @@ function App() {
             });
             
             if (loadingStatus === "Device ready" && deviceConnected && deviceUpdateComplete) {
-                const queue = getQueue();
-                console.log('📱 [App] All conditions met! Dialog queue length:', queue.length);
+                // Add a longer delay to prevent race conditions with passphrase dialog showing
+                const timeoutId = setTimeout(() => {
+                    const queue = getQueue();
+                    console.log('📱 [App] Dialog cleanup timeout fired! Queue length:', queue.length);
+                    console.log('📱 [App] Current queue contents:', queue.map(d => ({ id: d.id, priority: d.priority })));
+                    
+                    // Check if any passphrase dialogs are in the queue
+                    const hasPassphraseDialog = queue.some(d => d.id.includes('passphrase'));
+                    const hasPinDialog = queue.some(d => d.id.includes('pin'));
+                    
+                    if (hasPassphraseDialog) {
+                        console.log('📱 [App] ⚠️ Passphrase dialog detected - NOT clearing dialogs, blocking UI');
+                    } else if (hasPinDialog) {
+                        console.log('📱 [App] ⚠️ PIN dialog detected - NOT clearing dialogs, blocking UI');
+                    } else if (queue.length > 0) {
+                        console.warn('📱 [App] 🧹 Clearing stuck dialogs before showing VaultInterface:', queue.map(d => d.id));
+                        hideAll();
+                    } else {
+                        console.log('📱 [App] ✅ No stuck dialogs to clear');
+                    }
+                }, 500); // Longer delay to allow dialog to be added to queue
                 
-                // Check if any passphrase dialogs are in the queue
-                const hasPassphraseDialog = queue.some(d => d.id.includes('passphrase'));
-                
-                if (hasPassphraseDialog) {
-                    console.log('📱 [App] Passphrase dialog detected - NOT clearing dialogs, blocking UI');
-                } else if (queue.length > 0) {
-                    console.warn('📱 [App] Clearing stuck dialogs before showing VaultInterface:', queue.map(d => d.id));
-                    hideAll();
-                } else {
-                    console.log('📱 [App] No stuck dialogs to clear');
-                }
+                return () => {
+                    console.log('📱 [App] Cleaning up dialog cleanup timeout');
+                    clearTimeout(timeoutId);
+                };
             }
         }, [loadingStatus, deviceConnected, deviceUpdateComplete, getQueue, hideAll]);
         
@@ -250,6 +262,7 @@ function App() {
             const setupEventListeners = async () => {
                 try {
                     console.log('🎯 Setting up event listeners...');
+                    console.log('🔐 [App] ***** APP IS RUNNING - CONSOLE LOGS WORKING *****');
                     
                     // Signal backend that frontend is ready to receive events FIRST
                     try {
@@ -334,21 +347,66 @@ function App() {
                     });
 
                     // Listen for passphrase request events from device
+                    console.log('🔐 [App] Setting up passphrase_request event listener...');
+                    
+                    // Test listener for debugging - listen to ALL events
+                    try {
+                        const { Event } = await import('@tauri-apps/api/event');
+                        // @ts-ignore
+                        const unlistenAll = await Event.listen('*', (event) => {
+                            if (event.event.includes('passphrase')) {
+                                console.log('🔐 [App] ⚡ Received passphrase-related event:', event.event, event.payload);
+                            }
+                        });
+                    } catch (e) {
+                        console.log('🔐 [App] Could not set up universal event listener:', e);
+                    }
+                    
                     const unlistenPassphraseRequest = await listen('passphrase_request', (event) => {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const payload = event.payload as any;
-                        console.log('🔐 [App] Passphrase request received:', payload);
+                        console.log('🔐 [App] ==================== PASSPHRASE REQUEST RECEIVED ====================');
+                        console.log('🔐 [App] Event payload:', payload);
+                        console.log('🔐 [App] Event type:', event.event);
+                        console.log('🔐 [App] Current app state:', {
+                            loadingStatus,
+                            deviceConnected,
+                            deviceUpdateComplete,
+                            activeDialog: activeDialog?.id,
+                            queue: getQueue().map(d => d.id)
+                        });
                         
                         // Show passphrase dialog
-                        passphraseDialog.show({
-                            deviceId: payload.deviceId,
-                            onSubmit: () => {
-                                console.log('🔐 [App] Passphrase submitted successfully');
-                            },
-                            onDialogClose: () => {
-                                console.log('🔐 [App] Passphrase dialog closed');
-                            }
-                        });
+                        console.log('🔐 [App] Calling passphraseDialog.show()...');
+                        try {
+                            passphraseDialog.show({
+                                deviceId: payload.deviceId,
+                                onSubmit: () => {
+                                    console.log('🔐 [App] Passphrase submitted successfully');
+                                },
+                                onDialogClose: () => {
+                                    console.log('🔐 [App] Passphrase dialog closed');
+                                }
+                            });
+                            console.log('🔐 [App] passphraseDialog.show() completed successfully');
+                        } catch (error) {
+                            console.error('🔐 [App] Error calling passphraseDialog.show():', error);
+                        }
+                        console.log('🔐 [App] ==================== PASSPHRASE REQUEST HANDLER COMPLETE ====================');
+                    });
+
+                    // Listen for passphrase success event to close the modal
+                    const unlistenPassphraseSuccess = await listen('passphrase:success', (event) => {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        const payload = event.payload as any;
+                        console.log('🔐 [App] Passphrase success received:', payload);
+                        
+                        // Close the passphrase dialog for this device
+                        if (payload.deviceId) {
+                            passphraseDialog.hide(payload.deviceId);
+                        } else {
+                            passphraseDialog.hide();
+                        }
                     });
 
                     // Listen for "no device found" event from backend
@@ -383,6 +441,7 @@ function App() {
                         if (unlistenAccessError) unlistenAccessError();
                         if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
                         if (unlistenPassphraseRequest) unlistenPassphraseRequest();
+                        if (unlistenPassphraseSuccess) unlistenPassphraseSuccess();
                         if (unlistenNoDeviceFound) unlistenNoDeviceFound();
                     };
                     
@@ -397,7 +456,7 @@ function App() {
                 if (unlistenStatusUpdate) unlistenStatusUpdate();
                 if (unlistenDeviceReady) unlistenDeviceReady();
             };
-        }, [deviceConnected, noDeviceDialogShown, showNoDevice, reinitialize]); // Add dependencies for the no device listener
+        }, [noDeviceDialogShown, showNoDevice, reinitialize, passphraseDialog, activeDialog, getQueue]); // Add dependencies for the no device listener
 
         const mcpUrl = "http://127.0.0.1:1646/mcp";
 

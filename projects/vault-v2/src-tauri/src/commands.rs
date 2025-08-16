@@ -3750,15 +3750,24 @@ pub async fn send_pin_matrix_ack(
     }
 }
 
+/// Helper function to clear passphrase request state
+async fn clear_passphrase_state(device_id: &str) {
+    // This will be called from queue.rs
+}
+
 /// Send passphrase to device in response to PassphraseRequest
 #[tauri::command]
 pub async fn send_passphrase(
     device_id: String,
     passphrase: String,
     queue_manager: tauri::State<'_, DeviceQueueManager>,
+    last_responses: tauri::State<'_, Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>>,
     app: tauri::AppHandle,
 ) -> Result<bool, String> {
     log::info!("Sending passphrase for device: {} (length: {})", device_id, passphrase.len());
+    
+    // Get the pending operation for this device
+    let pending_op = super::device::pending_operations::take_pending_operation(&device_id).await;
     
     // Get device queue handle
     let queue_manager_guard = queue_manager.lock().await;
@@ -3775,13 +3784,123 @@ pub async fn send_passphrase(
         Ok(response) => {
             log::info!("✅ Passphrase sent, got response: {:?}", response.message_type());
             
-            // The device should now continue with the original operation
-            // In most cases, we'll get the PublicKey/Address response directly
-            handle_passphrase_response(response, device_id.clone(), app.clone())
+            // Handle the response and emit success event if we have a pending operation
+            if let Some(pending) = pending_op {
+                handle_passphrase_response_with_pending(
+                    response, 
+                    device_id.clone(), 
+                    pending.request_id,
+                    last_responses.inner().clone(),
+                    app.clone()
+                )
+            } else {
+                // The device should now continue with the original operation
+                // In most cases, we'll get the PublicKey/Address response directly
+                handle_passphrase_response(response, device_id.clone(), app.clone())
+            }
         }
         Err(e) => {
             log::error!("Failed to send passphrase for device {}: {}", device_id, e);
             Err(format!("Failed to send passphrase: {}", e))
+        }
+    }
+}
+
+// Helper function to handle passphrase response with pending operation
+fn handle_passphrase_response_with_pending(
+    response: keepkey_rust::messages::Message,
+    device_id: String,
+    request_id: String,
+    last_responses: Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    match response {
+        keepkey_rust::messages::Message::PublicKey(public_key) => {
+            // This was likely from a GetXpub request
+            log::info!("✅ Received PublicKey after passphrase");
+            
+            // Extract xpub and emit it to frontend
+            let xpub = public_key.xpub.unwrap_or_default();
+            if !xpub.is_empty() {
+                // Store the response
+                let device_response = DeviceResponse::Xpub {
+                    request_id: request_id.clone(),
+                    device_id: device_id.clone(),
+                    path: String::new(), // TODO: Get from pending operation
+                    xpub: xpub.clone(),
+                    script_type: None,
+                    success: true,
+                    error: None,
+                };
+                
+                // Store in last_responses
+                tokio::spawn(async move {
+                    let mut responses = last_responses.lock().await;
+                    responses.insert(request_id.clone(), device_response.clone());
+                    
+                    // Emit device:response event
+                    let event_payload = serde_json::json!({
+                        "device_id": device_id,
+                        "request_id": request_id,
+                        "response": device_response
+                    });
+                    
+                    let _ = app.emit("device:response", &event_payload);
+                    let _ = app.emit("passphrase:success", &serde_json::json!({
+                        "deviceId": device_id,
+                        "requestId": request_id,
+                    }));
+                });
+            }
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::ButtonRequest(button_req) => {
+            // Device is asking for button confirmation after passphrase
+            log::info!("✅ Device requesting button confirmation after passphrase");
+            
+            // Send ButtonAck to continue
+            // This is handled automatically by the queue, but we emit an event
+            let _ = app.emit("passphrase:confirming", &serde_json::json!({
+                "deviceId": device_id,
+                "requestId": request_id,
+            }));
+            
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Address(address) => {
+            // This was from a GetAddress request  
+            log::info!("✅ Received Address after passphrase: {}", address.address);
+            
+            let _ = app.emit("passphrase:success", &serde_json::json!({
+                "deviceId": device_id,
+                "requestId": request_id,
+                "address": address.address,
+            }));
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Success(_) => {
+            log::info!("✅ Passphrase accepted, operation completed");
+            
+            let _ = app.emit("passphrase:success", &serde_json::json!({
+                "deviceId": device_id,
+                "requestId": request_id,
+            }));
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Failure(f) => {
+            log::error!("❌ Device rejected passphrase: {:?}", f.message);
+            
+            let _ = app.emit("passphrase:failed", &serde_json::json!({
+                "deviceId": device_id,
+                "requestId": request_id,
+                "error": f.message.clone().unwrap_or_default(),
+            }));
+            
+            Err(format!("Passphrase rejected: {}", f.message.unwrap_or_default()))
+        }
+        _ => {
+            log::warn!("Unexpected response after passphrase: {:?}", response.message_type());
+            Ok(true) // Assume success if no failure
         }
     }
 }
@@ -3806,20 +3925,41 @@ fn handle_passphrase_response(
                     "xpub": xpub,
                 });
                 let _ = app.emit("passphrase_xpub_received", payload);
+                let _ = app.emit("passphrase:success", &serde_json::json!({
+                    "deviceId": device_id,
+                }));
             }
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::ButtonRequest(_) => {
+            // Device is asking for button confirmation after passphrase
+            log::info!("✅ Device requesting button confirmation after passphrase");
+            let _ = app.emit("passphrase:confirming", &serde_json::json!({
+                "deviceId": device_id,
+            }));
             Ok(true)
         }
         keepkey_rust::messages::Message::Address(address) => {
             // This was from a GetAddress request  
             log::info!("✅ Received Address after passphrase: {}", address.address);
+            let _ = app.emit("passphrase:success", &serde_json::json!({
+                "deviceId": device_id,
+            }));
             Ok(true)
         }
         keepkey_rust::messages::Message::Success(_) => {
             log::info!("✅ Passphrase accepted, operation completed");
+            let _ = app.emit("passphrase:success", &serde_json::json!({
+                "deviceId": device_id,
+            }));
             Ok(true)
         }
         keepkey_rust::messages::Message::Failure(f) => {
             log::error!("❌ Device rejected passphrase: {:?}", f.message);
+            let _ = app.emit("passphrase:failed", &serde_json::json!({
+                "deviceId": device_id,
+                "error": f.message.clone().unwrap_or_default(),
+            }));
             Err(format!("Passphrase rejected: {}", f.message.unwrap_or_default()))
         }
         _ => {

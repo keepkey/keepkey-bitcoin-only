@@ -630,14 +630,17 @@ export function usePassphraseDialog() {
       onDialogClose?: () => void;
     }) => {
       const dialogId = `passphrase-${props.deviceId || 'default'}`;
-      console.log(`🔐 [PassphraseDialog] show() called for device:`, props.deviceId);
+      console.log(`🔐 [PassphraseDialog] ==================== SHOW CALLED ====================`);
+      console.log(`🔐 [PassphraseDialog] Device ID:`, props.deviceId);
+      console.log(`🔐 [PassphraseDialog] Dialog ID:`, dialogId);
       
       // Check if dialog is already showing
       if (isShowing(dialogId)) {
-        console.log(`🔐 [PassphraseDialog] Dialog already showing for device:`, props.deviceId);
+        console.log(`🔐 [PassphraseDialog] ⚠️ Dialog already showing for device:`, props.deviceId);
         return;
       }
       
+      console.log(`🔐 [PassphraseDialog] Calling show() with config...`);
       show({
         id: dialogId,
         component: React.lazy(() => import('../components/SimplePassphraseModal')),
@@ -654,6 +657,8 @@ export function usePassphraseDialog() {
         priority: 'high', // Passphrase dialog should have high priority
         persistent: true, // Cannot be closed by clicking outside
       });
+      console.log(`🔐 [PassphraseDialog] show() config submitted to dialog system`);
+      console.log(`🔐 [PassphraseDialog] ==================== SHOW COMPLETE ====================`);
     },
     hide: (deviceId?: string) => hide(`passphrase-${deviceId || 'default'}`),
     isShowing: (deviceId?: string) => isShowing(`passphrase-${deviceId || 'default'}`),
