@@ -644,6 +644,7 @@ export function usePassphraseDialog() {
         props: {
           isOpen: true,
           deviceId: props.deviceId,
+          onSubmit: props.onSubmit,
           onClose: () => {
             console.log(`🔐 [PassphraseDialog] Dialog closed`);
             if (props.onDialogClose) props.onDialogClose();
