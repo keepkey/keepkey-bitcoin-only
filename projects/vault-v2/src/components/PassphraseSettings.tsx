@@ -127,7 +127,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
         enabled: newState,
       });
       
-      // If disabling, we're done
+      // If disabling, restart the app after disabling
       if (!newState) {
         setIsEnabled(false);
         setPendingEnable(false);
@@ -136,8 +136,27 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
           onPassphraseToggle(false);
         }
         
-        setStatusMessage('Passphrase protection has been disabled');
-        setTimeout(() => setStatusMessage(null), 3000);
+        setStatusMessage('Passphrase protection disabled - restarting app...');
+        
+        // Restart backend and app after passphrase is disabled
+        setTimeout(async () => {
+          try {
+            // Use the backend restart command to properly reset device state
+            await invoke('restart_backend_startup');
+            
+            // Wait a moment for backend restart, then reload the app
+            console.log('Restarting app after disabling passphrase protection');
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
+          } catch (err) {
+            console.error('Failed to restart backend:', err);
+            // Still restart even if backend restart fails
+            setTimeout(() => {
+              window.location.reload();
+            }, 1000);
+          }
+        }, 1000);
         
         setIsUpdating(false);
       }
