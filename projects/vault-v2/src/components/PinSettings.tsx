@@ -7,6 +7,7 @@ import {
   Switch,
 } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
+import { usePinCreationDialog } from '../contexts/DialogContext';
 
 interface PinSettingsProps {
   deviceId: string;
@@ -22,6 +23,7 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
   const [isEnabled, setIsEnabled] = useState(initialEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const pinCreationDialog = usePinCreationDialog();
 
   // Debug log the initial prop value
   console.log(`[PinSettings] Component mounted/updated - deviceId: ${deviceId}, initialEnabled prop: ${initialEnabled}`);
@@ -41,25 +43,35 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
     if (isUpdating) return;
     
     const newState = !isEnabled;
-    setIsUpdating(true);
     
     try {
       if (newState) {
-        // Enabling PIN protection
-        setStatusMessage('Follow the instructions on your KeepKey to set up a PIN...');
+        // Enabling PIN protection - show the PIN creation dialog
+        console.log('[PinSettings] Opening PIN creation dialog for device:', deviceId);
         
-        await invoke('enable_pin_protection', {
+        pinCreationDialog.show({
           deviceId,
+          onComplete: () => {
+            console.log('[PinSettings] PIN creation completed successfully');
+            setIsEnabled(true);
+            setStatusMessage('PIN protection enabled successfully!');
+            
+            if (onPinToggle) {
+              onPinToggle(true);
+            }
+            
+            // Clear success message after a delay
+            setTimeout(() => setStatusMessage(null), 3000);
+          },
+          onDialogClose: () => {
+            console.log('[PinSettings] PIN creation dialog closed');
+            // User cancelled - keep toggle in disabled state
+            setIsEnabled(false);
+          }
         });
-        
-        setIsEnabled(true);
-        setStatusMessage('PIN protection enabled successfully!');
-        
-        if (onPinToggle) {
-          onPinToggle(true);
-        }
       } else {
         // Disabling PIN protection
+        setIsUpdating(true);
         setStatusMessage('Enter your current PIN on the KeepKey to disable PIN protection...');
         
         await invoke('disable_pin_protection', {
@@ -72,18 +84,23 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
         if (onPinToggle) {
           onPinToggle(false);
         }
+        
+        // Clear success message after a delay
+        setTimeout(() => setStatusMessage(null), 3000);
       }
-      
-      // Clear success message after a delay
-      setTimeout(() => setStatusMessage(null), 3000);
       
     } catch (err) {
       console.error('Failed to update PIN protection:', err);
       
       setStatusMessage(`Error: ${err instanceof Error ? err.message : 'Failed to update PIN protection'}`);
       setTimeout(() => setStatusMessage(null), 5000);
+      
+      // Reset toggle to previous state on error
+      setIsEnabled(!newState);
     } finally {
-      setIsUpdating(false);
+      if (!newState) {
+        setIsUpdating(false);
+      }
     }
   };
 

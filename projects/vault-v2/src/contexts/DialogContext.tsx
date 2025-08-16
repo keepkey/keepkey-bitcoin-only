@@ -702,3 +702,43 @@ export function usePinUnlockDialog() {
     isShowing: (deviceId: string) => isShowing(`pin-unlock-${deviceId}`),
   };
 }
+
+// Pre-configured dialog for PIN Creation
+export function usePinCreationDialog() {
+  const { show, hide, isShowing } = useDialog();
+  return {
+    show: (props: {
+      deviceId: string;
+      deviceLabel?: string;
+      onComplete?: () => void;
+      onDialogClose?: () => void;
+    }) => {
+      const dialogId = `pin-creation-${props.deviceId}`;
+      console.log(`🔐 [PinCreationDialog] show() called for device:`, props.deviceId);
+      
+      show({
+        id: dialogId,
+        component: React.lazy(() => import('../components/PinCreationDialog').then(m => ({ default: m.PinCreationDialog }))),
+        props: {
+          isOpen: true,
+          deviceId: props.deviceId,
+          deviceLabel: props.deviceLabel,
+          onComplete: () => {
+            console.log(`🔐 [PinCreationDialog] PIN creation completed successfully`);
+            if (props.onComplete) props.onComplete();
+            hide(dialogId);
+          },
+          onClose: () => {
+            console.log(`🔐 [PinCreationDialog] Dialog closed`);
+            if (props.onDialogClose) props.onDialogClose();
+            hide(dialogId);
+          }
+        },
+        priority: 'high', // High priority for PIN creation
+        persistent: true, // User must complete or explicitly close
+      });
+    },
+    hide: (deviceId: string) => hide(`pin-creation-${deviceId}`),
+    isShowing: (deviceId: string) => isShowing(`pin-creation-${deviceId}`),
+  };
+}
