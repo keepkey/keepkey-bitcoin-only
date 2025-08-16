@@ -259,6 +259,15 @@ function App() {
             let unlistenStatusUpdate: (() => void) | undefined;
             let unlistenDeviceReady: (() => void) | undefined;
 
+            // Add keyboard listener for F12 to open devtools
+            const handleKeyDown = (e: KeyboardEvent) => {
+                if (e.key === 'F12' || (e.metaKey && e.altKey && e.key === 'i')) {
+                    e.preventDefault();
+                    invoke('open_devtools').catch(console.error);
+                }
+            };
+            window.addEventListener('keydown', handleKeyDown);
+
             const setupEventListeners = async () => {
                 try {
                     console.log('🎯 Setting up event listeners...');
@@ -351,9 +360,9 @@ function App() {
                     
                     // Test listener for debugging - listen to ALL events
                     try {
-                        const { Event } = await import('@tauri-apps/api/event');
+                        const { listen } = await import('@tauri-apps/api/event');
                         // @ts-ignore
-                        const unlistenAll = await Event.listen('*', (event) => {
+                        const unlistenAll = await listen('*', (event) => {
                             if (event.event.includes('passphrase')) {
                                 console.log('🔐 [App] ⚡ Received passphrase-related event:', event.event, event.payload);
                             }
@@ -453,6 +462,7 @@ function App() {
             setupEventListeners();
 
             return () => {
+                window.removeEventListener('keydown', handleKeyDown);
                 if (unlistenStatusUpdate) unlistenStatusUpdate();
                 if (unlistenDeviceReady) unlistenDeviceReady();
             };

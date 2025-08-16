@@ -1,4 +1,4 @@
-import { VStack, HStack, Box, Text, Button, Badge, Icon, Spinner, IconButton, Flex, Alert } from '@chakra-ui/react'
+import { VStack, HStack, Box, Text, Button, Badge, Icon, Spinner, IconButton, Flex } from '@chakra-ui/react'
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -6,6 +6,7 @@ import { FaUsb, FaDownload, FaWallet, FaShieldAlt, FaExclamationTriangle, FaTool
 import type { DeviceFeatures, DeviceStatus } from '../types/device'
 import { useTroubleshootingWizard } from '../contexts/DialogContext'
 import { PassphraseSettings } from './PassphraseSettings'
+import { PinSettings } from './PinSettings'
 const TAG = " | KeepKeyDeviceList | "
 interface Device {
   id: string
@@ -347,22 +348,47 @@ export const KeepKeyDeviceList = ({
               </Box>
             )}
 
-            {/* Passphrase Settings - Only show for initialized devices */}
+            {/* Security Settings - Only show for initialized devices */}
             {device.features?.initialized && isDeviceCommunicating(device) && (
-              <Box pt={3}>
-                {console.log(`[KeepKeyDeviceList] Rendering PassphraseSettings - device.features.passphraseProtection: ${device.features?.passphraseProtection}`, 
-                  `(type: ${typeof device.features?.passphraseProtection})`,
-                  `passphrase_protection: ${(device.features as any)?.passphrase_protection}`)}
-                <PassphraseSettings 
-                  deviceId={device.id}
-                  isPassphraseEnabled={Boolean(device.features?.passphraseProtection || (device.features as any)?.passphrase_protection)}
-                  onPassphraseToggle={(enabled) => {
-                    console.log(`[KeepKeyDeviceList] Passphrase protection ${enabled ? 'enabled' : 'disabled'} for device ${device.id}`);
-                    // Refresh device list to update the UI
-                    loadDevices();
-                  }}
-                />
-              </Box>
+              <VStack gap={3} pt={3}>
+                {/* PIN Settings */}
+                <Box w="full">
+                  {(() => {
+                    console.log(`[KeepKeyDeviceList] Rendering PinSettings - device.features.pinProtection: ${device.features?.pinProtection}`, 
+                      `(type: ${typeof device.features?.pinProtection})`,
+                      `pin_protection: ${(device.features as any)?.pin_protection}`);
+                    return null;
+                  })()}
+                  <PinSettings 
+                    deviceId={device.id}
+                    isPinEnabled={Boolean(device.features?.pinProtection || (device.features as any)?.pin_protection)}
+                    onPinToggle={(enabled) => {
+                      console.log(`[KeepKeyDeviceList] PIN protection ${enabled ? 'enabled' : 'disabled'} for device ${device.id}`);
+                      // Refresh device list to update the UI
+                      loadDevices();
+                    }}
+                  />
+                </Box>
+                
+                {/* Passphrase Settings */}
+                <Box w="full">
+                  {(() => {
+                    console.log(`[KeepKeyDeviceList] Rendering PassphraseSettings - device.features.passphraseProtection: ${device.features?.passphraseProtection}`, 
+                      `(type: ${typeof device.features?.passphraseProtection})`,
+                      `passphrase_protection: ${(device.features as any)?.passphrase_protection}`);
+                    return null;
+                  })()}
+                  <PassphraseSettings 
+                    deviceId={device.id}
+                    isPassphraseEnabled={Boolean(device.features?.passphraseProtection || (device.features as any)?.passphrase_protection)}
+                    onPassphraseToggle={(enabled) => {
+                      console.log(`[KeepKeyDeviceList] Passphrase protection ${enabled ? 'enabled' : 'disabled'} for device ${device.id}`);
+                      // Refresh device list to update the UI
+                      loadDevices();
+                    }}
+                  />
+                </Box>
+              </VStack>
             )}
 
             {/* Action Buttons - Conditional based on device communication */}

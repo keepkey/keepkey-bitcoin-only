@@ -19,6 +19,19 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+// Command to open devtools
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        // In Tauri v2, devtools are enabled via config and can be opened via inspector
+        // The devtools will be available via right-click menu when enabled in config
+        println!("DevTools enabled via config - use right-click menu or F12 to open");
+        Ok(())
+    } else {
+        Err("Main window not found".to_string())
+    }
+}
+
 // Onboarding related commands moved to commands.rs
 
 
@@ -190,6 +203,9 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // Devtools are enabled via tauri.conf.json with "devtools": true
+            // They can be opened with right-click menu or F12 key
+            
             // Initialize device logging system
             if let Err(e) = logging::init_device_logger() {
                 eprintln!("Failed to initialize device logger: {}", e);
@@ -266,6 +282,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            open_devtools,
             vault_change_view,
             vault_open_support,
             vault_open_app,
@@ -299,6 +316,10 @@ pub fn run() {
             commands::handle_passphrase_request,
             commands::send_passphrase,
             commands::enable_passphrase_protection,
+            // PIN management commands
+            commands::enable_pin_protection,
+            commands::disable_pin_protection,
+            commands::change_pin,
             // PIN unlock commands  
             commands::start_pin_unlock,
             commands::send_pin_unlock_response,

@@ -4270,6 +4270,156 @@ pub async fn enable_passphrase_protection(
     Ok(())
 }
 
+/// Enable PIN protection for a device
+#[tauri::command]
+pub async fn enable_pin_protection(
+    device_id: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Enabling PIN protection for device {}", device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Send ChangePin message to set a new PIN
+    let change_pin = keepkey_rust::messages::ChangePin {
+        remove: Some(false), // false means set/change PIN, true means remove
+    };
+    let message = keepkey_rust::messages::Message::ChangePin(change_pin);
+    
+    match queue_handle.send_raw(message, true).await {
+        Ok(response) => {
+            match response {
+                keepkey_rust::messages::Message::Success(_) => {
+                    log::info!("PIN protection enabled successfully for device {}", device_id);
+                    Ok(())
+                }
+                keepkey_rust::messages::Message::Failure(failure) => {
+                    let error = format!("Device rejected PIN change: {}", failure.message.unwrap_or_default());
+                    log::error!("{}", error);
+                    Err(error)
+                }
+                _ => {
+                    let error = "Unexpected response from device".to_string();
+                    log::error!("{}", error);
+                    Err(error)
+                }
+            }
+        }
+        Err(e) => {
+            let error = format!("Failed to enable PIN protection: {}", e);
+            log::error!("{}", error);
+            Err(error)
+        }
+    }
+}
+
+/// Disable PIN protection for a device
+#[tauri::command]
+pub async fn disable_pin_protection(
+    device_id: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Disabling PIN protection for device {}", device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Send ChangePin message to remove PIN
+    let change_pin = keepkey_rust::messages::ChangePin {
+        remove: Some(true), // true means remove PIN
+    };
+    let message = Message::ChangePin(change_pin);
+    
+    match queue_handle.send_raw(message, true).await {
+        Ok(response) => {
+            match response {
+                keepkey_rust::messages::Message::Success(_) => {
+                    log::info!("PIN protection disabled successfully for device {}", device_id);
+                    Ok(())
+                }
+                keepkey_rust::messages::Message::Failure(failure) => {
+                    let error = format!("Device rejected PIN removal: {}", failure.message.unwrap_or_default());
+                    log::error!("{}", error);
+                    Err(error)
+                }
+                _ => {
+                    let error = "Unexpected response from device".to_string();
+                    log::error!("{}", error);
+                    Err(error)
+                }
+            }
+        }
+        Err(e) => {
+            let error = format!("Failed to disable PIN protection: {}", e);
+            log::error!("{}", error);
+            Err(error)
+        }
+    }
+}
+
+/// Change PIN for a device
+#[tauri::command]
+pub async fn change_pin(
+    device_id: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Changing PIN for device {}", device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Send ChangePin message to change PIN (requires current PIN first)
+    let change_pin = keepkey_rust::messages::ChangePin {
+        remove: Some(false), // false means change PIN
+    };
+    let message = Message::ChangePin(change_pin);
+    
+    match queue_handle.send_raw(message, true).await {
+        Ok(response) => {
+            match response {
+                keepkey_rust::messages::Message::Success(_) => {
+                    log::info!("PIN changed successfully for device {}", device_id);
+                    Ok(())
+                }
+                keepkey_rust::messages::Message::Failure(failure) => {
+                    let error = format!("Device rejected PIN change: {}", failure.message.unwrap_or_default());
+                    log::error!("{}", error);
+                    Err(error)
+                }
+                _ => {
+                    let error = "Unexpected response from device".to_string();
+                    log::error!("{}", error);
+                    Err(error)
+                }
+            }
+        }
+        Err(e) => {
+            let error = format!("Failed to change PIN: {}", e);
+            log::error!("{}", error);
+            Err(error)
+        }
+    }
+}
+
 /// Clear all device-related caches (used for backend restart)
 pub async fn clear_all_device_caches() {
     // Clear PIN flow devices

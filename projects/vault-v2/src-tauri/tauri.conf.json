@@ -14,11 +14,13 @@
       {
         "title": "KeepKey Vault v2",
         "width": 1400,
-        "height": 920
+        "height": 920,
+        "devtools": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "devCsp": null
     }
   },
   "plugins": {
