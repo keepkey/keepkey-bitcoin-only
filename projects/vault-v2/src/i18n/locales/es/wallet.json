@@ -1,0 +1,23 @@
+{
+  "creation": {
+    "title": "Crear nueva billetera",
+    "subtitle": "Configura una nueva billetera en tu KeepKey"
+  },
+  "portfolio": {
+    "title": "Portafolio",
+    "totalBalance": "Saldo total",
+    "availableBalance": "Saldo disponible",
+    "balance": "Saldo",
+    "loading": "Cargando portafolio..."
+  },
+  "assets": {
+    "title": "Activos",
+    "bitcoin": "Bitcoin"
+  },
+  "send": {
+    "title": "Enviar"
+  },
+  "receive": {
+    "title": "Recibir"
+  }
+}

@@ -8,8 +8,16 @@ export const LanguageSwitcher: React.FC = () => {
 
   const handleLanguageChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const languageCode = event.target.value;
-    i18n.changeLanguage(languageCode);
-    localStorage.setItem('preferredLanguage', languageCode);
+    console.log('🌐 Language changing to:', languageCode);
+    console.log('🌐 Available languages:', Object.keys(i18n.store.data));
+    console.log('🌐 Current language before change:', i18n.language);
+    
+    i18n.changeLanguage(languageCode).then(() => {
+      console.log('🌐 Language changed successfully to:', i18n.language);
+      localStorage.setItem('preferredLanguage', languageCode);
+    }).catch((error) => {
+      console.error('🌐 Language change failed:', error);
+    });
   };
 
   return (

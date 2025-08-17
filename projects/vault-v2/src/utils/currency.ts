@@ -16,9 +16,9 @@ export const SUPPORTED_CURRENCIES: CurrencyConfig[] = [
 ];
 
 export const NUMBER_FORMATS = {
-  'en-US': { code: '1,000.00', locale: 'en-US', groupSeparator: ',', decimalSeparator: '.' },
-  'de-DE': { code: '1.000,00', locale: 'de-DE', groupSeparator: '.', decimalSeparator: ',' },
-  'fr-FR': { code: '1 000,00', locale: 'fr-FR', groupSeparator: ' ', decimalSeparator: ',' },
+  'en-US': { code: '1,000.00', locale: 'en-US', groupSeparator: ',', decimalSeparator: '.', decimals: 2 },
+  'de-DE': { code: '1.000,00', locale: 'de-DE', groupSeparator: '.', decimalSeparator: ',', decimals: 2 },
+  'fr-FR': { code: '1 000,00', locale: 'fr-FR', groupSeparator: ' ', decimalSeparator: ',', decimals: 2 },
   'no-decimal': { code: '1,000', locale: 'en-US', groupSeparator: ',', decimalSeparator: '.', decimals: 0 },
 };
 

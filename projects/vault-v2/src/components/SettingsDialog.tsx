@@ -657,7 +657,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
 
               <Tabs.Content value="general" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
-                  <Text color="white" fontSize="lg" fontWeight="semibold">General Settings</Text>
+                  <Text color="white" fontSize="lg" fontWeight="semibold">{t('settings:general.title')}</Text>
                   
                   {/* Language Settings */}
                   <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">

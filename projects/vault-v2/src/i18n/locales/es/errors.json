@@ -1,0 +1,8 @@
+{
+  "device": {
+    "notConnected": "No hay dispositivo KeepKey conectado"
+  },
+  "generic": {
+    "unknown": "Ocurrió un error desconocido"
+  }
+}

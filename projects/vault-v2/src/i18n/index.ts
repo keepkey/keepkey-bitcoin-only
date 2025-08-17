@@ -11,6 +11,15 @@ import enDevice from './locales/en/device.json';
 import enWallet from './locales/en/wallet.json';
 import enTransaction from './locales/en/transaction.json';
 
+// Spanish translations
+import esCommon from './locales/es/common.json';
+import esOnboarding from './locales/es/onboarding.json';
+import esSettings from './locales/es/settings.json';
+import esErrors from './locales/es/errors.json';
+import esDevice from './locales/es/device.json';
+import esWallet from './locales/es/wallet.json';
+import esTransaction from './locales/es/transaction.json';
+
 const resources = {
   en: {
     common: enCommon,
@@ -20,6 +29,15 @@ const resources = {
     device: enDevice,
     wallet: enWallet,
     transaction: enTransaction,
+  },
+  es: {
+    common: esCommon,
+    onboarding: esOnboarding,
+    settings: esSettings,
+    errors: esErrors,
+    device: esDevice,
+    wallet: esWallet,
+    transaction: esTransaction,
   },
 };
 
@@ -44,6 +62,16 @@ i18n
     react: {
       useSuspense: false, // Disable suspense for better error handling
     },
+    
+    debug: true, // Enable debug mode to see what's happening
+  }, (err, t) => {
+    if (err) {
+      console.error('🌐 i18n initialization failed:', err);
+    } else {
+      console.log('🌐 i18n initialized successfully');
+      console.log('🌐 Available languages:', Object.keys(resources));
+      console.log('🌐 Current language:', i18n.language);
+    }
   });
 
 export default i18n;
