@@ -50,9 +50,16 @@ pub async fn start_pin_setup(
     let change_pin = ChangePin {
         remove: Some(false), // false means set/change PIN
     };
-    let message = Message::ChangePin(change_pin);
+    
+    // Log the message type value to debug
+    log::info!("PIN setup: Creating ChangePin message with remove=false for device {}", device_id);
+    log::info!("PIN setup: ChangePin MessageType value should be: 4");
+    
+    let message = Message::ChangePin(change_pin.clone());
     
     log::info!("PIN setup: Sending ChangePin message with remove=false for device {}", device_id);
+    log::debug!("PIN setup: ChangePin message details: remove={:?}", change_pin.remove);
+    log::debug!("PIN setup: Message type: {:?}", message.message_type());
     
     match queue_handle.send_raw(message, true).await {
         Ok(response) => {
@@ -116,7 +123,9 @@ pub async fn start_pin_setup(
                     let error = format!("Device rejected PIN setup - Code: {:?}, Message: {}", failure.code, error_msg);
                     log::error!("PIN setup failed with device error: {}", error);
                     log::error!("Full failure details: {:?}", failure);
-                    Err(error)
+                    log::error!("Failure code value: {:?}", failure.code);
+                    log::error!("Failure message: {:?}", failure.message);
+                    Err(format!("Failure: {}", error_msg))
                 }
                 _ => {
                     let error = format!("Unexpected response from device: {:?}", response);

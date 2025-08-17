@@ -2,6 +2,7 @@ use super::{Message, MessageType};
 use core::fmt::{self, Display, Formatter};
 use prost::DecodeError;
 use thiserror::Error;
+use log;
 
 #[derive(Error, Debug)]
 pub struct EncodeError {
@@ -42,7 +43,9 @@ impl Message {
         }
         buf.put_u8(b'#');
         buf.put_u8(b'#');
-        buf.put_u16(Into::<i32>::into(self.message_type()).try_into().unwrap());
+        let msg_type_value: i32 = self.message_type().into();
+        log::debug!("Encoding message type: {:?} as value: {}", self.message_type(), msg_type_value);
+        buf.put_u16(msg_type_value.try_into().unwrap());
         buf.put_u32(encoded_len.try_into().unwrap());
         prost::Message::encode(self, buf)
             .map_err(|x| EncodeError::new(x.required_capacity(), x.remaining()))?;

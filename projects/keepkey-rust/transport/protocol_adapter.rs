@@ -19,10 +19,23 @@ where
         info!("ProtocolAdapter::send: Sending message type: {:?}", msg.message_type());
         
         println!("-> {:?}", msg.message_type());
+        
+        // Log the raw message type value for ChangePin
+        if matches!(msg.message_type(), crate::messages::MessageType::ChangePin) {
+            info!("ProtocolAdapter::send: ChangePin message type ID: {}", msg.message_type() as i32);
+        }
+        
         let mut out_buf = Vec::<u8>::with_capacity(msg.encoded_len());
         msg.encode(&mut out_buf)?;
         
         debug!("ProtocolAdapter::send: Encoded message size: {} bytes", out_buf.len());
+        
+        // Log first few bytes of encoded message for debugging
+        if out_buf.len() >= 8 {
+            debug!("ProtocolAdapter::send: Message header bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                out_buf[0], out_buf[1], out_buf[2], out_buf[3], 
+                out_buf[4], out_buf[5], out_buf[6], out_buf[7]);
+        }
         
         self.write(&out_buf, msg.write_timeout())?;
 
