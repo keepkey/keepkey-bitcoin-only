@@ -19,6 +19,9 @@ use serde_json::Value;
 use log;
 use std::time::Duration;
 
+// PIN setup module
+pub mod pin_setup;
+
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
 

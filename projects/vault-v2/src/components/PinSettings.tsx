@@ -7,7 +7,7 @@ import {
   Switch,
 } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
-import { useEnablePinDialog } from '../contexts/DialogContext';
+import { usePinSetupDialog } from '../contexts/DialogContext';
 
 interface PinSettingsProps {
   deviceId: string;
@@ -23,7 +23,7 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
   const [isEnabled, setIsEnabled] = useState(initialEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const enablePinDialog = useEnablePinDialog();
+  const pinSetupDialog = usePinSetupDialog();
 
   // Debug log the initial prop value
   console.log(`[PinSettings] Component mounted/updated - deviceId: ${deviceId}, initialEnabled prop: ${initialEnabled}`);
@@ -46,13 +46,13 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
     
     try {
       if (newState) {
-        // Enabling PIN protection - show the enable PIN dialog
-        console.log('[PinSettings] Opening enable PIN dialog for device:', deviceId);
+        // Enabling PIN protection - show the PIN setup dialog
+        console.log('[PinSettings] Opening PIN setup dialog for device:', deviceId);
         
-        enablePinDialog.show({
+        pinSetupDialog.show({
           deviceId,
           onSuccess: () => {
-            console.log('[PinSettings] PIN enabled successfully');
+            console.log('[PinSettings] PIN setup completed successfully');
             setIsEnabled(true);
             setStatusMessage('PIN protection enabled successfully!');
             
@@ -64,14 +64,14 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
             setTimeout(() => setStatusMessage(null), 3000);
           },
           onError: (error) => {
-            console.error('[PinSettings] Failed to enable PIN:', error);
+            console.error('[PinSettings] Failed to setup PIN:', error);
             setStatusMessage(`Error: ${error}`);
             setTimeout(() => setStatusMessage(null), 5000);
             // Keep toggle in disabled state on error
             setIsEnabled(false);
           },
           onDialogClose: () => {
-            console.log('[PinSettings] Enable PIN dialog closed');
+            console.log('[PinSettings] PIN setup dialog closed');
             // User cancelled - keep toggle in disabled state
             setIsEnabled(false);
           }

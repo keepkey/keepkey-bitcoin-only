@@ -45,25 +45,22 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
     setStep('setting');
     
     try {
-      // Call the enable_pin_protection command
-      await invoke('enable_pin_protection', { deviceId });
+      // For now, just close this dialog and trigger the PIN creation dialog
+      // which has the proper PIN matrix UI
+      console.log('[EnablePinDialog] Closing instruction dialog and opening PIN matrix dialog');
+      onClose();
       
-      // Success - PIN was set
-      setStep('success');
-      setTimeout(() => {
-        if (onSuccess) onSuccess();
-        onClose();
-      }, 2000);
+      // The PinSettings component will handle showing the proper PIN creation dialog
+      // This is just an instructional dialog
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error('Failed to enable PIN protection:', errorMessage);
+      console.error('Failed to start PIN setup:', errorMessage);
       
       setError(errorMessage);
       setStep('error');
       
       if (onError) onError(errorMessage);
-    } finally {
       setIsProcessing(false);
     }
   };

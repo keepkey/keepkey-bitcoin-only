@@ -785,3 +785,46 @@ export function useEnablePinDialog() {
     isShowing: (deviceId: string) => isShowing(`enable-pin-${deviceId}`),
   };
 }
+
+// Pre-configured dialog for PIN Setup (with PIN matrix UI)
+export function usePinSetupDialog() {
+  const { show, hide, isShowing } = useDialog();
+  return {
+    show: (props: {
+      deviceId: string;
+      onSuccess?: () => void;
+      onError?: (error: string) => void;
+      onDialogClose?: () => void;
+    }) => {
+      const dialogId = `pin-setup-${props.deviceId}`;
+      console.log(`🔐 [PinSetupDialog] show() called for device:`, props.deviceId);
+      
+      show({
+        id: dialogId,
+        component: React.lazy(() => import('../components/PinSetupDialog').then(m => ({ default: m.PinSetupDialog }))),
+        props: {
+          isOpen: true,
+          deviceId: props.deviceId,
+          onSuccess: () => {
+            console.log(`🔐 [PinSetupDialog] PIN setup completed successfully`);
+            if (props.onSuccess) props.onSuccess();
+            hide(dialogId);
+          },
+          onError: (error: string) => {
+            console.log(`🔐 [PinSetupDialog] Error during PIN setup:`, error);
+            if (props.onError) props.onError(error);
+          },
+          onClose: () => {
+            console.log(`🔐 [PinSetupDialog] Dialog closed`);
+            if (props.onDialogClose) props.onDialogClose();
+            hide(dialogId);
+          }
+        },
+        priority: 'critical', // Highest priority for PIN matrix interaction
+        persistent: true, // User must complete or explicitly close
+      });
+    },
+    hide: (deviceId: string) => hide(`pin-setup-${deviceId}`),
+    isShowing: (deviceId: string) => isShowing(`pin-setup-${deviceId}`),
+  };
+}

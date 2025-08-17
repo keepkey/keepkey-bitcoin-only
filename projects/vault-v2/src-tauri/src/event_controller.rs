@@ -22,9 +22,12 @@ impl EventController {
     
     pub fn start(&mut self, app: &AppHandle) {
         if self.is_running {
-            println!("⚠️ Event controller already running");
-            return;
+            println!("⚠️ Event controller already running - stopping first");
+            self.stop();
         }
+        
+        // Create a new cancellation token for this run
+        self.cancellation_token = CancellationToken::new();
         
         let app_handle = app.clone();
         let cancellation_token = self.cancellation_token.clone();
