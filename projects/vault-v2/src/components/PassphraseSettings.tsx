@@ -178,9 +178,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
             </Box>
           )}
 
-          <Text fontSize="xs" color="gray.500" textAlign="center">
-            Device: {deviceId.slice(-8)}
-          </Text>
+          {/* Device ID removed to save space */}
       </Flex>
     </Box>
   );

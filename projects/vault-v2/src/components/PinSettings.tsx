@@ -174,8 +174,8 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
           </Flex>
         </Flex>
 
-        {/* Change PIN button - only show when PIN is enabled */}
-        {isEnabled && !isUpdating && (
+        {/* Change PIN button - HIDDEN for now due to issues */}
+        {/* {isEnabled && !isUpdating && (
           <Box>
             <Text 
               fontSize="sm" 
@@ -187,7 +187,7 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
               Change PIN
             </Text>
           </Box>
-        )}
+        )} */}
 
         {(isUpdating || statusMessage) && (
           <Box p={3} 
@@ -206,9 +206,7 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
           </Box>
         )}
 
-        <Text fontSize="xs" color="gray.500" textAlign="center">
-          Device: {deviceId.slice(-8)}
-        </Text>
+        {/* Device ID removed to save space */}
       </Flex>
     </Box>
   );
