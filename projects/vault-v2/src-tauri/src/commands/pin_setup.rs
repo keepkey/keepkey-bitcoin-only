@@ -125,6 +125,13 @@ pub async fn start_pin_setup(
                     log::error!("Full failure details: {:?}", failure);
                     log::error!("Failure code value: {:?}", failure.code);
                     log::error!("Failure message: {:?}", failure.message);
+                    
+                    // Check if this is the "Unknown message" error that might mean the device doesn't understand the message
+                    if error_msg.to_lowercase().contains("unknown message") {
+                        log::error!("Device reports 'Unknown message' - the ChangePin message may not be properly formatted");
+                        log::error!("This could mean the device firmware doesn't support this message format");
+                    }
+                    
                     Err(format!("Failure: {}", error_msg))
                 }
                 _ => {

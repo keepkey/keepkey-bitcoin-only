@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 interface SimplePassphraseModalProps {
@@ -18,12 +18,27 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasSubmittedForSession, setHasSubmittedForSession] = useState(false);
+  const [awaitingDeviceConfirmation, setAwaitingDeviceConfirmation] = useState(false);
+
+  // Reset session state when modal opens (new passphrase request)
+  useEffect(() => {
+    if (isOpen) {
+      console.log('🔐 [SimplePassphraseModal] Modal opened, resetting session state');
+      setHasSubmittedForSession(false);
+      setAwaitingDeviceConfirmation(false);
+      setError(null);
+      // Don't clear passphrase here - user might want to retry with same passphrase
+    }
+  }, [isOpen]);
 
   console.log('🔐 [SimplePassphraseModal] Component rendered with props:', {
     isOpen,
     deviceId,
     hasOnClose: !!onClose,
-    hasOnSubmit: !!onSubmit
+    hasOnSubmit: !!onSubmit,
+    hasSubmittedForSession,
+    awaitingDeviceConfirmation
   });
 
   if (!isOpen) {
@@ -34,6 +49,13 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
   console.log('🔐 [SimplePassphraseModal] ✅ Rendering passphrase modal');
 
   const handleSubmit = async () => {
+    // Prevent duplicate submissions for the same session
+    if (hasSubmittedForSession) {
+      console.log('🔐 [SimplePassphraseModal] Preventing duplicate passphrase submission');
+      setError('Passphrase already submitted. Please confirm on your device.');
+      return;
+    }
+
     // Basic validation
     if (!passphrase) {
       setError('Please enter a passphrase');
@@ -49,24 +71,49 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
     setError(null);
 
     try {
+      console.log('🔐 [SimplePassphraseModal] Sending passphrase for device:', deviceId);
       await invoke('send_passphrase', {
         passphrase,
         deviceId,
       });
 
+      // Mark as submitted for this session
+      setHasSubmittedForSession(true);
+      setAwaitingDeviceConfirmation(true);
+      
       // Clear sensitive data
       setPassphrase('');
+      
+      // Show confirmation message instead of closing immediately
+      setError(null);
+      console.log('🔐 [SimplePassphraseModal] Passphrase sent successfully, awaiting device confirmation');
+      
+      // Don't close the modal immediately - wait for device confirmation
+      // The modal will be closed by the parent component when operation completes
       
       // Call onSubmit callback if provided (for PassphraseSettings flow)
       if (onSubmit) {
         onSubmit();
       }
-      
-      // Close the modal
-      onClose();
     } catch (err) {
-      console.error('Failed to send passphrase:', err);
-      setError(err instanceof Error ? err.message : 'Failed to send passphrase');
+      console.error('🔐 [SimplePassphraseModal] Failed to send passphrase:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to send passphrase';
+      
+      // Only allow retry if it's not an "Unexpected message" error
+      if (errorMessage.includes('Unexpected message')) {
+        setError('Device not ready for passphrase. Please try the operation again.');
+        setHasSubmittedForSession(true); // Prevent further attempts
+      } else if (errorMessage.includes('timed out')) {
+        setError('Operation timed out. Please confirm on your device or try again.');
+        // Allow retry for timeout
+        setHasSubmittedForSession(false);
+        setAwaitingDeviceConfirmation(false);
+      } else {
+        setError(errorMessage);
+        // Allow retry for other errors
+        setHasSubmittedForSession(false);
+        setAwaitingDeviceConfirmation(false);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -106,7 +153,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
         }}
       >
         <h2 style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: 'bold', color: 'white' }}>
-          Enter Your Passphrase
+          {awaitingDeviceConfirmation ? 'Confirm on Device' : 'Enter Your Passphrase'}
         </h2>
 
         {/* Instruction */}
@@ -121,7 +168,9 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
           }}
         >
           <p style={{ margin: 0, fontSize: '14px', color: '#90CDF4' }}>
-            After submitting your passphrase, use the button on the KeepKey to approve it.
+            {awaitingDeviceConfirmation 
+              ? '⏳ Please confirm on your KeepKey device...'
+              : 'After submitting your passphrase, use the button on the KeepKey to approve it.'}
           </p>
         </div>
 
@@ -148,7 +197,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
             onChange={(e) => setPassphrase(e.target.value)}
             placeholder="Enter your passphrase"
             autoComplete="off"
-            disabled={isSubmitting}
+            disabled={isSubmitting || awaitingDeviceConfirmation}
             style={{
               width: '100%',
               padding: '12px 16px',
@@ -208,19 +257,22 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!passphrase || isSubmitting}
+            disabled={!passphrase || isSubmitting || hasSubmittedForSession}
             style={{
               padding: '12px 24px',
               border: 'none',
               borderRadius: '8px',
-              backgroundColor: !passphrase || isSubmitting ? '#4A5568' : '#D69E2E',
+              backgroundColor: !passphrase || isSubmitting || hasSubmittedForSession ? '#4A5568' : '#D69E2E',
               color: 'white',
-              cursor: !passphrase || isSubmitting ? 'not-allowed' : 'pointer',
+              cursor: !passphrase || isSubmitting || hasSubmittedForSession ? 'not-allowed' : 'pointer',
               fontSize: '14px',
               fontWeight: '500',
             }}
           >
-            {isSubmitting ? 'Submitting...' : 'Submit Passphrase'}
+            {isSubmitting ? 'Submitting...' : 
+             awaitingDeviceConfirmation ? 'Awaiting Device...' : 
+             hasSubmittedForSession ? 'Already Submitted' : 
+             'Submit Passphrase'}
           </button>
         </div>
       </div>

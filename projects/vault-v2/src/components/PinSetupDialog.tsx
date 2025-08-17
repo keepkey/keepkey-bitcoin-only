@@ -31,7 +31,20 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
   onError,
 }) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [step, setStep] = useState<'initializing' | 'new_pin' | 'confirm_pin' | 'success' | 'error'>('initializing');
+  const [step, setStepInternal] = useState<'initializing' | 'new_pin' | 'confirm_pin' | 'success' | 'error'>('initializing');
+  
+  // Wrapper to prevent going backwards from new_pin/confirm_pin to error
+  const setStep = (newStep: 'initializing' | 'new_pin' | 'confirm_pin' | 'success' | 'error') => {
+    setStepInternal((currentStep) => {
+      // Don't go back to error if we're already in PIN entry mode
+      if ((currentStep === 'new_pin' || currentStep === 'confirm_pin') && newStep === 'error') {
+        console.log('[PinSetupDialog] Preventing step regression from', currentStep, 'to error');
+        return currentStep;
+      }
+      console.log('[PinSetupDialog] Step transition:', currentStep, '->', newStep);
+      return newStep;
+    });
+  };
   const [positions, setPositions] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -55,20 +68,39 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
       // Listen for PIN matrix requests
       const unlisten = await listen('pin_matrix_request', async (event) => {
         console.log('[PinSetupDialog] Received pin_matrix_request event:', event.payload);
+        console.log('[PinSetupDialog] Event payload structure:', {
+          hasDeviceId: 'deviceId' in (event.payload as any),
+          hasSessionId: 'sessionId' in (event.payload as any),
+          hasStep: 'step' in (event.payload as any),
+          hasType: 'type' in (event.payload as any),
+          fullPayload: event.payload
+        });
+        
         const payload = event.payload as any;
         
         if (payload.deviceId === deviceId) {
+          console.log('[PinSetupDialog] Device ID matches, processing PIN request');
+          
           // Store the session ID if we don't have it yet
           if (!sessionId && payload.sessionId) {
+            console.log('[PinSetupDialog] Setting session ID:', payload.sessionId);
             setSessionId(payload.sessionId);
           }
           
           // Only process if this is our session or we don't have a session yet
           if (!sessionId || payload.sessionId === sessionId) {
-            setStep(payload.step === 'confirm_pin' ? 'confirm_pin' : 'new_pin');
+            // Determine which step we're in based on the payload
+            // The type field might indicate if it's for new PIN or confirmation
+            const isConfirmStep = payload.type === 'confirm' || payload.step === 'confirm_pin';
+            const newStep = isConfirmStep ? 'confirm_pin' : 'new_pin';
+            
+            console.log('[PinSetupDialog] Transitioning to step:', newStep, 'from payload type:', payload.type);
+            setStep(newStep);
             setPositions([]); // Clear previous PIN entry
             setIsProcessing(false);
             setIsInitializing(false); // Reset initialization flag
+            
+            console.log('[PinSetupDialog] State after transition - step:', newStep, 'isProcessing:', false);
           }
         }
       });
@@ -113,12 +145,22 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
   // Start PIN setup when dialog opens
   useEffect(() => {
     if (isOpen && !sessionId && step === 'initializing' && !isInitializing) {
-      startPinSetup();
+      // Use a small delay to ensure we don't get duplicate calls from React StrictMode
+      const timer = setTimeout(() => {
+        if (!sessionId && step === 'initializing') {
+          startPinSetup();
+        }
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
-  }, [isOpen, sessionId, step, isInitializing]);
+  }, [isOpen]); // Only depend on isOpen to prevent re-triggers
 
   const startPinSetup = async () => {
-    if (isInitializing) return; // Prevent double calls
+    if (isInitializing || sessionId) {
+      console.log('[PinSetupDialog] Skipping PIN setup - already initializing or session exists:', { isInitializing, sessionId });
+      return; // Prevent double calls
+    }
     
     try {
       console.log('[PinSetupDialog] Starting PIN setup for device:', deviceId);
@@ -126,19 +168,35 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
       setIsProcessing(true);
       
       const newSessionId = await invoke<string>('start_pin_setup', { deviceId });
-      console.log('[PinSetupDialog] PIN setup session started:', newSessionId);
+      console.log('[PinSetupDialog] PIN setup session started successfully:', newSessionId);
       setSessionId(newSessionId);
       
       // The backend will emit a pin_matrix_request event when ready
+      // Don't change step here - wait for the event
+      console.log('[PinSetupDialog] Waiting for pin_matrix_request event...');
+      
+      // DON'T set error here - we're waiting for the event!
+      // The error handling should only happen if we don't get an event
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error('[PinSetupDialog] Failed to start PIN setup:', errorMessage);
-      setError(errorMessage);
-      setStep('error');
-      setIsProcessing(false);
-      setIsInitializing(false);
+      console.error('[PinSetupDialog] Full error object:', err);
       
-      if (onError) onError(errorMessage);
+      // Only set error if we're still in initializing state (not if we got the event already)
+      // AND if the error is not "Unknown message" from a duplicate call
+      if (step === 'initializing' && !errorMessage.includes('Unknown message')) {
+        setError(errorMessage);
+        setStep('error');
+        setIsProcessing(false);
+        setIsInitializing(false);
+        
+        if (onError) onError(errorMessage);
+      } else if (errorMessage.includes('Unknown message')) {
+        // This is likely a duplicate call - the device is already waiting for PIN
+        console.log('[PinSetupDialog] Ignoring "Unknown message" error - device is likely already in PIN entry mode');
+        setIsProcessing(false);
+        setIsInitializing(false);
+      }
     }
   };
 
@@ -200,6 +258,17 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
     }
   }, [handleBackspace, handleSubmit, handlePinPress, isProcessing]);
 
+  // Debug: Log step changes
+  useEffect(() => {
+    console.log('[PinSetupDialog] Current step state:', step, {
+      isOpen,
+      sessionId,
+      isProcessing,
+      isInitializing,
+      positionsLength: positions.length
+    });
+  }, [step, isOpen, sessionId, isProcessing, isInitializing, positions.length]);
+
   const getTitle = () => {
     switch (step) {
       case 'initializing':
@@ -234,10 +303,13 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
     }
   };
 
+  console.log('[PinSetupDialog] Rendering - isOpen:', isOpen, 'step:', step, 'sessionId:', sessionId);
+  
   return (
     <DialogRoot
       open={isOpen}
       onOpenChange={(e) => {
+        console.log('[PinSetupDialog] Dialog open change:', e.open);
         if (!e.open && !isProcessing) {
           onClose();
         }
