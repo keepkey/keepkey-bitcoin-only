@@ -20,6 +20,24 @@ import esDevice from './locales/es/device.json';
 import esWallet from './locales/es/wallet.json';
 import esTransaction from './locales/es/transaction.json';
 
+// French translations
+import frCommon from './locales/fr/common.json';
+import frOnboarding from './locales/fr/onboarding.json';
+import frSettings from './locales/fr/settings.json';
+import frErrors from './locales/fr/errors.json';
+import frDevice from './locales/fr/device.json';
+import frWallet from './locales/fr/wallet.json';
+import frTransaction from './locales/fr/transaction.json';
+
+// German translations
+import deCommon from './locales/de/common.json';
+import deOnboarding from './locales/de/onboarding.json';
+import deSettings from './locales/de/settings.json';
+import deErrors from './locales/de/errors.json';
+import deDevice from './locales/de/device.json';
+import deWallet from './locales/de/wallet.json';
+import deTransaction from './locales/de/transaction.json';
+
 const resources = {
   en: {
     common: enCommon,
@@ -39,13 +57,36 @@ const resources = {
     wallet: esWallet,
     transaction: esTransaction,
   },
+  fr: {
+    common: frCommon,
+    onboarding: frOnboarding,
+    settings: frSettings,
+    errors: frErrors,
+    device: frDevice,
+    wallet: frWallet,
+    transaction: frTransaction,
+  },
+  de: {
+    common: deCommon,
+    onboarding: deOnboarding,
+    settings: deSettings,
+    errors: deErrors,
+    device: deDevice,
+    wallet: deWallet,
+    transaction: deTransaction,
+  },
 };
+
+// Get saved language preference
+const savedLanguage = localStorage.getItem('preferredLanguage') || 'en';
+console.log('🌐 Loading saved language preference:', savedLanguage);
 
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
+    lng: savedLanguage, // Set initial language from localStorage
     fallbackLng: 'en',
     defaultNS: 'common',
     ns: ['common', 'onboarding', 'settings', 'errors', 'device', 'wallet', 'transaction'],
@@ -57,13 +98,14 @@ i18n
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
+      lookupLocalStorage: 'preferredLanguage', // Use our custom key
     },
     
     react: {
       useSuspense: false, // Disable suspense for better error handling
     },
     
-    debug: true, // Enable debug mode to see what's happening
+    debug: false, // Disable debug mode for cleaner console
   }, (err, t) => {
     if (err) {
       console.error('🌐 i18n initialization failed:', err);
@@ -71,6 +113,11 @@ i18n
       console.log('🌐 i18n initialized successfully');
       console.log('🌐 Available languages:', Object.keys(resources));
       console.log('🌐 Current language:', i18n.language);
+      
+      // Ensure the saved language is applied
+      if (savedLanguage && savedLanguage !== i18n.language) {
+        i18n.changeLanguage(savedLanguage);
+      }
     }
   });
 

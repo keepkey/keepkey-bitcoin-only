@@ -134,11 +134,11 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
               <Spinner size="xl" color="blue.400" />
               <VStack gap={2}>
                 <Text color="white" fontSize="xl" fontWeight="semibold">
-                  Syncing with your KeepKey
+                  {t('wallet:portfolio.syncing')}
                 </Text>
                 {syncingTime > 5 && (
                   <Text color="gray.500" fontSize="sm" mt={2}>
-                    This is taking longer than usual...
+                    {t('wallet:portfolio.takingLonger')}
                   </Text>
                 )}
               </VStack>
@@ -150,10 +150,10 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
               </Box>
               <VStack gap={3}>
                 <Text color="white" fontSize="xl" fontWeight="semibold">
-                  Ready to get started?
+                  {t('wallet:portfolio.readyToStart')}
                 </Text>
                 <Text color="gray.400" fontSize="md" maxW="280px">
-                  Make sure your KeepKey is connected and unlocked
+                  {t('wallet:portfolio.connectDevice')}
                 </Text>
               </VStack>
               <Button 
@@ -165,7 +165,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
                 fontWeight="bold"
                 px={8}
               >
-                Press here to start! 🚀
+                {t('wallet:portfolio.pressToStart')}
               </Button>
             </>
           )}

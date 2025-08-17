@@ -69,6 +69,11 @@
     "assets": "Assets",
     "noAssets": "No assets found",
     "loading": "Loading portfolio...",
+    "syncing": "Syncing with your KeepKey",
+    "takingLonger": "This is taking longer than usual...",
+    "readyToStart": "Ready to get started?",
+    "connectDevice": "Make sure your KeepKey is connected and unlocked",
+    "pressToStart": "Press here to start! 🚀",
     "refresh": "Refresh Portfolio",
     "lastUpdated": "Last updated {{time}} ago",
     "chart": {

@@ -1,0 +1,118 @@
+{
+  "welcome": {
+    "title": "Bienvenue sur KeepKey Vault",
+    "subtitle": "Configurons votre portefeuille Bitcoin sécurisé",
+    "getStarted": "Commencer"
+  },
+  "setup": {
+    "title": "Configuration",
+    "newWallet": "Créer un nouveau portefeuille",
+    "importWallet": "Importer un portefeuille existant",
+    "connectDevice": "Connecter KeepKey"
+  },
+  "device": {
+    "connect": {
+      "title": "Connectez votre KeepKey",
+      "instructions": "Branchez votre appareil KeepKey via USB pour continuer",
+      "waiting": "En attente de l'appareil...",
+      "detected": "KeepKey détecté!",
+      "notDetected": "Appareil non détecté",
+      "troubleshoot": "Dépannage"
+    },
+    "initialize": {
+      "title": "Initialiser KeepKey",
+      "description": "Votre appareil doit être configuré avant utilisation",
+      "start": "Commencer l'initialisation"
+    },
+    "unlock": {
+      "title": "Déverrouiller KeepKey",
+      "enterPin": "Entrez votre code PIN sur l'appareil",
+      "waiting": "En attente du PIN..."
+    }
+  },
+  "seed": {
+    "create": {
+      "title": "Créer une phrase de récupération",
+      "description": "Votre phrase de récupération est la sauvegarde de votre portefeuille",
+      "warning": "Écrivez ces mots dans l'ordre et conservez-les en sécurité",
+      "generate": "Générer la phrase"
+    },
+    "import": {
+      "title": "Importer une phrase de récupération",
+      "description": "Entrez votre phrase de récupération existante",
+      "wordCount": "Nombre de mots",
+      "enterWords": "Entrez les mots",
+      "word": "Mot",
+      "verify": "Vérifier la phrase"
+    },
+    "backup": {
+      "title": "Sauvegarder votre phrase",
+      "instruction1": "Écrivez ces {{count}} mots dans l'ordre exact",
+      "instruction2": "Conservez-les dans un endroit sûr et secret",
+      "instruction3": "Ne partagez jamais votre phrase avec quiconque",
+      "written": "J'ai écrit ma phrase de récupération"
+    },
+    "verify": {
+      "title": "Vérifier votre sauvegarde",
+      "description": "Confirmez que vous avez correctement sauvegardé votre phrase",
+      "enterWord": "Entrez le mot #{{position}}",
+      "correct": "Correct!",
+      "incorrect": "Incorrect, veuillez réessayer"
+    }
+  },
+  "pin": {
+    "create": {
+      "title": "Créer un code PIN",
+      "description": "Votre PIN protège l'accès à votre appareil",
+      "enter": "Entrer le PIN",
+      "confirm": "Confirmer le PIN",
+      "mismatch": "Les PINs ne correspondent pas"
+    },
+    "change": {
+      "title": "Changer le code PIN",
+      "current": "PIN actuel",
+      "new": "Nouveau PIN",
+      "confirm": "Confirmer le nouveau PIN"
+    }
+  },
+  "wallet": {
+    "name": {
+      "title": "Nommer votre portefeuille",
+      "description": "Donnez un nom à votre portefeuille pour l'identifier facilement",
+      "placeholder": "Mon portefeuille Bitcoin",
+      "continue": "Continuer"
+    },
+    "type": {
+      "title": "Type de portefeuille",
+      "standard": "Standard",
+      "segwit": "SegWit (Recommandé)",
+      "native": "Native SegWit"
+    }
+  },
+  "complete": {
+    "title": "Configuration terminée!",
+    "message": "Votre KeepKey est prêt à l'emploi",
+    "dashboard": "Aller au tableau de bord"
+  },
+  "steps": {
+    "welcome": "Bienvenue",
+    "connect": "Connecter",
+    "setup": "Configuration",
+    "backup": "Sauvegarde",
+    "verify": "Vérifier",
+    "secure": "Sécuriser",
+    "complete": "Terminé"
+  },
+  "errors": {
+    "deviceNotFound": "Appareil KeepKey non trouvé",
+    "connectionFailed": "Échec de la connexion à l'appareil",
+    "initializationFailed": "Échec de l'initialisation",
+    "invalidSeed": "Phrase de récupération invalide",
+    "pinFailed": "Échec de la création du PIN"
+  },
+  "warnings": {
+    "seedBackup": "Assurez-vous d'avoir sauvegardé votre phrase de récupération en toute sécurité",
+    "noRecovery": "Sans votre phrase de récupération, vous ne pourrez pas récupérer votre portefeuille",
+    "keepSecret": "Ne partagez jamais votre phrase de récupération ou PIN avec quiconque"
+  }
+}

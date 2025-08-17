@@ -1,0 +1,142 @@
+{
+  "title": "Paramètres",
+  "general": {
+    "title": "Paramètres généraux",
+    "language": {
+      "title": "Paramètres de langue",
+      "display": "Langue d'affichage",
+      "select": "Sélectionner la langue"
+    },
+    "currency": {
+      "title": "Paramètres de devise",
+      "primary": "Devise principale",
+      "select": "Sélectionner la devise"
+    },
+    "numberFormat": {
+      "title": "Format des nombres",
+      "select": "Sélectionner le format"
+    },
+    "theme": {
+      "title": "Thème",
+      "dark": "Sombre",
+      "light": "Clair",
+      "system": "Système"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "enable": "Activer les notifications",
+      "sound": "Notifications sonores",
+      "desktop": "Notifications de bureau"
+    }
+  },
+  "security": {
+    "title": "Sécurité et confidentialité",
+    "autoLock": {
+      "title": "Verrouillage automatique",
+      "description": "Verrouiller automatiquement après inactivité",
+      "never": "Jamais",
+      "1min": "1 minute",
+      "5min": "5 minutes",
+      "15min": "15 minutes",
+      "30min": "30 minutes",
+      "1hour": "1 heure"
+    },
+    "pin": {
+      "title": "Code PIN",
+      "change": "Changer le code PIN",
+      "require": "Exiger le PIN pour les transactions"
+    },
+    "biometric": {
+      "title": "Biométrie",
+      "enable": "Activer l'authentification biométrique"
+    },
+    "privacy": {
+      "title": "Confidentialité",
+      "analytics": "Partager les données d'utilisation",
+      "crashReports": "Envoyer les rapports de crash"
+    }
+  },
+  "network": {
+    "title": "Réseau",
+    "bitcoin": {
+      "title": "Réseau Bitcoin",
+      "mainnet": "Réseau principal",
+      "testnet": "Réseau de test"
+    },
+    "server": {
+      "title": "Serveur",
+      "auto": "Automatique",
+      "custom": "Personnalisé",
+      "url": "URL du serveur"
+    },
+    "tor": {
+      "title": "Tor",
+      "enable": "Utiliser Tor",
+      "onion": "Utiliser les adresses .onion"
+    }
+  },
+  "backup": {
+    "title": "Sauvegarde et récupération",
+    "seed": {
+      "title": "Phrase de récupération",
+      "view": "Voir la phrase de récupération",
+      "verify": "Vérifier la sauvegarde"
+    },
+    "export": {
+      "title": "Exporter",
+      "wallet": "Exporter le portefeuille",
+      "transactions": "Exporter les transactions"
+    },
+    "import": {
+      "title": "Importer",
+      "wallet": "Importer un portefeuille",
+      "transactions": "Importer des transactions"
+    }
+  },
+  "device": {
+    "title": "Appareil",
+    "info": {
+      "title": "Informations sur l'appareil",
+      "model": "Modèle",
+      "firmware": "Firmware",
+      "serial": "Numéro de série"
+    },
+    "update": {
+      "title": "Mises à jour",
+      "check": "Vérifier les mises à jour",
+      "auto": "Mises à jour automatiques"
+    },
+    "reset": {
+      "title": "Réinitialiser",
+      "factory": "Réinitialisation d'usine",
+      "warning": "Cela effacera toutes les données de l'appareil"
+    }
+  },
+  "advanced": {
+    "title": "Avancé",
+    "developer": {
+      "title": "Mode développeur",
+      "enable": "Activer le mode développeur",
+      "console": "Console de débogage"
+    },
+    "experimental": {
+      "title": "Fonctionnalités expérimentales",
+      "warning": "Ces fonctionnalités peuvent être instables"
+    },
+    "logs": {
+      "title": "Journaux",
+      "view": "Voir les journaux",
+      "export": "Exporter les journaux",
+      "clear": "Effacer les journaux"
+    }
+  },
+  "about": {
+    "title": "À propos",
+    "version": "Version",
+    "license": "Licence",
+    "website": "Site web",
+    "support": "Support",
+    "terms": "Conditions d'utilisation",
+    "privacy": "Politique de confidentialité"
+  }
+}

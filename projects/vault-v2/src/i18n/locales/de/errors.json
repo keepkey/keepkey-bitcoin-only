@@ -1,0 +1,57 @@
+{
+  "general": {
+    "unknown": "Ein unbekannter Fehler ist aufgetreten",
+    "network": "Netzwerkfehler",
+    "timeout": "Anfrage ist abgelaufen",
+    "invalid": "Ungültige Eingabe",
+    "required": "Dieses Feld ist erforderlich",
+    "unauthorized": "Nicht autorisiert",
+    "forbidden": "Zugriff verweigert",
+    "notFound": "Nicht gefunden",
+    "conflict": "Konflikt erkannt",
+    "serverError": "Serverfehler"
+  },
+  "device": {
+    "notConnected": "Gerät nicht verbunden",
+    "connectionLost": "Verbindung zum Gerät verloren",
+    "busy": "Gerät ist beschäftigt",
+    "locked": "Gerät ist gesperrt",
+    "needsUnlock": "Bitte entsperren Sie Ihr Gerät",
+    "firmwareOutdated": "Die Geräte-Firmware muss aktualisiert werden",
+    "unsupported": "Gerät wird nicht unterstützt"
+  },
+  "wallet": {
+    "insufficientFunds": "Unzureichende Mittel",
+    "invalidAddress": "Ungültige Adresse",
+    "invalidAmount": "Ungültiger Betrag",
+    "feeTooHigh": "Gebühren sind zu hoch",
+    "feeTooLow": "Gebühren sind zu niedrig",
+    "dustAmount": "Betrag ist zu klein",
+    "transactionFailed": "Transaktion fehlgeschlagen",
+    "broadcastFailed": "Übertragung der Transaktion fehlgeschlagen"
+  },
+  "seed": {
+    "invalid": "Ungültige Wiederherstellungsphrase",
+    "mismatch": "Phrase stimmt nicht überein",
+    "tooShort": "Phrase ist zu kurz",
+    "tooLong": "Phrase ist zu lang",
+    "invalidWord": "Ungültiges Wort in der Phrase",
+    "checksumFailed": "Überprüfung der Phrase fehlgeschlagen"
+  },
+  "pin": {
+    "incorrect": "Falsche PIN",
+    "tooShort": "PIN ist zu kurz",
+    "tooLong": "PIN ist zu lang",
+    "mismatch": "PINs stimmen nicht überein",
+    "tooManyAttempts": "Zu viele Versuche, bitte später erneut versuchen"
+  },
+  "validation": {
+    "required": "Dieses Feld ist erforderlich",
+    "email": "Ungültige E-Mail-Adresse",
+    "minLength": "Muss mindestens {{min}} Zeichen enthalten",
+    "maxLength": "Darf nicht mehr als {{max}} Zeichen enthalten",
+    "pattern": "Ungültiges Format",
+    "number": "Muss eine Zahl sein",
+    "positive": "Muss eine positive Zahl sein"
+  }
+}

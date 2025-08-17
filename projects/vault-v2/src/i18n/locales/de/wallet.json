@@ -1,0 +1,49 @@
+{
+  "creation": {
+    "title": "Neue Wallet erstellen",
+    "subtitle": "Richten Sie eine neue Wallet auf Ihrem KeepKey ein"
+  },
+  "portfolio": {
+    "title": "Portfolio",
+    "totalBalance": "Gesamtguthaben",
+    "availableBalance": "Verfügbares Guthaben",
+    "balance": "Guthaben",
+    "loading": "Portfolio wird geladen...",
+    "syncing": "Synchronisierung mit Ihrem KeepKey",
+    "takingLonger": "Dies dauert länger als üblich...",
+    "readyToStart": "Bereit zu beginnen?",
+    "connectDevice": "Stellen Sie sicher, dass Ihr KeepKey verbunden und entsperrt ist",
+    "pressToStart": "Hier drücken um zu starten! 🚀"
+  },
+  "assets": {
+    "title": "Vermögenswerte",
+    "bitcoin": "Bitcoin"
+  },
+  "send": {
+    "title": "Senden",
+    "recipient": "Empfänger",
+    "amount": "Betrag",
+    "fee": "Gebühr",
+    "total": "Gesamt",
+    "confirm": "Senden bestätigen",
+    "sending": "Wird gesendet...",
+    "success": "Transaktion erfolgreich gesendet",
+    "error": "Fehler beim Senden"
+  },
+  "receive": {
+    "title": "Empfangen",
+    "address": "Ihre Adresse",
+    "generateNew": "Neue Adresse generieren",
+    "copyAddress": "Adresse kopieren",
+    "showQR": "QR-Code anzeigen"
+  },
+  "transactions": {
+    "title": "Transaktionen",
+    "history": "Verlauf",
+    "pending": "Ausstehend",
+    "confirmed": "Bestätigt",
+    "failed": "Fehlgeschlagen",
+    "noTransactions": "Keine Transaktionen",
+    "details": "Transaktionsdetails"
+  }
+}

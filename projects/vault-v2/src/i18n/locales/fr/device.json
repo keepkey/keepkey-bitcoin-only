@@ -1,0 +1,46 @@
+{
+  "status": {
+    "connected": "Connecté",
+    "disconnected": "Déconnecté",
+    "locked": "Verrouillé",
+    "unlocked": "Déverrouillé",
+    "busy": "Occupé",
+    "ready": "Prêt",
+    "updating": "Mise à jour en cours",
+    "error": "Erreur"
+  },
+  "info": {
+    "model": "Modèle",
+    "firmware": "Firmware",
+    "serial": "Numéro de série",
+    "label": "Étiquette",
+    "initialized": "Initialisé",
+    "features": "Fonctionnalités"
+  },
+  "actions": {
+    "connect": "Connecter l'appareil",
+    "disconnect": "Déconnecter",
+    "unlock": "Déverrouiller",
+    "lock": "Verrouiller",
+    "wipe": "Effacer l'appareil",
+    "recover": "Récupérer l'appareil",
+    "update": "Mettre à jour le firmware",
+    "initialize": "Initialiser"
+  },
+  "messages": {
+    "confirmOnDevice": "Veuillez confirmer sur votre appareil",
+    "enterPin": "Entrez votre PIN sur l'appareil",
+    "followInstructions": "Suivez les instructions sur l'appareil",
+    "doNotDisconnect": "Ne déconnectez pas l'appareil",
+    "updateAvailable": "Une mise à jour du firmware est disponible",
+    "backupDevice": "Sauvegardez votre appareil avant de continuer"
+  },
+  "errors": {
+    "notDetected": "Appareil non détecté",
+    "connectionFailed": "Échec de la connexion",
+    "actionCancelled": "Action annulée sur l'appareil",
+    "timeout": "Délai d'attente de l'appareil expiré",
+    "busy": "L'appareil est occupé avec une autre opération",
+    "updateFailed": "Échec de la mise à jour du firmware"
+  }
+}

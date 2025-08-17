@@ -8,7 +8,12 @@
     "totalBalance": "Saldo total",
     "availableBalance": "Saldo disponible",
     "balance": "Saldo",
-    "loading": "Cargando portafolio..."
+    "loading": "Cargando portafolio...",
+    "syncing": "Sincronizando con tu KeepKey",
+    "takingLonger": "Esto está tardando más de lo habitual...",
+    "readyToStart": "¿Listo para comenzar?",
+    "connectDevice": "Asegúrate de que tu KeepKey esté conectado y desbloqueado",
+    "pressToStart": "¡Presiona aquí para comenzar! 🚀"
   },
   "assets": {
     "title": "Activos",

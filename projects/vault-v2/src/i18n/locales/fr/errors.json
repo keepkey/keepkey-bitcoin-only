@@ -1,0 +1,57 @@
+{
+  "general": {
+    "unknown": "Une erreur inconnue s'est produite",
+    "network": "Erreur réseau",
+    "timeout": "La demande a expiré",
+    "invalid": "Entrée invalide",
+    "required": "Ce champ est requis",
+    "unauthorized": "Non autorisé",
+    "forbidden": "Accès interdit",
+    "notFound": "Non trouvé",
+    "conflict": "Conflit détecté",
+    "serverError": "Erreur du serveur"
+  },
+  "device": {
+    "notConnected": "Appareil non connecté",
+    "connectionLost": "Connexion à l'appareil perdue",
+    "busy": "L'appareil est occupé",
+    "locked": "L'appareil est verrouillé",
+    "needsUnlock": "Veuillez déverrouiller votre appareil",
+    "firmwareOutdated": "Le firmware de l'appareil doit être mis à jour",
+    "unsupported": "Appareil non pris en charge"
+  },
+  "wallet": {
+    "insufficientFunds": "Fonds insuffisants",
+    "invalidAddress": "Adresse invalide",
+    "invalidAmount": "Montant invalide",
+    "feeTooHigh": "Les frais sont trop élevés",
+    "feeTooLow": "Les frais sont trop bas",
+    "dustAmount": "Le montant est trop petit",
+    "transactionFailed": "La transaction a échoué",
+    "broadcastFailed": "Échec de la diffusion de la transaction"
+  },
+  "seed": {
+    "invalid": "Phrase de récupération invalide",
+    "mismatch": "La phrase ne correspond pas",
+    "tooShort": "La phrase est trop courte",
+    "tooLong": "La phrase est trop longue",
+    "invalidWord": "Mot invalide dans la phrase",
+    "checksumFailed": "Échec de la vérification de la phrase"
+  },
+  "pin": {
+    "incorrect": "PIN incorrect",
+    "tooShort": "Le PIN est trop court",
+    "tooLong": "Le PIN est trop long",
+    "mismatch": "Les PINs ne correspondent pas",
+    "tooManyAttempts": "Trop de tentatives, veuillez réessayer plus tard"
+  },
+  "validation": {
+    "required": "Ce champ est requis",
+    "email": "Adresse email invalide",
+    "minLength": "Doit contenir au moins {{min}} caractères",
+    "maxLength": "Ne doit pas dépasser {{max}} caractères",
+    "pattern": "Format invalide",
+    "number": "Doit être un nombre",
+    "positive": "Doit être un nombre positif"
+  }
+}

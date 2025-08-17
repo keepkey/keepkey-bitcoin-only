@@ -3,6 +3,7 @@ import { Box, Flex, Button, Text, HStack, useDisclosure } from '@chakra-ui/react
 import { FaTh, FaGlobe, FaWallet, FaCog, FaQuestionCircle } from 'react-icons/fa';
 import { listen, emit } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 import splashBg from '../assets/splash-bg.png';
 import { SettingsDialog } from './SettingsDialog';
 import { AppsView, BrowserView, PairingsView, VaultView, AssetView } from './views';
@@ -28,6 +29,7 @@ export const VaultInterface = () => {
   const [isRecoveryWizardOpen, setIsRecoveryWizardOpen] = useState(false);
   const { refreshPortfolio } = useWallet();
   const { hideAll } = useDialog();
+  const { t } = useTranslation(['common', 'navigation']);
 
   // Clear any stuck dialogs when component mounts
   useEffect(() => {
@@ -73,7 +75,7 @@ export const VaultInterface = () => {
   const navItems: NavItem[] = [
     {
       id: 'vault',
-      label: 'Vault',
+      label: t('common:navigation.wallet'),
       icon: <FaWallet />,
       onClick: () => handleViewChange('vault'),
     },
@@ -91,13 +93,13 @@ export const VaultInterface = () => {
     // },
     {
       id: 'settings',
-      label: 'Settings',
+      label: t('common:navigation.settings'),
       icon: <FaCog />,
       onClick: openSettings,
     },
     {
       id: 'support',
-      label: 'Support',
+      label: t('common:navigation.help'),
       icon: <FaQuestionCircle />,
       onClick: handleSupportClick,
     },
@@ -212,7 +214,7 @@ export const VaultInterface = () => {
               {/* Center - Logo/Title with Version */}
               <HStack gap={2}>
                 <Text fontSize="lg" fontWeight="bold" color="white">
-                  KeepKey Vault
+                  {t('common:app.name')}
                 </Text>
                 <Text fontSize="sm" color="gray.400">
                   v{packageJson.version}

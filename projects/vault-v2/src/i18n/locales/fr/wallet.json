@@ -1,0 +1,49 @@
+{
+  "creation": {
+    "title": "Créer un nouveau portefeuille",
+    "subtitle": "Configurer un nouveau portefeuille sur votre KeepKey"
+  },
+  "portfolio": {
+    "title": "Portefeuille",
+    "totalBalance": "Solde total",
+    "availableBalance": "Solde disponible",
+    "balance": "Solde",
+    "loading": "Chargement du portefeuille...",
+    "syncing": "Synchronisation avec votre KeepKey",
+    "takingLonger": "Cela prend plus de temps que d'habitude...",
+    "readyToStart": "Prêt à commencer?",
+    "connectDevice": "Assurez-vous que votre KeepKey est connecté et déverrouillé",
+    "pressToStart": "Appuyez ici pour commencer! 🚀"
+  },
+  "assets": {
+    "title": "Actifs",
+    "bitcoin": "Bitcoin"
+  },
+  "send": {
+    "title": "Envoyer",
+    "recipient": "Destinataire",
+    "amount": "Montant",
+    "fee": "Frais",
+    "total": "Total",
+    "confirm": "Confirmer l'envoi",
+    "sending": "Envoi en cours...",
+    "success": "Transaction envoyée avec succès",
+    "error": "Erreur lors de l'envoi"
+  },
+  "receive": {
+    "title": "Recevoir",
+    "address": "Votre adresse",
+    "generateNew": "Générer une nouvelle adresse",
+    "copyAddress": "Copier l'adresse",
+    "showQR": "Afficher le QR code"
+  },
+  "transactions": {
+    "title": "Transactions",
+    "history": "Historique",
+    "pending": "En attente",
+    "confirmed": "Confirmées",
+    "failed": "Échouées",
+    "noTransactions": "Aucune transaction",
+    "details": "Détails de la transaction"
+  }
+}

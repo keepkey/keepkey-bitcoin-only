@@ -1,0 +1,46 @@
+{
+  "status": {
+    "connected": "Verbunden",
+    "disconnected": "Getrennt",
+    "locked": "Gesperrt",
+    "unlocked": "Entsperrt",
+    "busy": "Beschäftigt",
+    "ready": "Bereit",
+    "updating": "Wird aktualisiert",
+    "error": "Fehler"
+  },
+  "info": {
+    "model": "Modell",
+    "firmware": "Firmware",
+    "serial": "Seriennummer",
+    "label": "Bezeichnung",
+    "initialized": "Initialisiert",
+    "features": "Funktionen"
+  },
+  "actions": {
+    "connect": "Gerät verbinden",
+    "disconnect": "Trennen",
+    "unlock": "Entsperren",
+    "lock": "Sperren",
+    "wipe": "Gerät löschen",
+    "recover": "Gerät wiederherstellen",
+    "update": "Firmware aktualisieren",
+    "initialize": "Initialisieren"
+  },
+  "messages": {
+    "confirmOnDevice": "Bitte auf Ihrem Gerät bestätigen",
+    "enterPin": "Geben Sie Ihre PIN auf dem Gerät ein",
+    "followInstructions": "Befolgen Sie die Anweisungen auf dem Gerät",
+    "doNotDisconnect": "Trennen Sie das Gerät nicht",
+    "updateAvailable": "Eine Firmware-Aktualisierung ist verfügbar",
+    "backupDevice": "Sichern Sie Ihr Gerät, bevor Sie fortfahren"
+  },
+  "errors": {
+    "notDetected": "Gerät nicht erkannt",
+    "connectionFailed": "Verbindung fehlgeschlagen",
+    "actionCancelled": "Aktion auf dem Gerät abgebrochen",
+    "timeout": "Geräte-Timeout abgelaufen",
+    "busy": "Gerät ist mit einer anderen Operation beschäftigt",
+    "updateFailed": "Firmware-Aktualisierung fehlgeschlagen"
+  }
+}
