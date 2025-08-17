@@ -3733,15 +3733,24 @@ pub async fn send_pin_matrix_ack(
             }
         }
         Ok(other_msg) => {
-            log::warn!("Unexpected response to PIN: {:?}", other_msg.message_type());
             let _ = unmark_device_in_pin_flow(&device_id);
             
-            // Some devices might respond with Address or other success messages
-            if matches!(other_msg, keepkey_rust::messages::Message::Address(_)) {
-                log::info!("✅ PIN accepted (got Address response)");
-                Ok(true)
-            } else {
-                Err(format!("Unexpected response: {:?}", other_msg.message_type()))
+            // Handle expected response types after successful PIN entry
+            match other_msg {
+                keepkey_rust::messages::Message::PassphraseRequest(_) => {
+                    // This is EXPECTED and NORMAL - PIN was correct, now device needs passphrase
+                    log::info!("✅ PIN accepted successfully, device now requesting passphrase");
+                    // The passphrase dialog will be triggered by the queue handler
+                    Ok(true)
+                }
+                keepkey_rust::messages::Message::Address(_) => {
+                    log::info!("✅ PIN accepted (got Address response)");
+                    Ok(true)
+                }
+                _ => {
+                    log::warn!("Unexpected response to PIN: {:?}", other_msg.message_type());
+                    Err(format!("Unexpected response: {:?}", other_msg.message_type()))
+                }
             }
         }
         Err(e) => {
