@@ -11,6 +11,7 @@ import {
 } from './ui/dialog';
 import { FaShieldAlt, FaLock, FaEye, FaBolt } from 'react-icons/fa';
 import { invoke } from '@tauri-apps/api/core';
+import { usePinSetupDialog } from '../contexts/DialogContext';
 import cipherImage from '../assets/onboarding/cipher.png';
 
 interface EnablePinDialogProps {
@@ -31,6 +32,7 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
   const [step, setStep] = useState<'instructions' | 'setting' | 'confirming' | 'success' | 'error'>('instructions');
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const pinSetupDialog = usePinSetupDialog();
 
   useEffect(() => {
     if (isOpen) {
@@ -45,17 +47,31 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
     setStep('setting');
     
     try {
-      // For now, just close this dialog and trigger the PIN creation dialog
-      // which has the proper PIN matrix UI
-      console.log('[EnablePinDialog] Closing instruction dialog and opening PIN matrix dialog');
+      console.log('[EnablePinDialog] Starting PIN setup process...');
+      
+      // Close this instructional dialog first
       onClose();
       
-      // The PinSettings component will handle showing the proper PIN creation dialog
-      // This is just an instructional dialog
+      // Now open the actual PIN setup dialog with the PIN matrix UI
+      console.log('[EnablePinDialog] Opening PIN setup dialog for device:', deviceId);
+      pinSetupDialog.show({
+        deviceId,
+        onSuccess: () => {
+          console.log('[EnablePinDialog] PIN setup completed successfully');
+          if (onSuccess) onSuccess();
+        },
+        onError: (error) => {
+          console.error('[EnablePinDialog] Failed to setup PIN:', error);
+          if (onError) onError(error);
+        },
+        onDialogClose: () => {
+          console.log('[EnablePinDialog] PIN setup dialog closed by user');
+        }
+      });
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error('Failed to start PIN setup:', errorMessage);
+      console.error('[EnablePinDialog] Failed to start PIN setup:', errorMessage);
       
       setError(errorMessage);
       setStep('error');

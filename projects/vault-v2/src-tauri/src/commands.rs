@@ -3754,7 +3754,7 @@ pub async fn send_pin_matrix_ack(
 }
 
 /// Helper function to clear passphrase request state
-async fn clear_passphrase_state(device_id: &str) {
+async fn clear_passphrase_state(_device_id: &str) {
     // This will be called from queue.rs
 }
 
@@ -3857,7 +3857,7 @@ fn handle_passphrase_response_with_pending(
             }
             Ok(true)
         }
-        keepkey_rust::messages::Message::ButtonRequest(button_req) => {
+        keepkey_rust::messages::Message::ButtonRequest(_button_req) => {
             // Device is asking for button confirmation after passphrase
             log::info!("✅ Device requesting button confirmation after passphrase");
             

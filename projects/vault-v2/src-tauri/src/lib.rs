@@ -22,7 +22,7 @@ fn greet(name: &str) -> String {
 // Command to open devtools
 #[tauri::command]
 fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(_window) = app.get_webview_window("main") {
         // In Tauri v2, devtools are enabled via config and can be opened via inspector
         // The devtools will be available via right-click menu when enabled in config
         println!("DevTools enabled via config - use right-click menu or F12 to open");
@@ -227,7 +227,7 @@ async fn perform_usb_device_reset(device_id: &str) -> Result<(), String> {
             .args(&["SPUSBDataType", "-xml"])
             .output();
         
-        if let Ok(output) = output {
+        if let Ok(_output) = output {
             println!("    📊 USB enumeration refreshed via system_profiler");
         }
         

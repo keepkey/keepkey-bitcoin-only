@@ -1,4 +1,4 @@
-use keepkey_rust::messages::{Message, ChangePin, ButtonAck, PinMatrixAck};
+use keepkey_rust::messages::{Message, ChangePin, ButtonAck, PinMatrixAck, GetFeatures};
 use tauri::{State, AppHandle, Emitter};
 use crate::commands::DeviceQueueManager;
 use uuid::Uuid;
@@ -24,11 +24,35 @@ pub async fn start_pin_setup(
     let queue_handle = queue_handle
         .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
     
+    // First, check the device features to understand current PIN state
+    log::info!("PIN setup: Checking device features before starting PIN setup");
+    match queue_handle.send_raw(Message::GetFeatures(GetFeatures {}), true).await {
+        Ok(Message::Features(features)) => {
+            let has_pin = features.pin_protection.unwrap_or(false);
+            let pin_cached = features.pin_cached.unwrap_or(false);
+            
+            log::info!("PIN setup: Current device state - pin_protection: {}, pin_cached: {}", 
+                      has_pin, pin_cached);
+            
+            if has_pin {
+                log::warn!("PIN setup: Device already has PIN protection enabled. This might cause issues.");
+            }
+        },
+        Ok(msg) => {
+            log::warn!("PIN setup: Unexpected response to GetFeatures: {:?}", msg);
+        },
+        Err(e) => {
+            log::warn!("PIN setup: Failed to get device features: {}, continuing anyway", e);
+        }
+    }
+    
     // Send ChangePin message to start PIN setup
     let change_pin = ChangePin {
         remove: Some(false), // false means set/change PIN
     };
     let message = Message::ChangePin(change_pin);
+    
+    log::info!("PIN setup: Sending ChangePin message with remove=false for device {}", device_id);
     
     match queue_handle.send_raw(message, true).await {
         Ok(response) => {
@@ -88,20 +112,24 @@ pub async fn start_pin_setup(
                     Ok(session_id)
                 }
                 Message::Failure(failure) => {
-                    let error = format!("Device rejected PIN setup: {}", failure.message.unwrap_or_default());
-                    log::error!("{}", error);
+                    let error_msg = failure.message.clone().unwrap_or("Unknown error".to_string());
+                    let error = format!("Device rejected PIN setup - Code: {:?}, Message: {}", failure.code, error_msg);
+                    log::error!("PIN setup failed with device error: {}", error);
+                    log::error!("Full failure details: {:?}", failure);
                     Err(error)
                 }
                 _ => {
                     let error = format!("Unexpected response from device: {:?}", response);
-                    log::error!("{}", error);
+                    log::error!("PIN setup: Received unexpected message type from device");
+                    log::error!("Full message details: {:?}", response);
                     Err(error)
                 }
             }
         }
         Err(e) => {
             let error = format!("Failed to start PIN setup: {}", e);
-            log::error!("{}", error);
+            log::error!("PIN setup: Communication error with device");
+            log::error!("Error details: {}", e);
             Err(error)
         }
     }

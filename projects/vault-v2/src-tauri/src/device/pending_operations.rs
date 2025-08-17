@@ -12,7 +12,7 @@ pub struct PendingOperation {
     pub timestamp: std::time::Instant,
 }
 
-/// Global storage for pending operations
+// Global storage for pending operations
 lazy_static::lazy_static! {
     pub static ref PENDING_OPERATIONS: Arc<RwLock<HashMap<String, PendingOperation>>> = 
         Arc::new(RwLock::new(HashMap::new()));
