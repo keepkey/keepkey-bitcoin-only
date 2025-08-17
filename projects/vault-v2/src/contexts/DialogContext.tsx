@@ -703,7 +703,7 @@ export function usePinUnlockDialog() {
   };
 }
 
-// Pre-configured dialog for PIN Creation
+// Pre-configured dialog for PIN Creation (for wallet setup)
 export function usePinCreationDialog() {
   const { show, hide, isShowing } = useDialog();
   return {
@@ -740,5 +740,48 @@ export function usePinCreationDialog() {
     },
     hide: (deviceId: string) => hide(`pin-creation-${deviceId}`),
     isShowing: (deviceId: string) => isShowing(`pin-creation-${deviceId}`),
+  };
+}
+
+// Pre-configured dialog for Enabling PIN (for already initialized devices)
+export function useEnablePinDialog() {
+  const { show, hide, isShowing } = useDialog();
+  return {
+    show: (props: {
+      deviceId: string;
+      onSuccess?: () => void;
+      onError?: (error: string) => void;
+      onDialogClose?: () => void;
+    }) => {
+      const dialogId = `enable-pin-${props.deviceId}`;
+      console.log(`🔐 [EnablePinDialog] show() called for device:`, props.deviceId);
+      
+      show({
+        id: dialogId,
+        component: React.lazy(() => import('../components/EnablePinDialog').then(m => ({ default: m.EnablePinDialog }))),
+        props: {
+          isOpen: true,
+          deviceId: props.deviceId,
+          onSuccess: () => {
+            console.log(`🔐 [EnablePinDialog] PIN enabled successfully`);
+            if (props.onSuccess) props.onSuccess();
+            hide(dialogId);
+          },
+          onError: (error: string) => {
+            console.log(`🔐 [EnablePinDialog] Error enabling PIN:`, error);
+            if (props.onError) props.onError(error);
+          },
+          onClose: () => {
+            console.log(`🔐 [EnablePinDialog] Dialog closed`);
+            if (props.onDialogClose) props.onDialogClose();
+            hide(dialogId);
+          }
+        },
+        priority: 'high', // High priority for PIN setup
+        persistent: true, // User must complete or explicitly close
+      });
+    },
+    hide: (deviceId: string) => hide(`enable-pin-${deviceId}`),
+    isShowing: (deviceId: string) => isShowing(`enable-pin-${deviceId}`),
   };
 }

@@ -7,7 +7,7 @@ import {
   Switch,
 } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
-import { usePinCreationDialog } from '../contexts/DialogContext';
+import { useEnablePinDialog } from '../contexts/DialogContext';
 
 interface PinSettingsProps {
   deviceId: string;
@@ -23,7 +23,7 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
   const [isEnabled, setIsEnabled] = useState(initialEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const pinCreationDialog = usePinCreationDialog();
+  const enablePinDialog = useEnablePinDialog();
 
   // Debug log the initial prop value
   console.log(`[PinSettings] Component mounted/updated - deviceId: ${deviceId}, initialEnabled prop: ${initialEnabled}`);
@@ -46,13 +46,13 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
     
     try {
       if (newState) {
-        // Enabling PIN protection - show the PIN creation dialog
-        console.log('[PinSettings] Opening PIN creation dialog for device:', deviceId);
+        // Enabling PIN protection - show the enable PIN dialog
+        console.log('[PinSettings] Opening enable PIN dialog for device:', deviceId);
         
-        pinCreationDialog.show({
+        enablePinDialog.show({
           deviceId,
-          onComplete: () => {
-            console.log('[PinSettings] PIN creation completed successfully');
+          onSuccess: () => {
+            console.log('[PinSettings] PIN enabled successfully');
             setIsEnabled(true);
             setStatusMessage('PIN protection enabled successfully!');
             
@@ -63,8 +63,15 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
             // Clear success message after a delay
             setTimeout(() => setStatusMessage(null), 3000);
           },
+          onError: (error) => {
+            console.error('[PinSettings] Failed to enable PIN:', error);
+            setStatusMessage(`Error: ${error}`);
+            setTimeout(() => setStatusMessage(null), 5000);
+            // Keep toggle in disabled state on error
+            setIsEnabled(false);
+          },
           onDialogClose: () => {
-            console.log('[PinSettings] PIN creation dialog closed');
+            console.log('[PinSettings] Enable PIN dialog closed');
             // User cancelled - keep toggle in disabled state
             setIsEnabled(false);
           }

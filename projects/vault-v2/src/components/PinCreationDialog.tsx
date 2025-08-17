@@ -1,11 +1,10 @@
 import React from 'react';
-import {
-  Box,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalCloseButton,
-} from '@chakra-ui/react';
+import { Box } from '@chakra-ui/react';
+import { 
+  DialogRoot,
+  DialogContent,
+  DialogCloseTrigger
+} from './ui/dialog';
 import { DevicePin } from './WalletCreationWizard/DevicePin';
 import { PinCreationSession } from '../types/pin';
 
@@ -42,23 +41,29 @@ export const PinCreationDialog: React.FC<PinCreationDialogProps> = ({
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
+    <DialogRoot
+      open={isOpen}
+      onOpenChange={(e) => {
+        if (!e.open) {
+          onClose();
+        }
+      }}
       size="full"
-      closeOnOverlayClick={false}
-      closeOnEsc={false}
+      placement="center"
+      motionPreset="slideInBottom"
     >
-      <ModalOverlay bg="rgba(0, 0, 0, 0.8)" />
-      <ModalContent
+      <DialogContent
         bg="transparent"
         boxShadow="none"
         display="flex"
         alignItems="center"
         justifyContent="center"
         minH="100vh"
+        _backdrop={{
+          bg: "rgba(0, 0, 0, 0.8)"
+        }}
       >
-        <ModalCloseButton
+        <DialogCloseTrigger
           color="gray.400"
           _hover={{ color: "white", bg: "gray.700" }}
           size="lg"
@@ -82,7 +87,7 @@ export const PinCreationDialog: React.FC<PinCreationDialogProps> = ({
             onBack={handleCancel}
           />
         </Box>
-      </ModalContent>
-    </Modal>
+      </DialogContent>
+    </DialogRoot>
   );
 };
