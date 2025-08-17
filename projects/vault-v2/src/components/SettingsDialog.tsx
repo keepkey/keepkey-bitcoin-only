@@ -10,6 +10,9 @@ import {
 import { LuSettings, LuMonitor, LuCpu, LuNetwork, LuFileText } from 'react-icons/lu'
 import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign, FaDownload, FaTrash, FaSyncAlt, FaSearch, FaFilter, FaFolder } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import { LanguageSwitcher } from './LanguageSwitcher'
+import { useSettings } from '../contexts/SettingsContext'
 
 import { KeepKeyDeviceList } from './KeepKeyDeviceList'
 import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
@@ -38,6 +41,8 @@ interface LogEntry {
 }
 
 export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
+  const { t } = useTranslation(['settings', 'common'])
+  const { currency, numberFormat, setCurrency, setNumberFormat } = useSettings()
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [showBootloaderUpdate, setShowBootloaderUpdate] = useState(false)
   const [showFirmwareUpdate, setShowFirmwareUpdate] = useState(false)
@@ -67,6 +72,8 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [autoRefresh, setAutoRefresh] = useState<boolean>(false)
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  
+  // Currency and format settings are now handled by SettingsContext
   
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info'; visible: boolean }>({
@@ -539,6 +546,17 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     }
   }, [logs, autoRefresh])
   
+  // Save settings functions
+  const handleCurrencyChange = (newCurrency: string) => {
+    setCurrency(newCurrency)
+    showToast(t('settings:messages.saved'), 'success')
+  }
+
+  const handleNumberFormatChange = (newFormat: string) => {
+    setNumberFormat(newFormat)
+    showToast(t('settings:messages.saved'), 'success')
+  }
+
   // Show toast notification
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type, visible: true })
@@ -571,7 +589,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
           }}
         >
           <DialogHeader borderBottomWidth="1px" borderColor="gray.700" pb={4}>
-            <DialogTitle color="white">Settings</DialogTitle>
+            <DialogTitle color="white">{t('settings:title')}</DialogTitle>
             <DialogCloseTrigger color="gray.400" _hover={{ color: "white" }}>
               <FaTimes />
             </DialogCloseTrigger>
@@ -589,7 +607,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   _hover={{ color: "white" }}
                 >
                   <LuSettings size={16} />
-                  General
+                  {t('settings:tabs.general')}
                 </Tabs.Trigger>
                 {/*<Tabs.Trigger */}
                 {/*  value="app"*/}
@@ -642,41 +660,74 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   <Text color="white" fontSize="lg" fontWeight="semibold">General Settings</Text>
                   
                   {/* Language Settings */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={3}>
                       <HStack gap={2}>
-                        <FaGlobe color="gray.500" />
-                        <Text color="gray.400" fontWeight="medium">Language Settings</Text>
-                        <FaLock color="gray.500" size={12} />
+                        <FaGlobe color="green.400" />
+                        <Text color="white" fontWeight="medium">{t('settings:general.language.label')}</Text>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">Display Language</Text>
-                        <Text color="gray.500" fontSize="sm">English (Locked)</Text>
+                        <Text color="gray.300" fontSize="sm">{t('settings:general.language.label')}</Text>
+                        <LanguageSwitcher />
                       </HStack>
-                      <Text color="gray.500" fontSize="xs">
-                        Language selection will be available in a future update
+                      <Text color="gray.400" fontSize="xs">
+                        {t('settings:general.language.description')}
                       </Text>
                     </VStack>
                   </Box>
 
                   {/* Currency Settings */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={3}>
                       <HStack gap={2}>
-                        <FaDollarSign color="gray.500" />
-                        <Text color="gray.400" fontWeight="medium">Currency & Format Settings</Text>
-                        <FaLock color="gray.500" size={12} />
+                        <FaDollarSign color="green.400" />
+                        <Text color="white" fontWeight="medium">{t('settings:general.currency.label')}</Text>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">Primary Currency</Text>
-                        <Text color="gray.500" fontSize="sm">USD (Locked)</Text>
+                        <Text color="gray.300" fontSize="sm">{t('settings:general.currency.label')}</Text>
+                        <select
+                          value={currency}
+                          onChange={(e) => handleCurrencyChange(e.target.value)}
+                          style={{
+                            backgroundColor: '#2D3748',
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #4A5568',
+                            fontSize: '14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="USD">{t('settings:general.currency.usd')}</option>
+                          <option value="EUR">{t('settings:general.currency.eur')}</option>
+                          <option value="GBP">{t('settings:general.currency.gbp')}</option>
+                          <option value="JPY">{t('settings:general.currency.jpy')}</option>
+                          <option value="CNY">{t('settings:general.currency.cny')}</option>
+                        </select>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">Number Format</Text>
-                        <Text color="gray.500" fontSize="sm">1,000.00 (Locked)</Text>
+                        <Text color="gray.300" fontSize="sm">Number Format</Text>
+                        <select
+                          value={numberFormat}
+                          onChange={(e) => handleNumberFormatChange(e.target.value)}
+                          style={{
+                            backgroundColor: '#2D3748',
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #4A5568',
+                            fontSize: '14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="1,000.00">1,000.00 (US)</option>
+                          <option value="1.000,00">1.000,00 (EU)</option>
+                          <option value="1 000,00">1 000,00 (FR)</option>
+                          <option value="1,000">1,000 (No decimals)</option>
+                        </select>
                       </HStack>
-                      <Text color="gray.500" fontSize="xs">
-                        Currency and formatting options will be available in a future update
+                      <Text color="gray.400" fontSize="xs">
+                        {t('settings:general.currency.description')}
                       </Text>
                     </VStack>
                   </Box>

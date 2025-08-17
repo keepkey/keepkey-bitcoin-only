@@ -1,0 +1,99 @@
+{
+  "language": {
+    "title": "Select Your Language",
+    "description": "Select your preferred language",
+    "fullDescription": "Choose your preferred language for the KeepKey Desktop application",
+    "changeAnytime": "You can change this anytime in settings",
+    "continueInEnglish": "Continue in English"
+  },
+  "welcome": {
+    "title": "Welcome to KeepKey",
+    "subtitle": "Your journey to secure crypto management starts here",
+    "description": "KeepKey is your gateway to secure cryptocurrency management",
+    "getStarted": "Get Started",
+    "learnMore": "Learn More",
+    "features": {
+      "secure": "Bank-grade security",
+      "simple": "Simple to use",
+      "private": "Your keys, your crypto"
+    }
+  },
+  "setup": {
+    "title": "Setup Your Device",
+    "subtitle": "Let's get your KeepKey ready",
+    "connectDevice": "Please connect your KeepKey device",
+    "detectingDevice": "Detecting device...",
+    "deviceFound": "Device found!",
+    "deviceNotFound": "Device not found",
+    "troubleshooting": "Having trouble? Check our troubleshooting guide",
+    "skipSetup": "Skip setup",
+    "requirements": {
+      "title": "Before we begin",
+      "device": "KeepKey device",
+      "cable": "USB cable",
+      "time": "5-10 minutes"
+    }
+  },
+  "app-settings": {
+    "title": "App Settings",
+    "subtitle": "Configure your application preferences",
+    "description": "Configure your application preferences",
+    "fullDescription": "Customize how KeepKey Desktop works for you",
+    "theme": {
+      "title": "Choose Theme",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System Default",
+      "description": "Dark theme provides better visibility and reduces eye strain"
+    },
+    "analytics": {
+      "title": "Anonymous Analytics",
+      "description": "Help us improve by sharing anonymous usage data",
+      "enable": "Enable Analytics",
+      "disable": "No Thanks"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Get notified about important updates and transactions",
+      "enable": "Enable Notifications",
+      "disable": "Disable Notifications"
+    }
+  },
+  "pin": {
+    "title": "Security",
+    "description": "Set up your PIN and security settings",
+    "subtitle": "Protect your device with a PIN"
+  },
+  "mnemonics": {
+    "title": "Recovery",
+    "description": "Understand recovery phrases",
+    "subtitle": "Learn about backup and recovery"
+  },
+  "complete": {
+    "title": "Setup Complete!",
+    "subtitle": "You're all set to start using KeepKey",
+    "description": "You're all set!",
+    "fullDescription": "Your KeepKey is ready for secure cryptocurrency management",
+    "startUsing": "Start Using KeepKey",
+    "viewTutorial": "View Tutorial",
+    "tips": {
+      "title": "Quick Tips",
+      "backup": "Always backup your recovery phrase",
+      "update": "Keep your firmware updated",
+      "verify": "Always verify addresses on device"
+    }
+  },
+  "steps": {
+    "language": "Language",
+    "app-settings": "App Settings",
+    "pin": "Security",
+    "mnemonics": "Recovery",
+    "complete": "Complete"
+  },
+  "skip": {
+    "title": "Skip Setup?",
+    "description": "You can always complete setup later from settings",
+    "confirm": "Skip Setup",
+    "cancel": "Continue Setup"
+  }
+}

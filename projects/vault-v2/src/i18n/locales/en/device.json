@@ -1,0 +1,161 @@
+{
+  "status": {
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "busy": "Busy",
+    "ready": "Ready",
+    "bootloader": "Bootloader Mode",
+    "initialized": "Initialized",
+    "notInitialized": "Not Initialized",
+    "locked": "Locked",
+    "unlocked": "Unlocked",
+    "needsBackup": "Needs Backup",
+    "updating": "Updating",
+    "error": "Error"
+  },
+  "info": {
+    "deviceId": "Device ID",
+    "firmwareVersion": "Firmware Version",
+    "bootloaderVersion": "Bootloader Version",
+    "model": "Model",
+    "label": "Label",
+    "serialNumber": "Serial Number",
+    "initialized": "Initialized",
+    "features": "Features",
+    "capabilities": "Capabilities"
+  },
+  "actions": {
+    "update": "Update Device",
+    "updateFirmware": "Update Firmware",
+    "updateBootloader": "Update Bootloader",
+    "wipe": "Wipe Device",
+    "recover": "Recover Device",
+    "initialize": "Initialize Device",
+    "backup": "Backup Device",
+    "changePin": "Change PIN",
+    "removePin": "Remove PIN",
+    "enablePassphrase": "Enable Passphrase",
+    "disablePassphrase": "Disable Passphrase",
+    "changeLabel": "Change Label",
+    "applySettings": "Apply Settings",
+    "cancel": "Cancel Operation"
+  },
+  "messages": {
+    "confirmOnDevice": "Please confirm on your device",
+    "followDirections": "Follow the directions on your device",
+    "enterPin": "Enter your PIN on the device",
+    "enterPassphrase": "Enter your passphrase",
+    "holdButton": "Hold the button on your KeepKey",
+    "releaseButton": "Release the button",
+    "deviceBusy": "Device is busy, please wait",
+    "connectDevice": "Please connect your KeepKey device",
+    "disconnectDevice": "Please disconnect your device",
+    "checkDevice": "Check your device screen"
+  },
+  "troubleshooting": {
+    "title": "Troubleshooting",
+    "subtitle": "Having issues with your device?",
+    "notDetected": {
+      "title": "Device Not Detected",
+      "tips": [
+        "Make sure your KeepKey is plugged in via USB",
+        "Try a different USB port or cable",
+        "Restart the KeepKey Desktop application",
+        "Check if other applications are using the device"
+      ]
+    },
+    "connectionLost": {
+      "title": "Connection Lost",
+      "tips": [
+        "Check your USB cable connection",
+        "Ensure the device is not in use by another application",
+        "Try unplugging and reconnecting the device",
+        "Restart the application if the issue persists"
+      ]
+    },
+    "bootloaderMode": {
+      "title": "Device in Bootloader Mode",
+      "description": "Your device is in bootloader mode. This is used for firmware updates.",
+      "howToExit": "To exit bootloader mode, unplug and reconnect your device"
+    },
+    "updateFailed": {
+      "title": "Update Failed",
+      "tips": [
+        "Ensure stable USB connection during update",
+        "Do not disconnect device during update",
+        "Try entering bootloader mode manually",
+        "Contact support if issue persists"
+      ]
+    }
+  },
+  "bootloader": {
+    "title": "Bootloader Mode",
+    "description": "Your KeepKey is in bootloader mode",
+    "instructions": {
+      "title": "How to enter Bootloader Mode:",
+      "step1": "Disconnect your KeepKey",
+      "step2": "Hold down the button on your KeepKey",
+      "step3": "While holding the button, reconnect your KeepKey",
+      "step4": "Continue holding until you see 'BOOTLOADER MODE' on the screen",
+      "step5": "Release the button"
+    },
+    "update": {
+      "title": "Update Available",
+      "description": "A bootloader update is available for your device",
+      "warning": "Do not disconnect your device during the update"
+    }
+  },
+  "firmware": {
+    "title": "Firmware Update",
+    "checking": "Checking for firmware updates...",
+    "available": "Firmware update available",
+    "current": "Current Version",
+    "latest": "Latest Version",
+    "upToDate": "Your firmware is up to date",
+    "downloading": "Downloading firmware...",
+    "installing": "Installing firmware...",
+    "verifying": "Verifying firmware...",
+    "success": "Firmware updated successfully",
+    "failed": "Firmware update failed",
+    "warning": "Warning: Do not disconnect your device during the update process"
+  },
+  "initialization": {
+    "title": "Initialize Device",
+    "description": "Set up your KeepKey for the first time",
+    "options": {
+      "create": "Create New Wallet",
+      "recover": "Recover Existing Wallet",
+      "import": "Import Seed Phrase"
+    },
+    "inProgress": "Initializing device...",
+    "success": "Device initialized successfully",
+    "failed": "Device initialization failed"
+  },
+  "recovery": {
+    "title": "Recover Device",
+    "description": "Restore your wallet using your recovery seed",
+    "wordCount": "Number of words",
+    "enterWord": "Enter word {{number}}",
+    "checkDevice": "Check your device for the word positions",
+    "inProgress": "Recovering wallet...",
+    "success": "Wallet recovered successfully",
+    "failed": "Recovery failed"
+  },
+  "wipe": {
+    "title": "Wipe Device",
+    "warning": "Warning: This will remove all data from your device!",
+    "confirm": "Are you sure you want to wipe your device?",
+    "description": "This action cannot be undone. Make sure you have backed up your recovery seed.",
+    "inProgress": "Wiping device...",
+    "success": "Device wiped successfully",
+    "failed": "Failed to wipe device"
+  },
+  "badges": {
+    "keepkey": "KeepKey Device",
+    "hardwareWallet": "Hardware Wallet",
+    "secureElement": "Secure Element",
+    "usbConnected": "USB Connected",
+    "firmwareOutdated": "Firmware Outdated",
+    "backupNeeded": "Backup Needed"
+  }
+}

@@ -11,6 +11,8 @@ import {
 import { FaPaperPlane, FaDownload } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
+import { useTranslation } from 'react-i18next';
+import { useCurrencyFormatter } from '../utils/currency';
 
 interface PortfolioProps {
   onNavigate?: (action: 'send' | 'receive') => void;
@@ -18,6 +20,8 @@ interface PortfolioProps {
 
 export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   const { portfolio, loading, error, refreshPortfolio } = useWallet();
+  const { t } = useTranslation(['wallet', 'common']);
+  const { formatCurrency, formatNumber } = useCurrencyFormatter();
   const [showStartButton, setShowStartButton] = React.useState(false);
   const [syncingTime, setSyncingTime] = React.useState(0);
 
@@ -50,14 +54,11 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
     };
   }, [portfolio, loading, error]);
 
-  // Format USD value
+  // Format currency value using user preferences
   const formatUsd = (value: number | string) => {
     const numValue = typeof value === 'string' ? parseFloat(value) : value;
-    if (isNaN(numValue)) return '0.00';
-    return numValue.toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    if (isNaN(numValue)) return formatCurrency(0);
+    return formatCurrency(numValue);
   };
 
   // Debug function to inspect USD values
@@ -92,7 +93,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           border="1px solid rgba(255, 255, 255, 0.1)"
         >
           <Spinner size="xl" color="blue.400" />
-          <Text color="gray.300" fontSize="lg">Loading Portfolio...</Text>
+          <Text color="gray.300" fontSize="lg">{t('wallet:portfolio.loading')}</Text>
         </VStack>
       </Box>
     );
@@ -210,20 +211,20 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
         {/* USD Balance */}
         <Box textAlign="center">
           <Text fontSize="3xl" fontWeight="bold" color="white">
-            ${formatUsd(portfolio.total_value_usd)}
+            {formatUsd(portfolio.total_value_usd)}
           </Text>
           <Text fontSize="md" color="gray.400" mt={1}>
-            Total USD Value
+            {t('wallet:portfolio.totalBalance')}
           </Text>
         </Box>
         
         {/* BTC Balance */}
         <Box textAlign="center">
           <Text fontSize="2xl" fontWeight="semibold" color="orange.300">
-            {btcTotal.toFixed(8)} BTC
+            {formatNumber(btcTotal, 8)} BTC
           </Text>
           <Text fontSize="md" color="gray.400" mt={1}>
-            Bitcoin Balance
+            {t('wallet:assets.bitcoin')} {t('wallet:portfolio.balance')}
           </Text>
         </Box>
         
@@ -238,7 +239,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           >
             <HStack gap={2}>
               <FaPaperPlane />
-              <Text>Send</Text>
+              <Text>{t('wallet:send.title')}</Text>
             </HStack>
           </Button>
           <Button 
@@ -250,7 +251,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           >
             <HStack gap={2}>
               <FaDownload />
-              <Text>Receive</Text>
+              <Text>{t('wallet:receive.title')}</Text>
             </HStack>
           </Button>
         </HStack>

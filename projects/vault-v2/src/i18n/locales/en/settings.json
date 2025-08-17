@@ -1,0 +1,224 @@
+{
+  "title": "Settings",
+  "subtitle": "Manage your preferences and device settings",
+  "tabs": {
+    "general": "General",
+    "security": "Security",
+    "advanced": "Advanced",
+    "about": "About",
+    "device": "Device",
+    "network": "Network",
+    "backup": "Backup"
+  },
+  "general": {
+    "title": "General Settings",
+    "language": {
+      "label": "Display Language",
+      "description": "Choose your preferred language for the interface"
+    },
+    "theme": {
+      "label": "Theme",
+      "description": "Choose between light and dark mode",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "currency": {
+      "label": "Primary Currency",
+      "description": "Display values in your preferred currency",
+      "usd": "US Dollar (USD)",
+      "eur": "Euro (EUR)",
+      "gbp": "British Pound (GBP)",
+      "jpy": "Japanese Yen (JPY)",
+      "cny": "Chinese Yuan (CNY)"
+    },
+    "autoRefresh": {
+      "label": "Auto Refresh",
+      "description": "Automatically refresh portfolio data",
+      "interval": "Refresh interval (seconds)"
+    },
+    "notifications": {
+      "label": "Notifications",
+      "description": "Enable desktop notifications",
+      "transactions": "Transaction notifications",
+      "updates": "Update notifications",
+      "security": "Security alerts"
+    }
+  },
+  "security": {
+    "title": "Security Settings",
+    "pin": {
+      "label": "PIN Settings",
+      "description": "Manage your device PIN",
+      "change": "Change PIN",
+      "remove": "Remove PIN",
+      "set": "Set PIN",
+      "current": "Current PIN",
+      "new": "New PIN",
+      "confirm": "Confirm PIN"
+    },
+    "passphrase": {
+      "label": "Passphrase",
+      "description": "Additional security layer for your wallet",
+      "enable": "Enable Passphrase",
+      "disable": "Disable Passphrase",
+      "warning": "Warning: Passphrases cannot be recovered if forgotten"
+    },
+    "autoLock": {
+      "label": "Auto Lock",
+      "description": "Automatically lock device after inactivity",
+      "never": "Never",
+      "1min": "1 minute",
+      "5min": "5 minutes",
+      "10min": "10 minutes",
+      "30min": "30 minutes"
+    },
+    "wipeDevice": {
+      "label": "Wipe Device",
+      "description": "Remove all data from your device",
+      "button": "Wipe Device",
+      "warning": "This will delete all data on your device!"
+    }
+  },
+  "advanced": {
+    "title": "Advanced Settings",
+    "developerMode": {
+      "label": "Developer Mode",
+      "description": "Enable advanced features and debugging tools",
+      "enable": "Enable Developer Mode",
+      "disable": "Disable Developer Mode"
+    },
+    "logs": {
+      "label": "Device Communication Logs",
+      "description": "View and export device communication logs",
+      "view": "View Logs",
+      "export": "Export Logs",
+      "clear": "Clear Logs",
+      "level": "Log Level",
+      "debug": "Debug",
+      "info": "Info",
+      "warning": "Warning",
+      "error": "Error"
+    },
+    "api": {
+      "label": "MCP & API Access",
+      "description": "Configure API endpoints and services",
+      "endpoint": "API Endpoint",
+      "timeout": "Request Timeout (ms)",
+      "retries": "Max Retries"
+    },
+    "cache": {
+      "label": "Cache Management",
+      "description": "Manage application cache",
+      "clear": "Clear Cache",
+      "size": "Cache Size"
+    },
+    "experimental": {
+      "label": "Experimental Features",
+      "description": "Try new features before they're released",
+      "warning": "These features may be unstable"
+    }
+  },
+  "device": {
+    "title": "Device Settings",
+    "info": {
+      "label": "Device Information",
+      "model": "Model",
+      "firmware": "Firmware Version",
+      "bootloader": "Bootloader Version",
+      "deviceId": "Device ID",
+      "serialNumber": "Serial Number"
+    },
+    "label": {
+      "label": "Device Label",
+      "description": "Name your device for easy identification",
+      "placeholder": "My KeepKey"
+    },
+    "firmware": {
+      "label": "Firmware",
+      "description": "Keep your device firmware up to date",
+      "checkUpdate": "Check for Updates",
+      "update": "Update Firmware",
+      "currentVersion": "Current Version",
+      "latestVersion": "Latest Version",
+      "upToDate": "Your firmware is up to date"
+    },
+    "bootloader": {
+      "label": "Bootloader",
+      "description": "Update device bootloader",
+      "update": "Update Bootloader",
+      "mode": "Bootloader Mode"
+    }
+  },
+  "network": {
+    "title": "Network Settings",
+    "status": {
+      "label": "Connection Status",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting..."
+    },
+    "node": {
+      "label": "Bitcoin Node",
+      "description": "Configure Bitcoin node connection",
+      "default": "Default Node",
+      "custom": "Custom Node",
+      "url": "Node URL",
+      "port": "Port"
+    },
+    "proxy": {
+      "label": "Proxy Settings",
+      "description": "Configure proxy for network requests",
+      "enable": "Use Proxy",
+      "type": "Proxy Type",
+      "host": "Proxy Host",
+      "port": "Proxy Port"
+    }
+  },
+  "backup": {
+    "title": "Backup & Recovery",
+    "seedPhrase": {
+      "label": "Recovery Seed",
+      "description": "Backup your recovery seed phrase",
+      "view": "View Seed",
+      "verify": "Verify Seed",
+      "warning": "Never share your seed phrase with anyone"
+    },
+    "export": {
+      "label": "Export Data",
+      "description": "Export your transaction history and settings",
+      "button": "Export Data"
+    },
+    "import": {
+      "label": "Import Data",
+      "description": "Import previously exported data",
+      "button": "Import Data"
+    }
+  },
+  "about": {
+    "title": "About",
+    "version": "Version",
+    "build": "Build",
+    "copyright": "Copyright © 2024 KeepKey",
+    "license": "License",
+    "website": "Website",
+    "support": "Support",
+    "documentation": "Documentation",
+    "termsOfService": "Terms of Service",
+    "privacyPolicy": "Privacy Policy",
+    "checkForUpdates": "Check for Updates",
+    "releaseNotes": "Release Notes"
+  },
+  "actions": {
+    "save": "Save Settings",
+    "reset": "Reset to Defaults",
+    "cancel": "Cancel Changes",
+    "apply": "Apply Changes"
+  },
+  "messages": {
+    "saved": "Settings saved successfully",
+    "reset": "Settings reset to defaults",
+    "error": "Failed to save settings",
+    "restartRequired": "Restart required for changes to take effect"
+  }
+}

@@ -1,0 +1,192 @@
+{
+  "creation": {
+    "title": "Create New Wallet",
+    "subtitle": "Set up a new wallet on your KeepKey",
+    "steps": {
+      "generate": "Generate Seed",
+      "verify": "Verify Seed",
+      "complete": "Complete"
+    },
+    "generating": "Generating new wallet...",
+    "generated": "Wallet generated successfully",
+    "verifying": "Verifying seed phrase...",
+    "verified": "Seed phrase verified",
+    "failed": "Wallet creation failed"
+  },
+  "recovery": {
+    "title": "Recover Wallet",
+    "subtitle": "Restore your wallet using recovery seed",
+    "seedLength": {
+      "label": "Seed phrase length",
+      "12words": "12 words",
+      "18words": "18 words",
+      "24words": "24 words"
+    },
+    "enterSeed": "Enter your recovery seed phrase",
+    "wordNumber": "Word {{number}}",
+    "recovering": "Recovering wallet...",
+    "recovered": "Wallet recovered successfully",
+    "failed": "Recovery failed",
+    "invalidSeed": "Invalid seed phrase"
+  },
+  "seed": {
+    "title": "Recovery Seed",
+    "subtitle": "Your wallet backup phrase",
+    "warning": "Write down these words in order and store them securely",
+    "warningStrong": "Never share your seed phrase with anyone!",
+    "word": "Word {{number}}",
+    "verify": {
+      "title": "Verify Your Seed",
+      "subtitle": "Confirm you've written down your seed correctly",
+      "instruction": "Select word {{number}} of your seed phrase",
+      "correct": "Correct!",
+      "incorrect": "Incorrect. Please try again",
+      "complete": "Seed phrase verified successfully"
+    },
+    "backup": {
+      "title": "Backup Your Seed",
+      "instruction": "Have you written down your seed phrase?",
+      "confirm": "Yes, I've written it down",
+      "skip": "Skip (Not Recommended)"
+    }
+  },
+  "passphrase": {
+    "title": "Passphrase",
+    "subtitle": "Additional security layer",
+    "enter": "Enter passphrase",
+    "confirm": "Confirm passphrase",
+    "placeholder": "Enter your passphrase",
+    "enabled": "Passphrase enabled",
+    "disabled": "Passphrase disabled",
+    "warning": "Passphrases create a hidden wallet. If you forget your passphrase, you cannot recover your funds!",
+    "mismatch": "Passphrases do not match"
+  },
+  "portfolio": {
+    "title": "Portfolio",
+    "totalBalance": "Total Balance",
+    "availableBalance": "Available Balance",
+    "pendingBalance": "Pending",
+    "assets": "Assets",
+    "noAssets": "No assets found",
+    "loading": "Loading portfolio...",
+    "refresh": "Refresh Portfolio",
+    "lastUpdated": "Last updated {{time}} ago",
+    "chart": {
+      "1d": "1D",
+      "1w": "1W",
+      "1m": "1M",
+      "3m": "3M",
+      "1y": "1Y",
+      "all": "ALL"
+    }
+  },
+  "assets": {
+    "title": "Assets",
+    "search": "Search assets...",
+    "balance": "Balance",
+    "value": "Value",
+    "price": "Price",
+    "change24h": "24h Change",
+    "bitcoin": "Bitcoin",
+    "noAssets": "No assets to display",
+    "hideSmallBalances": "Hide small balances",
+    "showAll": "Show all"
+  },
+  "receive": {
+    "title": "Receive",
+    "subtitle": "Generate address to receive funds",
+    "selectAsset": "Select Asset",
+    "generateAddress": "Generate Address",
+    "generatingAddress": "Generating address...",
+    "address": "Address",
+    "amount": "Amount (optional)",
+    "description": "Description (optional)",
+    "copyAddress": "Copy Address",
+    "addressCopied": "Address copied!",
+    "showQR": "Show QR Code",
+    "verifyOnDevice": "Verify on Device",
+    "verified": "Address verified",
+    "failed": "Failed to generate address",
+    "addressType": {
+      "label": "Address Type",
+      "legacy": "Legacy (1...)",
+      "segwit": "SegWit (3...)",
+      "nativeSegwit": "Native SegWit (bc1...)"
+    },
+    "derivationPath": "Derivation Path",
+    "scriptType": "Script Type"
+  },
+  "send": {
+    "title": "Send",
+    "subtitle": "Send funds from your wallet",
+    "selectAsset": "Select Asset",
+    "recipient": "Recipient Address",
+    "amount": "Amount",
+    "max": "Max",
+    "fee": "Network Fee",
+    "total": "Total",
+    "memo": "Memo (optional)",
+    "review": "Review Transaction",
+    "confirm": "Confirm & Send",
+    "sending": "Sending transaction...",
+    "broadcasted": "Transaction broadcasted",
+    "failed": "Transaction failed",
+    "insufficient": "Insufficient balance",
+    "feeLevel": {
+      "slow": "Slow",
+      "normal": "Normal",
+      "fast": "Fast",
+      "custom": "Custom"
+    },
+    "summary": {
+      "title": "Transaction Summary",
+      "from": "From",
+      "to": "To",
+      "amount": "Amount",
+      "fee": "Fee",
+      "total": "Total"
+    }
+  },
+  "transactions": {
+    "title": "Transactions",
+    "history": "Transaction History",
+    "pending": "Pending",
+    "confirmed": "Confirmed",
+    "failed": "Failed",
+    "sent": "Sent",
+    "received": "Received",
+    "noTransactions": "No transactions yet",
+    "loading": "Loading transactions...",
+    "details": {
+      "title": "Transaction Details",
+      "txid": "Transaction ID",
+      "status": "Status",
+      "confirmations": "Confirmations",
+      "date": "Date",
+      "time": "Time",
+      "from": "From",
+      "to": "To",
+      "amount": "Amount",
+      "fee": "Fee",
+      "total": "Total",
+      "memo": "Memo",
+      "viewOnExplorer": "View on Explorer"
+    },
+    "filters": {
+      "all": "All",
+      "sent": "Sent",
+      "received": "Received",
+      "pending": "Pending"
+    }
+  },
+  "accounts": {
+    "title": "Accounts",
+    "account": "Account {{number}}",
+    "addAccount": "Add Account",
+    "selectAccount": "Select Account",
+    "balance": "Balance",
+    "transactions": "Transactions",
+    "rename": "Rename Account",
+    "delete": "Delete Account"
+  }
+}
