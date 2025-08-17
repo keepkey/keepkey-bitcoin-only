@@ -16,6 +16,7 @@ import { FaArrowLeft, FaCopy, FaCheck, FaEye, FaChevronDown, FaChevronUp } from 
 import { SiBitcoin } from 'react-icons/si'; // Only if used in JSX
 import QRCode from 'react-qr-code';
 import { useWallet } from '../contexts/WalletContext';
+import { useTypedTranslation } from '../hooks/useTypedTranslation';
 
 interface ReceiveProps {
   onBack?: () => void;
@@ -23,6 +24,7 @@ interface ReceiveProps {
 
 const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const { portfolio, getReceiveAddress, selectAsset, loading: walletLoading, selectedAsset, fetchedXpubs } = useWallet();
+  const { t } = useTypedTranslation('wallet');
   
   const [address, setAddress] = useState<string>('');
   const [hasCopied, setHasCopied] = useState(false);
@@ -59,7 +61,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   // Generate receive address
   const generateAddress = () => {
     if (!btcAsset) {
-      setError('Bitcoin asset not found in portfolio. Please sync your device or check your wallet setup.');
+      setError(t('receive.noAssetFound'));
       return;
     }
     setLoading(true);
@@ -90,12 +92,12 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
             console.log('✅ Address set in state:', addr);
           } else {
             console.error('❌ No address returned from getReceiveAddress');
-            setError('Failed to generate address - no response from device');
+            setError(t('receive.failedNoResponse'));
           }
         } catch (e) {
           console.error('❌ Error in address generation:', e);
           setError(
-            e instanceof Error ? e.message : 'Failed to generate receive address. Ensure your device is connected and unlocked.'
+            e instanceof Error ? e.message : t('receive.failedEnsureConnected')
           );
         } finally {
           setLoading(false);
@@ -162,7 +164,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
       <Box height="100%" display="flex" alignItems="center" justifyContent="center" bg="transparent">
         <VStack gap={4}>
           <Spinner size="xl" color="blue.400" />
-          <Text color="gray.300" fontSize="lg">Loading Wallet...</Text>
+          <Text color="gray.300" fontSize="lg">{t('receive.loadingWallet')}</Text>
         </VStack>
       </Box>
     );
@@ -185,7 +187,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
           {/* Header */}
           <HStack>
             <IconButton
-              aria-label="Go back"
+              aria-label={t('receive.goBack')}
               onClick={onBack}
               size="sm"
             >
@@ -196,7 +198,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                 <SiBitcoin />
               </Box>
               <Heading size="lg" color="white">
-                Receive Bitcoin
+                {t('receive.titleBitcoin')}
               </Heading>
             </Flex>
             <Box w="40px" /> {/* Spacer for centering */}
@@ -208,16 +210,16 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
               /* Show spinner and message while loading, regardless of address state */
               <VStack gap={4} textAlign="center">
                 <Spinner size="xl" color="blue.400" />
-                <Text color="gray.300" fontSize="lg">Generating Address...</Text>
+                <Text color="gray.300" fontSize="lg">{t('receive.generatingAddress')}</Text>
                 <Text color="gray.400" fontSize="sm">
-                  Please confirm on your KeepKey device
+                  {t('receive.generatingAddressHint')}
                 </Text>
                 
                 {isTimeout && (
                   <VStack gap={3} mt={4}>
                     <Box bg="yellow.900" p={3} borderRadius="md" border="1px solid" borderColor="yellow.600">
                       <Text color="yellow.200" fontSize="sm">
-                        ⏱️ This is taking longer than usual. Your device may need attention.
+                        {t('receive.timeout.icon')} {t('receive.timeout.message')}
                       </Text>
                     </Box>
                     <Button
@@ -231,14 +233,14 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                         setTimeout(() => generateAddress(), 100);
                       }}
                     >
-                      Retry
+                      {t('receive.retry')}
                     </Button>
                   </VStack>
                 )}
                 
                 {error && (
                   <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
-                    <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
+                    <Text color="red.200" fontSize="sm">{t('receive.error.icon')} {error}</Text>
                   </Box>
                 )}
               </VStack>
@@ -249,14 +251,14 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                   <SiBitcoin />
                 </Box>
                 <Text color="gray.300" fontSize="lg" fontWeight="medium">
-                  Generate Receive Address
+                  {t('receive.generateReceiveAddress')}
                 </Text>
                 <Text color="gray.400" fontSize="sm" textAlign="center" maxW="300px">
-                  Generate a Bitcoin address to receive payments. This address will be linked to your KeepKey device.
+                  {t('receive.generateAddressDescription')}
                 </Text>
                 {error && (
                   <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
-                    <Text color="red.200" fontSize="sm">⚠️ {error}</Text>
+                    <Text color="red.200" fontSize="sm">{t('receive.error.icon')} {error}</Text>
                   </Box>
                 )}
                 <Button
@@ -268,12 +270,12 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                 >
                   <HStack gap={2}>
                     <FaEye />
-                    <Text>Generate Address</Text>
+                    <Text>{t('receive.generateAddress')}</Text>
                   </HStack>
                 </Button>
                 {!btcAsset && (
                   <Text color="yellow.400" fontSize="xs" textAlign="center">
-                    No Bitcoin asset found in portfolio
+                    {t('receive.noBitcoinAsset')}
                   </Text>
                 )}
               </VStack>
@@ -283,10 +285,10 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                 {/* Success Header */}
                 <VStack gap={2} textAlign="center">
                   <Text color="green.300" fontSize="lg" fontWeight="bold">
-                    ✅ Receive Address Generated
+                    {t('receive.success.icon')} {t('receive.addressGenerated')}
                   </Text>
                   <Text color="gray.400" fontSize="sm">
-                    Use this address to receive Bitcoin payments
+                    {t('receive.useThisAddress')}
                   </Text>
                 </VStack>
 
@@ -316,7 +318,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                   <VStack flex="1" gap={4} align="stretch" justify="center" minH="240px">
                     <VStack gap={2} align="stretch">
                       <Text color="gray.300" fontSize="md" fontWeight="medium">
-                        Bitcoin Address
+                        {t('receive.bitcoinAddress')}
                       </Text>
                       <Box
                         bg="gray.700"
@@ -349,7 +351,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                       >
                         <HStack gap={2}>
                           {hasCopied ? <FaCheck /> : <FaCopy />}
-                          <Text>{hasCopied ? 'Copied!' : 'Copy Address'}</Text>
+                          <Text>{hasCopied ? t('receive.addressCopied') : t('receive.copyAddress')}</Text>
                         </HStack>
                       </Button>
                       
@@ -363,7 +365,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                         }}
                         flex="1"
                       >
-                        Generate New
+                        {t('receive.generateNew')}
                       </Button>
                     </HStack>
 
@@ -377,7 +379,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                       alignSelf="center"
                     >
                       <HStack gap={1}>
-                        <Text fontSize="xs">Advanced View</Text>
+                        <Text fontSize="xs">{t('receive.advancedView')}</Text>
                         {showAdvanced ? <FaChevronUp /> : <FaChevronDown />}
                       </HStack>
                     </Button>
@@ -399,17 +401,17 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                       overflowY="auto"
                     >
                       <Text color="gray.300" fontSize="sm" fontWeight="medium" textAlign="center">
-                        Technical Details
+                        {t('receive.technicalDetails')}
                       </Text>
                       
                       <VStack align="stretch" gap={3}>
                         {/* Address Type */}
                         <HStack justify="space-between">
-                          <Text color="gray.400" fontSize="xs">Address Type:</Text>
+                          <Text color="gray.400" fontSize="xs">{t('receive.addressType.label')}:</Text>
                           <Badge colorScheme="blue" fontSize="xs">
-                            {addressType === 'legacy' ? 'Legacy (P2PKH)' :
-                             addressType === 'segwit' ? 'SegWit (P2SH-P2WPKH)' :
-                             'Native SegWit (P2WPKH)'}
+                            {addressType === 'legacy' ? t('receive.addressType.legacy') :
+                             addressType === 'segwit' ? t('receive.addressType.segwit') :
+                             t('receive.addressType.nativeSegwit')}
                           </Badge>
                         </HStack>
 
@@ -417,7 +419,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
 
                         {/* Derivation Path */}
                         <VStack align="stretch" gap={1}>
-                          <Text color="gray.400" fontSize="xs">Derivation Path:</Text>
+                          <Text color="gray.400" fontSize="xs">{t('receive.derivationPath')}:</Text>
                           <Code
                             bg="gray.800"
                             color="blue.300"
@@ -436,7 +438,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                           <>
                             <VStack align="stretch" gap={1}>
                               <HStack justify="space-between" align="center">
-                                <Text color="gray.400" fontSize="xs">Account Extended Public Key:</Text>
+                                <Text color="gray.400" fontSize="xs">{t('receive.accountExtendedPublicKey')}:</Text>
                                 <Button
                                   size="xs"
                                   variant="ghost"
@@ -447,7 +449,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                                   }}
                                   title="Copy to clipboard"
                                 >
-                                  Copy
+                                  {t('receive.copy')}
                                 </Button>
                               </HStack>
                               <Code
@@ -462,7 +464,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                                 {relevantXpub.xpub}
                               </Code>
                               <Text color="gray.500" fontSize="xs" mt={1}>
-                                Path: {relevantXpub.path}
+                                {t('receive.path')}: {relevantXpub.path}
                               </Text>
                             </VStack>
                             <Box w="100%" h="1px" bg="gray.700" />
@@ -471,11 +473,11 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
 
                         {/* Script Type Info */}
                         <VStack align="stretch" gap={1}>
-                          <Text color="gray.400" fontSize="xs">Script Type:</Text>
+                          <Text color="gray.400" fontSize="xs">{t('receive.scriptType')}:</Text>
                           <Text color="gray.300" fontSize="xs">
-                            {addressType === 'legacy' ? 'Pay-to-Public-Key-Hash (P2PKH)' :
-                             addressType === 'segwit' ? 'Pay-to-Script-Hash wrapped Witness (P2SH-P2WPKH)' :
-                             'Pay-to-Witness-Public-Key-Hash (P2WPKH)'}
+                            {addressType === 'legacy' ? t('receive.scriptTypeInfo.legacy') :
+                             addressType === 'segwit' ? t('receive.scriptTypeInfo.segwit') :
+                             t('receive.scriptTypeInfo.nativeSegwit')}
                           </Text>
                         </VStack>
 
@@ -483,21 +485,21 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
 
                         {/* Address Format Info */}
                         <HStack justify="space-between">
-                          <Text color="gray.400" fontSize="xs">Address Format:</Text>
+                          <Text color="gray.400" fontSize="xs">{t('receive.addressFormat')}:</Text>
                           <Text color="gray.300" fontSize="xs">
-                            {addressType === 'legacy' ? 'Starts with 1' :
-                             addressType === 'segwit' ? 'Starts with 3' :
-                             'Starts with bc1'}
+                            {addressType === 'legacy' ? t('receive.addressFormatInfo.legacy') :
+                             addressType === 'segwit' ? t('receive.addressFormatInfo.segwit') :
+                             t('receive.addressFormatInfo.nativeSegwit')}
                           </Text>
                         </HStack>
 
                         {/* Device Info */}
                         <Box w="100%" h="1px" bg="gray.700" />
                         <VStack align="stretch" gap={1}>
-                          <Text color="gray.400" fontSize="xs">Generated By:</Text>
+                          <Text color="gray.400" fontSize="xs">{t('receive.generatedBy')}:</Text>
                           <HStack>
-                            <Badge colorScheme="green" fontSize="xs">KeepKey Device</Badge>
-                            <Text color="gray.500" fontSize="xs">Hardware Wallet</Text>
+                            <Badge colorScheme="green" fontSize="xs">{t('receive.keepKeyDevice')}</Badge>
+                            <Text color="gray.500" fontSize="xs">{t('receive.hardwareWallet')}</Text>
                           </HStack>
                         </VStack>
                       </VStack>
@@ -505,8 +507,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                       {/* Info Note */}
                       <Box bg="blue.900" p={3} borderRadius="md" border="1px solid" borderColor="blue.700">
                         <Text color="blue.200" fontSize="xs">
-                          💡 This address is derived from your hardware wallet's seed phrase using BIP44/49/84 standards. 
-                          Each address is unique and can only be spent by your KeepKey device.
+                          {t('receive.info.icon')} {t('receive.info.addressDerivation')}
                         </Text>
                       </Box>
                     </VStack>
@@ -516,7 +517,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                 {/* Security Notice */}
                 <Box bg="blue.900" p={3} borderRadius="md" border="1px solid" borderColor="blue.600">
                   <Text color="blue.200" fontSize="xs" textAlign="center">
-                    🔒 Always verify your Address on device before sending funds!
+                    {t('receive.security.icon')} {t('receive.security.verifyAddress')}
                   </Text>
                 </Box>
               </VStack>
@@ -530,7 +531,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
             onClick={onBack}
             alignSelf="center"
           >
-            Back to Vault
+            {t('receive.backToVault')}
           </Button>
         </VStack>
       </Box>

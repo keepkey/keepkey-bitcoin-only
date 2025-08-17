@@ -23,6 +23,80 @@
     "title": "Enviar"
   },
   "receive": {
-    "title": "Recibir"
+    "title": "Recibir",
+    "titleBitcoin": "Recibir Bitcoin",
+    "subtitle": "Generar dirección para recibir fondos",
+    "generateReceiveAddress": "Generar Dirección de Recepción",
+    "generateAddressDescription": "Genera una dirección de Bitcoin para recibir pagos. Esta dirección estará vinculada a tu dispositivo KeepKey.",
+    "selectAsset": "Seleccionar Activo",
+    "generateAddress": "Generar Dirección",
+    "generateNew": "Generar Nueva",
+    "generatingAddress": "Generando Dirección...",
+    "generatingAddressHint": "Por favor confirma en tu dispositivo KeepKey",
+    "address": "Dirección",
+    "bitcoinAddress": "Dirección de Bitcoin",
+    "amount": "Cantidad (opcional)",
+    "description": "Descripción (opcional)",
+    "copyAddress": "Copiar Dirección",
+    "addressCopied": "¡Copiado!",
+    "showQR": "Mostrar Código QR",
+    "verifyOnDevice": "Verificar en Dispositivo",
+    "verified": "Dirección verificada",
+    "addressGenerated": "Dirección de Recepción Generada",
+    "useThisAddress": "Usa esta dirección para recibir pagos de Bitcoin",
+    "failed": "Error al generar dirección",
+    "failedNoResponse": "Error al generar dirección - sin respuesta del dispositivo",
+    "failedEnsureConnected": "Error al generar dirección de recepción. Asegúrate de que tu dispositivo esté conectado y desbloqueado.",
+    "noAssetFound": "Activo Bitcoin no encontrado en el portafolio. Por favor sincroniza tu dispositivo o verifica la configuración de tu billetera.",
+    "noBitcoinAsset": "No se encontró activo Bitcoin en el portafolio",
+    "loadingWallet": "Cargando Billetera...",
+    "backToVault": "Volver al Vault",
+    "goBack": "Volver",
+    "addressType": {
+      "label": "Tipo de Dirección",
+      "legacy": "Legado (P2PKH)",
+      "segwit": "SegWit (P2SH-P2WPKH)",
+      "nativeSegwit": "SegWit Nativo (P2WPKH)"
+    },
+    "derivationPath": "Ruta de Derivación",
+    "scriptType": "Tipo de Script",
+    "scriptTypeInfo": {
+      "legacy": "Pago-a-Hash-de-Clave-Pública (P2PKH)",
+      "segwit": "Pago-a-Hash-de-Script con Testigo envuelto (P2SH-P2WPKH)",
+      "nativeSegwit": "Pago-a-Hash-de-Clave-Pública-Testigo (P2WPKH)"
+    },
+    "addressFormat": "Formato de Dirección",
+    "addressFormatInfo": {
+      "legacy": "Comienza con 1",
+      "segwit": "Comienza con 3",
+      "nativeSegwit": "Comienza con bc1"
+    },
+    "advancedView": "Vista Avanzada",
+    "technicalDetails": "Detalles Técnicos",
+    "accountExtendedPublicKey": "Clave Pública Extendida de la Cuenta",
+    "path": "Ruta",
+    "generatedBy": "Generado Por",
+    "keepKeyDevice": "Dispositivo KeepKey",
+    "hardwareWallet": "Billetera de Hardware",
+    "copy": "Copiar",
+    "retry": "Reintentar",
+    "timeout": {
+      "message": "Esto está tardando más de lo habitual. Tu dispositivo puede necesitar atención.",
+      "icon": "⏱️"
+    },
+    "error": {
+      "icon": "⚠️"
+    },
+    "success": {
+      "icon": "✅"
+    },
+    "info": {
+      "addressDerivation": "Esta dirección se deriva de la frase semilla de tu billetera de hardware usando los estándares BIP44/49/84. Cada dirección es única y solo puede ser gastada por tu dispositivo KeepKey.",
+      "icon": "💡"
+    },
+    "security": {
+      "verifyAddress": "¡Siempre verifica tu dirección en el dispositivo antes de enviar fondos!",
+      "icon": "🔒"
+    }
   }
 }

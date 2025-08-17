@@ -32,10 +32,80 @@
   },
   "receive": {
     "title": "Empfangen",
-    "address": "Ihre Adresse",
-    "generateNew": "Neue Adresse generieren",
-    "copyAddress": "Adresse kopieren",
-    "showQR": "QR-Code anzeigen"
+    "titleBitcoin": "Bitcoin Empfangen",
+    "subtitle": "Adresse generieren um Geld zu empfangen",
+    "generateReceiveAddress": "Empfangsadresse Generieren",
+    "generateAddressDescription": "Generieren Sie eine Bitcoin-Adresse, um Zahlungen zu empfangen. Diese Adresse wird mit Ihrem KeepKey-Gerät verknüpft.",
+    "selectAsset": "Asset Auswählen",
+    "generateAddress": "Adresse Generieren",
+    "generateNew": "Neue Generieren",
+    "generatingAddress": "Adresse wird generiert...",
+    "generatingAddressHint": "Bitte bestätigen Sie auf Ihrem KeepKey-Gerät",
+    "address": "Adresse",
+    "bitcoinAddress": "Bitcoin-Adresse",
+    "amount": "Betrag (optional)",
+    "description": "Beschreibung (optional)",
+    "copyAddress": "Adresse Kopieren",
+    "addressCopied": "Kopiert!",
+    "showQR": "QR-Code Anzeigen",
+    "verifyOnDevice": "Auf Gerät Verifizieren",
+    "verified": "Adresse verifiziert",
+    "addressGenerated": "Empfangsadresse Generiert",
+    "useThisAddress": "Verwenden Sie diese Adresse, um Bitcoin-Zahlungen zu empfangen",
+    "failed": "Fehler beim Generieren der Adresse",
+    "failedNoResponse": "Fehler beim Generieren der Adresse - keine Antwort vom Gerät",
+    "failedEnsureConnected": "Fehler beim Generieren der Empfangsadresse. Stellen Sie sicher, dass Ihr Gerät verbunden und entsperrt ist.",
+    "noAssetFound": "Bitcoin-Asset im Portfolio nicht gefunden. Bitte synchronisieren Sie Ihr Gerät oder überprüfen Sie Ihre Wallet-Einstellungen.",
+    "noBitcoinAsset": "Kein Bitcoin-Asset im Portfolio gefunden",
+    "loadingWallet": "Wallet wird geladen...",
+    "backToVault": "Zurück zum Vault",
+    "goBack": "Zurück",
+    "addressType": {
+      "label": "Adresstyp",
+      "legacy": "Legacy (P2PKH)",
+      "segwit": "SegWit (P2SH-P2WPKH)",
+      "nativeSegwit": "Native SegWit (P2WPKH)"
+    },
+    "derivationPath": "Ableitungspfad",
+    "scriptType": "Skript-Typ",
+    "scriptTypeInfo": {
+      "legacy": "Pay-to-Public-Key-Hash (P2PKH)",
+      "segwit": "Pay-to-Script-Hash mit umhülltem Witness (P2SH-P2WPKH)",
+      "nativeSegwit": "Pay-to-Witness-Public-Key-Hash (P2WPKH)"
+    },
+    "addressFormat": "Adressformat",
+    "addressFormatInfo": {
+      "legacy": "Beginnt mit 1",
+      "segwit": "Beginnt mit 3",
+      "nativeSegwit": "Beginnt mit bc1"
+    },
+    "advancedView": "Erweiterte Ansicht",
+    "technicalDetails": "Technische Details",
+    "accountExtendedPublicKey": "Erweiterte Öffentliche Schlüssel des Kontos",
+    "path": "Pfad",
+    "generatedBy": "Generiert Von",
+    "keepKeyDevice": "KeepKey-Gerät",
+    "hardwareWallet": "Hardware-Wallet",
+    "copy": "Kopieren",
+    "retry": "Erneut versuchen",
+    "timeout": {
+      "message": "Dies dauert länger als üblich. Ihr Gerät benötigt möglicherweise Ihre Aufmerksamkeit.",
+      "icon": "⏱️"
+    },
+    "error": {
+      "icon": "⚠️"
+    },
+    "success": {
+      "icon": "✅"
+    },
+    "info": {
+      "addressDerivation": "Diese Adresse wird von der Seed-Phrase Ihrer Hardware-Wallet unter Verwendung der BIP44/49/84-Standards abgeleitet. Jede Adresse ist einzigartig und kann nur von Ihrem KeepKey-Gerät ausgegeben werden.",
+      "icon": "💡"
+    },
+    "security": {
+      "verifyAddress": "Überprüfen Sie immer Ihre Adresse auf dem Gerät, bevor Sie Geld senden!",
+      "icon": "🔒"
+    }
   },
   "transactions": {
     "title": "Transaktionen",
