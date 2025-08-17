@@ -10,6 +10,7 @@ use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, Devic
 // Create a cache for device states to remember OOB bootloader status
 lazy_static::lazy_static! {
     static ref DEVICE_STATE_CACHE: Arc<RwLock<HashMap<String, DeviceStateCache>>> = Arc::new(RwLock::new(HashMap::new()));
+    pub static ref PASSPHRASE_REQUEST_STATE: Arc<RwLock<HashMap<String, PassphraseRequestState>>> = Arc::new(RwLock::new(HashMap::new()));
 }
 
 #[derive(Debug, Clone)]
@@ -18,6 +19,13 @@ struct DeviceStateCache {
     last_features: Option<keepkey_rust::messages::Features>,
     #[allow(dead_code)]
     last_update: std::time::Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct PassphraseRequestState {
+    pub is_active: bool,
+    pub request_id: String,
+    pub timestamp: std::time::Instant,
 }
 
 #[tauri::command]
@@ -276,7 +284,7 @@ pub async fn add_to_device_queue(
             // Create GetPublicKey message for xpub
             let get_public_key = keepkey_rust::messages::Message::GetPublicKey(
                 keepkey_rust::messages::GetPublicKey {
-                    address_n: path_parts,
+                    address_n: path_parts.clone(),
                     coin_name: Some("Bitcoin".to_string()),
                     script_type: None, // Default script type
                     ecdsa_curve_name: Some("secp256k1".to_string()),
@@ -285,7 +293,7 @@ pub async fn add_to_device_queue(
                 }
             );
             
-            // Send raw message to get xpub
+            // Send raw message to get xpub with passphrase support
             let response = queue_handle
                 .send_raw(get_public_key, false)
                 .await
@@ -300,6 +308,64 @@ pub async fn add_to_device_queue(
                     } else {
                         Ok(xpub)
                     }
+                }
+                keepkey_rust::messages::Message::PassphraseRequest(_) => {
+                    println!("🔐 Device requested passphrase for xpub");
+                    
+                    // Check if there's already an active passphrase request for this device
+                    {
+                        let passphrase_state = PASSPHRASE_REQUEST_STATE.read().await;
+                        if let Some(state) = passphrase_state.get(&request.device_id) {
+                            if state.is_active {
+                                println!("⚠️ Passphrase request already active for device {}, skipping duplicate", request.device_id);
+                                return Err("PASSPHRASE_ALREADY_REQUESTED".to_string());
+                            }
+                        }
+                    }
+                    
+                    // Mark passphrase request as active
+                    {
+                        let mut passphrase_state = PASSPHRASE_REQUEST_STATE.write().await;
+                        passphrase_state.insert(request.device_id.clone(), PassphraseRequestState {
+                            is_active: true,
+                            request_id: request.request_id.clone(),
+                            timestamp: std::time::Instant::now(),
+                        });
+                    }
+                    
+                    // Store the pending GetPublicKey operation (clone path_parts to avoid move)
+                    let get_public_key_msg = keepkey_rust::messages::Message::GetPublicKey(
+                        keepkey_rust::messages::GetPublicKey {
+                            address_n: path_parts.clone(),
+                            coin_name: Some("Bitcoin".to_string()),
+                            script_type: None,
+                            ecdsa_curve_name: Some("secp256k1".to_string()),
+                            show_display: Some(false),
+                            ..Default::default()
+                        }
+                    );
+                    
+                    super::pending_operations::store_pending_operation(
+                        request.device_id.clone(),
+                        request.request_id.clone(),
+                        get_public_key_msg,
+                    ).await;
+                    
+                    // Emit passphrase request event to frontend
+                    let payload = serde_json::json!({
+                        "requestId": request.request_id.clone(),
+                        "deviceId": request.device_id.clone(),
+                    });
+                    
+                    println!("📡 Emitting passphrase_request event for device: {}", request.device_id);
+                    if let Err(e) = app.emit("passphrase_request", payload.clone()) {
+                        eprintln!("Failed to emit passphrase_request event: {}", e);
+                    } else {
+                        println!("✅ Successfully emitted passphrase_request event with payload: {:?}", payload);
+                    }
+                    
+                    // Return a specific error that the frontend can recognize
+                    Err("PASSPHRASE_REQUIRED".to_string())
                 }
                 keepkey_rust::messages::Message::Failure(failure) => {
                     Err(format!("Device returned error: {}", failure.message.unwrap_or_default()))
@@ -534,6 +600,22 @@ pub async fn add_to_device_queue(
                             }
                             Err(e) => break Err(e),
                         }
+                    }
+                    keepkey_rust::messages::Message::PassphraseRequest(_) => {
+                        println!("🔐 Device requested passphrase during signing");
+                        
+                        // Emit passphrase request event to frontend
+                        let payload = serde_json::json!({
+                            "requestId": request.request_id.clone(),
+                            "deviceId": request.device_id.clone(),
+                        });
+                        
+                        if let Err(e) = app.emit("passphrase_request", payload) {
+                            eprintln!("Failed to emit passphrase_request event: {}", e);
+                        }
+                        
+                        // Return a specific error that the frontend can recognize
+                        break Err("PASSPHRASE_REQUIRED".to_string());
                     }
                     keepkey_rust::messages::Message::Failure(failure) => {
                         let error = format!("Device returned error: {}", failure.message.unwrap_or_default());

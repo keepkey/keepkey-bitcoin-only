@@ -485,7 +485,7 @@ pub async fn update_device_firmware(
                     manager = queue_manager.lock().await;
                     
                     // Check again if handle was created by event controller
-                    if let Some(handle) = manager.get(&device_id) {
+                    if let Some(_handle) = manager.get(&device_id) {
                         println!("✅ Device queue handle found after waiting");
                         break;
                     }

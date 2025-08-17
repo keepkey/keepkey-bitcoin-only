@@ -34,10 +34,10 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
         setSyncingTime(prev => prev + 1);
       }, 1000);
       
-      // Show start button after 15 seconds
+      // Show start button after 7 seconds
       timer = setTimeout(() => {
         setShowStartButton(true);
-      }, 15000);
+      }, 7000);
     } else {
       // Reset when portfolio loads or error occurs
       setShowStartButton(false);

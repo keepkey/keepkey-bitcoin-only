@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use keepkey_rust::{
     device_queue::{DeviceQueueFactory, DeviceQueueHandle},
     features::DeviceFeatures,
+    messages::Message,
 };
 use uuid;
 use hex;
@@ -16,8 +17,10 @@ use std::path::PathBuf;
 use std::fs;
 use serde_json::Value;
 use log;
-use std::time::{Duration, Instant};
-use once_cell::sync::Lazy;
+use std::time::Duration;
+
+// PIN setup module
+pub mod pin_setup;
 
 
 pub type DeviceQueueManager = Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceQueueHandle>>>;
@@ -1848,6 +1851,8 @@ pub async fn debug_onboarding_state() -> Result<String, String> {
 pub async fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
     log::info!("Restarting application...");
     app.restart();
+    // Note: This line will never be reached as app.restart() exits the process
+    #[allow(unreachable_code)]
     Ok(())
 }
 
@@ -3728,15 +3733,24 @@ pub async fn send_pin_matrix_ack(
             }
         }
         Ok(other_msg) => {
-            log::warn!("Unexpected response to PIN: {:?}", other_msg.message_type());
             let _ = unmark_device_in_pin_flow(&device_id);
             
-            // Some devices might respond with Address or other success messages
-            if matches!(other_msg, keepkey_rust::messages::Message::Address(_)) {
-                log::info!("✅ PIN accepted (got Address response)");
-                Ok(true)
-            } else {
-                Err(format!("Unexpected response: {:?}", other_msg.message_type()))
+            // Handle expected response types after successful PIN entry
+            match other_msg {
+                keepkey_rust::messages::Message::PassphraseRequest(_) => {
+                    // This is EXPECTED and NORMAL - PIN was correct, now device needs passphrase
+                    log::info!("✅ PIN accepted successfully, device now requesting passphrase");
+                    // The passphrase dialog will be triggered by the queue handler
+                    Ok(true)
+                }
+                keepkey_rust::messages::Message::Address(_) => {
+                    log::info!("✅ PIN accepted (got Address response)");
+                    Ok(true)
+                }
+                _ => {
+                    log::warn!("Unexpected response to PIN: {:?}", other_msg.message_type());
+                    Err(format!("Unexpected response: {:?}", other_msg.message_type()))
+                }
             }
         }
         Err(e) => {
@@ -3744,6 +3758,234 @@ pub async fn send_pin_matrix_ack(
             // Clean up PIN flow marking on error
             let _ = unmark_device_in_pin_flow(&device_id);
             Err(format!("Failed to send PIN: {}", e))
+        }
+    }
+}
+
+/// Helper function to clear passphrase request state
+async fn clear_passphrase_state(_device_id: &str) {
+    // This will be called from queue.rs
+}
+
+/// Send passphrase to device in response to PassphraseRequest
+#[tauri::command]
+pub async fn send_passphrase(
+    device_id: String,
+    passphrase: String,
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+    last_responses: tauri::State<'_, Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>>,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    log::info!("Sending passphrase for device: {} (length: {})", device_id, passphrase.len());
+    
+    // Get the pending operation for this device
+    let pending_op = super::device::pending_operations::take_pending_operation(&device_id).await;
+    
+    // Get device queue handle
+    let queue_manager_guard = queue_manager.lock().await;
+    let queue_handle = queue_manager_guard.get(&device_id)
+        .ok_or_else(|| format!("Device not found: {}", device_id))?
+        .clone();
+    drop(queue_manager_guard);  // Release lock early
+        
+    // Create PassphraseAck message
+    let passphrase_ack = keepkey_rust::messages::PassphraseAck { passphrase };
+    
+    // Send the passphrase response
+    match queue_handle.send_raw(passphrase_ack.into(), true).await {
+        Ok(response) => {
+            log::info!("✅ Passphrase sent, got response: {:?}", response.message_type());
+            
+            // Clear the passphrase request state for this device now that we've sent the passphrase
+            {
+                let mut passphrase_state = super::device::queue::PASSPHRASE_REQUEST_STATE.write().await;
+                if let Some(removed) = passphrase_state.remove(&device_id) {
+                    log::info!("🔓 Cleared passphrase request state for device {} (was request_id: {})", 
+                        device_id, removed.request_id);
+                }
+            }
+            
+            // Handle the response and emit success event if we have a pending operation
+            if let Some(pending) = pending_op {
+                handle_passphrase_response_with_pending(
+                    response, 
+                    device_id.clone(), 
+                    pending.request_id,
+                    last_responses.inner().clone(),
+                    app.clone()
+                )
+            } else {
+                // The device should now continue with the original operation
+                // In most cases, we'll get the PublicKey/Address response directly
+                handle_passphrase_response(response, device_id.clone(), app.clone())
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to send passphrase for device {}: {}", device_id, e);
+            Err(format!("Failed to send passphrase: {}", e))
+        }
+    }
+}
+
+// Helper function to handle passphrase response with pending operation
+fn handle_passphrase_response_with_pending(
+    response: keepkey_rust::messages::Message,
+    device_id: String,
+    request_id: String,
+    last_responses: Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    match response {
+        keepkey_rust::messages::Message::PublicKey(public_key) => {
+            // This was likely from a GetXpub request
+            log::info!("✅ Received PublicKey after passphrase");
+            
+            // Extract xpub and emit it to frontend
+            let xpub = public_key.xpub.unwrap_or_default();
+            if !xpub.is_empty() {
+                // Store the response
+                let device_response = DeviceResponse::Xpub {
+                    request_id: request_id.clone(),
+                    device_id: device_id.clone(),
+                    path: String::new(), // TODO: Get from pending operation
+                    xpub: xpub.clone(),
+                    script_type: None,
+                    success: true,
+                    error: None,
+                };
+                
+                // Store in last_responses
+                tokio::spawn(async move {
+                    let mut responses = last_responses.lock().await;
+                    responses.insert(request_id.clone(), device_response.clone());
+                    
+                    // Emit device:response event
+                    let event_payload = serde_json::json!({
+                        "device_id": device_id,
+                        "request_id": request_id,
+                        "response": device_response
+                    });
+                    
+                    let _ = app.emit("device:response", &event_payload);
+                    let _ = app.emit("passphrase:success", &serde_json::json!({
+                        "deviceId": device_id,
+                        "requestId": request_id,
+                    }));
+                });
+            }
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::ButtonRequest(_button_req) => {
+            // Device is asking for button confirmation after passphrase
+            log::info!("✅ Device requesting button confirmation after passphrase");
+            
+            // Send ButtonAck to continue
+            // This is handled automatically by the queue, but we emit an event
+            let _ = app.emit("passphrase:confirming", &serde_json::json!({
+                "deviceId": device_id,
+                "requestId": request_id,
+            }));
+            
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Address(address) => {
+            // This was from a GetAddress request  
+            log::info!("✅ Received Address after passphrase: {}", address.address);
+            
+            let _ = app.emit("passphrase:success", &serde_json::json!({
+                "deviceId": device_id,
+                "requestId": request_id,
+                "address": address.address,
+            }));
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Success(_) => {
+            log::info!("✅ Passphrase accepted, operation completed");
+            
+            let _ = app.emit("passphrase:success", &serde_json::json!({
+                "deviceId": device_id,
+                "requestId": request_id,
+            }));
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Failure(f) => {
+            log::error!("❌ Device rejected passphrase: {:?}", f.message);
+            
+            let _ = app.emit("passphrase:failed", &serde_json::json!({
+                "deviceId": device_id,
+                "requestId": request_id,
+                "error": f.message.clone().unwrap_or_default(),
+            }));
+            
+            Err(format!("Passphrase rejected: {}", f.message.unwrap_or_default()))
+        }
+        _ => {
+            log::warn!("Unexpected response after passphrase: {:?}", response.message_type());
+            Ok(true) // Assume success if no failure
+        }
+    }
+}
+
+// Helper function to handle passphrase response
+fn handle_passphrase_response(
+    response: keepkey_rust::messages::Message,
+    device_id: String,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    match response {
+        keepkey_rust::messages::Message::PublicKey(public_key) => {
+            // This was likely from a GetXpub request
+            log::info!("✅ Received PublicKey after passphrase");
+            
+            // Extract xpub and emit it to frontend
+            let xpub = public_key.xpub.unwrap_or_default();
+            if !xpub.is_empty() {
+                // Emit xpub event to frontend
+                let payload = serde_json::json!({
+                    "deviceId": device_id,
+                    "xpub": xpub,
+                });
+                let _ = app.emit("passphrase_xpub_received", payload);
+                let _ = app.emit("passphrase:success", &serde_json::json!({
+                    "deviceId": device_id,
+                }));
+            }
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::ButtonRequest(_) => {
+            // Device is asking for button confirmation after passphrase
+            log::info!("✅ Device requesting button confirmation after passphrase");
+            let _ = app.emit("passphrase:confirming", &serde_json::json!({
+                "deviceId": device_id,
+            }));
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Address(address) => {
+            // This was from a GetAddress request  
+            log::info!("✅ Received Address after passphrase: {}", address.address);
+            let _ = app.emit("passphrase:success", &serde_json::json!({
+                "deviceId": device_id,
+            }));
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Success(_) => {
+            log::info!("✅ Passphrase accepted, operation completed");
+            let _ = app.emit("passphrase:success", &serde_json::json!({
+                "deviceId": device_id,
+            }));
+            Ok(true)
+        }
+        keepkey_rust::messages::Message::Failure(f) => {
+            log::error!("❌ Device rejected passphrase: {:?}", f.message);
+            let _ = app.emit("passphrase:failed", &serde_json::json!({
+                "deviceId": device_id,
+                "error": f.message.clone().unwrap_or_default(),
+            }));
+            Err(format!("Passphrase rejected: {}", f.message.unwrap_or_default()))
+        }
+        _ => {
+            log::warn!("Unexpected response after passphrase: {:?}", response.message_type());
+            Ok(true) // Assume success if no failure
         }
     }
 }
@@ -3975,6 +4217,226 @@ pub async fn check_device_pin_ready(
         None => {
             log::info!("Device {} status not available", device_id);
             Ok(false)
+        }
+    }
+}
+
+// Passphrase handling structures
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PassphraseRequestPayload {
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    #[serde(rename = "deviceId")]
+    pub device_id: String,
+}
+
+#[tauri::command]
+pub async fn handle_passphrase_request(
+    app_handle: AppHandle,
+    device_id: String,
+) -> Result<(), String> {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    log::info!("Passphrase request for device {}, request_id: {}", device_id, request_id);
+    
+    let payload = PassphraseRequestPayload {
+        request_id,
+        device_id,
+    };
+    
+    // Emit passphrase request event to frontend
+    app_handle
+        .emit("passphrase_request", payload)
+        .map_err(|e| {
+            log::error!("Failed to emit passphrase request: {}", e);
+            e.to_string()
+        })?;
+    
+    Ok(())
+}
+
+
+#[tauri::command]
+pub async fn enable_passphrase_protection(
+    device_id: String,
+    enabled: bool,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Setting passphrase protection to {} for device {}", enabled, device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Create ApplySettings message to enable/disable passphrase
+    let apply_settings = keepkey_rust::messages::ApplySettings {
+        use_passphrase: Some(enabled),
+        ..Default::default()
+    };
+    let message = Message::ApplySettings(apply_settings);
+    
+    queue_handle
+        .send_raw(message, false)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to set passphrase protection: {}", e);
+            format!("Failed to set passphrase protection: {}", e)
+        })?;
+    
+    log::info!("Passphrase protection set to {} for device {}", enabled, device_id);
+    Ok(())
+}
+
+/// Enable PIN protection for a device
+#[tauri::command]
+pub async fn enable_pin_protection(
+    device_id: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Enabling PIN protection for device {}", device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Send ChangePin message to set a new PIN
+    let change_pin = keepkey_rust::messages::ChangePin {
+        remove: Some(false), // false means set/change PIN, true means remove
+    };
+    let message = keepkey_rust::messages::Message::ChangePin(change_pin);
+    
+    match queue_handle.send_raw(message, true).await {
+        Ok(response) => {
+            match response {
+                keepkey_rust::messages::Message::Success(_) => {
+                    log::info!("PIN protection enabled successfully for device {}", device_id);
+                    Ok(())
+                }
+                keepkey_rust::messages::Message::Failure(failure) => {
+                    let error = format!("Device rejected PIN change: {}", failure.message.unwrap_or_default());
+                    log::error!("{}", error);
+                    Err(error)
+                }
+                _ => {
+                    let error = "Unexpected response from device".to_string();
+                    log::error!("{}", error);
+                    Err(error)
+                }
+            }
+        }
+        Err(e) => {
+            let error = format!("Failed to enable PIN protection: {}", e);
+            log::error!("{}", error);
+            Err(error)
+        }
+    }
+}
+
+/// Disable PIN protection for a device
+#[tauri::command]
+pub async fn disable_pin_protection(
+    device_id: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Disabling PIN protection for device {}", device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Send ChangePin message to remove PIN
+    let change_pin = keepkey_rust::messages::ChangePin {
+        remove: Some(true), // true means remove PIN
+    };
+    let message = Message::ChangePin(change_pin);
+    
+    match queue_handle.send_raw(message, true).await {
+        Ok(response) => {
+            match response {
+                keepkey_rust::messages::Message::Success(_) => {
+                    log::info!("PIN protection disabled successfully for device {}", device_id);
+                    Ok(())
+                }
+                keepkey_rust::messages::Message::Failure(failure) => {
+                    let error = format!("Device rejected PIN removal: {}", failure.message.unwrap_or_default());
+                    log::error!("{}", error);
+                    Err(error)
+                }
+                _ => {
+                    let error = "Unexpected response from device".to_string();
+                    log::error!("{}", error);
+                    Err(error)
+                }
+            }
+        }
+        Err(e) => {
+            let error = format!("Failed to disable PIN protection: {}", e);
+            log::error!("{}", error);
+            Err(error)
+        }
+    }
+}
+
+/// Change PIN for a device
+#[tauri::command]
+pub async fn change_pin(
+    device_id: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+) -> Result<(), String> {
+    log::info!("Changing PIN for device {}", device_id);
+    
+    // Get the device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    };
+    
+    let queue_handle = queue_handle
+        .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
+    
+    // Send ChangePin message to change PIN (requires current PIN first)
+    let change_pin = keepkey_rust::messages::ChangePin {
+        remove: Some(false), // false means change PIN
+    };
+    let message = Message::ChangePin(change_pin);
+    
+    match queue_handle.send_raw(message, true).await {
+        Ok(response) => {
+            match response {
+                keepkey_rust::messages::Message::Success(_) => {
+                    log::info!("PIN changed successfully for device {}", device_id);
+                    Ok(())
+                }
+                keepkey_rust::messages::Message::Failure(failure) => {
+                    let error = format!("Device rejected PIN change: {}", failure.message.unwrap_or_default());
+                    log::error!("{}", error);
+                    Err(error)
+                }
+                _ => {
+                    let error = "Unexpected response from device".to_string();
+                    log::error!("{}", error);
+                    Err(error)
+                }
+            }
+        }
+        Err(e) => {
+            let error = format!("Failed to change PIN: {}", e);
+            log::error!("{}", error);
+            Err(error)
         }
     }
 }

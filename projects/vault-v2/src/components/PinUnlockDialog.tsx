@@ -171,10 +171,21 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
       }
       
     } catch (err: any) {
+      const errorStr = String(err)
+      
+      // Check if this is actually a success case (PassphraseRequest)
+      // This should not happen anymore with the backend fix, but keeping for safety
+      if (errorStr.includes('PassphraseRequest')) {
+        console.log('✅ PIN accepted, device is requesting passphrase')
+        // PIN was correct, device now needs passphrase
+        // Close this dialog as PIN was successful
+        onUnlocked()
+        return
+      }
+      
       console.error('❌ PIN submission failed:', err)
       
       // This is a real PIN validation error - show it clearly
-      const errorStr = String(err)
       if (errorStr.toLowerCase().includes('incorrect') || errorStr.toLowerCase().includes('invalid') || errorStr.toLowerCase().includes('wrong')) {
         setError('Incorrect PIN. Please check your device screen and try again.')
         setRetryCount(prev => prev + 1)
