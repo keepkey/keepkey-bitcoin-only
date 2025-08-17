@@ -10,7 +10,7 @@ use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, Devic
 // Create a cache for device states to remember OOB bootloader status
 lazy_static::lazy_static! {
     static ref DEVICE_STATE_CACHE: Arc<RwLock<HashMap<String, DeviceStateCache>>> = Arc::new(RwLock::new(HashMap::new()));
-    static ref PASSPHRASE_REQUEST_STATE: Arc<RwLock<HashMap<String, PassphraseRequestState>>> = Arc::new(RwLock::new(HashMap::new()));
+    pub static ref PASSPHRASE_REQUEST_STATE: Arc<RwLock<HashMap<String, PassphraseRequestState>>> = Arc::new(RwLock::new(HashMap::new()));
 }
 
 #[derive(Debug, Clone)]
@@ -22,10 +22,10 @@ struct DeviceStateCache {
 }
 
 #[derive(Debug, Clone)]
-struct PassphraseRequestState {
-    is_active: bool,
-    request_id: String,
-    timestamp: std::time::Instant,
+pub struct PassphraseRequestState {
+    pub is_active: bool,
+    pub request_id: String,
+    pub timestamp: std::time::Instant,
 }
 
 #[tauri::command]

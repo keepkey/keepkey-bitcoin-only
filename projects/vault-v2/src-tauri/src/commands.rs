@@ -3787,6 +3787,15 @@ pub async fn send_passphrase(
         Ok(response) => {
             log::info!("✅ Passphrase sent, got response: {:?}", response.message_type());
             
+            // Clear the passphrase request state for this device now that we've sent the passphrase
+            {
+                let mut passphrase_state = super::device::queue::PASSPHRASE_REQUEST_STATE.write().await;
+                if let Some(removed) = passphrase_state.remove(&device_id) {
+                    log::info!("🔓 Cleared passphrase request state for device {} (was request_id: {})", 
+                        device_id, removed.request_id);
+                }
+            }
+            
             // Handle the response and emit success event if we have a pending operation
             if let Some(pending) = pending_op {
                 handle_passphrase_response_with_pending(
