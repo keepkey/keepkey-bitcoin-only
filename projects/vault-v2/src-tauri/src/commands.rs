@@ -1954,6 +1954,8 @@ lazy_static::lazy_static! {
         Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     static ref DEVICE_PIN_FLOWS: Arc<std::sync::Mutex<std::collections::HashSet<String>>> =
         Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    static ref DEVICE_PIN_REMOVAL_FLOWS: Arc<std::sync::Mutex<std::collections::HashSet<String>>> =
+        Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
 }
 
 /// Start PIN creation process by initiating ResetDevice with PIN protection
@@ -2766,12 +2768,128 @@ pub fn is_device_in_pin_flow(device_id: &str) -> bool {
     }
 }
 
+/// Check if device is currently in PIN flow (Tauri command)
+#[tauri::command]
+pub async fn check_device_in_pin_flow(device_id: String) -> Result<bool, String> {
+    Ok(is_device_in_pin_flow(&device_id))
+}
+
 /// Remove device from PIN flow state
 pub fn unmark_device_in_pin_flow(device_id: &str) -> Result<(), String> {
     let mut flows = DEVICE_PIN_FLOWS.lock().map_err(|_| "Failed to lock device PIN flows".to_string())?;
     flows.remove(device_id);
     log::info!("Device {} removed from PIN flow", device_id);
     Ok(())
+}
+
+/// Mark device as being in PIN removal flow
+pub fn mark_device_in_pin_removal_flow(device_id: &str) -> Result<(), String> {
+    let mut flows = DEVICE_PIN_REMOVAL_FLOWS.lock().map_err(|_| "Failed to lock device PIN removal flows".to_string())?;
+    flows.insert(device_id.to_string());
+    log::info!("Device {} marked as in PIN removal flow", device_id);
+    Ok(())
+}
+
+/// Check if device is currently in PIN removal flow
+pub fn is_device_in_pin_removal_flow(device_id: &str) -> bool {
+    if let Ok(flows) = DEVICE_PIN_REMOVAL_FLOWS.lock() {
+        flows.contains(device_id)
+    } else {
+        false
+    }
+}
+
+/// Remove device from PIN removal flow state
+pub fn unmark_device_in_pin_removal_flow(device_id: &str) -> Result<(), String> {
+    let mut flows = DEVICE_PIN_REMOVAL_FLOWS.lock().map_err(|_| "Failed to lock device PIN removal flows".to_string())?;
+    flows.remove(device_id);
+    log::info!("Device {} removed from PIN removal flow", device_id);
+    Ok(())
+}
+
+/// Send PIN matrix response for PIN removal operation
+#[tauri::command]
+pub async fn send_pin_for_removal(
+    device_id: String,
+    positions: Vec<u8>,  // Positions 1-9 that user clicked
+    queue_manager: tauri::State<'_, DeviceQueueManager>,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, String> {
+    log::info!("Sending PIN for removal on device: {} with {} positions", device_id, positions.len());
+    
+    // Validate that we're in PIN removal flow
+    if !is_device_in_pin_removal_flow(&device_id) {
+        return Err("Device is not in PIN removal flow".to_string());
+    }
+    
+    // Validate positions
+    if positions.is_empty() || positions.len() > 9 {
+        unmark_device_in_pin_removal_flow(&device_id)?;
+        return Err("PIN must be between 1 and 9 digits".to_string());
+    }
+    
+    for &pos in &positions {
+        if pos < 1 || pos > 9 {
+            unmark_device_in_pin_removal_flow(&device_id)?;
+            return Err("Invalid PIN position: positions must be 1-9".to_string());
+        }
+    }
+    
+    // Convert positions to PIN string (positions are 1-9)
+    let pin = positions.iter().map(|&p| p.to_string()).collect::<String>();
+    
+    log::info!("Sending PIN matrix ACK for removal with {} digits", pin.len());
+    
+    // Get device queue handle
+    let queue_manager_guard = queue_manager.lock().await;
+    let queue_handle = queue_manager_guard.get(&device_id)
+        .ok_or_else(|| {
+            let _ = unmark_device_in_pin_removal_flow(&device_id);
+            format!("Device not found: {}", device_id)
+        })?;
+        
+    // Create PinMatrixAck message
+    let pin_ack = keepkey_rust::messages::PinMatrixAck { pin };
+    
+    // Send the PIN response and wait for device response
+    match queue_handle.send_raw(pin_ack.into(), true).await {
+        Ok(keepkey_rust::messages::Message::Success(_)) => {
+            log::info!("✅ PIN accepted! PIN protection successfully disabled");
+            // Clean up flow state
+            let _ = unmark_device_in_pin_removal_flow(&device_id);
+            
+            // Emit success event
+            let _ = app_handle.emit("pin-removal-success", serde_json::json!({
+                "deviceId": device_id,
+                "message": "PIN protection disabled"
+            }));
+            
+            Ok(true)
+        }
+        Ok(keepkey_rust::messages::Message::Failure(f)) => {
+            log::error!("❌ PIN rejected for removal: {:?}", f.message);
+            // Clean up flow state
+            let _ = unmark_device_in_pin_removal_flow(&device_id);
+            
+            // Determine if it's an incorrect PIN or other error
+            let error_msg = f.message.unwrap_or_else(|| "PIN verification failed".to_string());
+            if error_msg.contains("PIN") || error_msg.contains("Invalid") {
+                Err("Incorrect PIN. Please try again.".to_string())
+            } else {
+                Err(format!("PIN removal failed: {}", error_msg))
+            }
+        }
+        Ok(other_msg) => {
+            log::warn!("Unexpected response to PIN for removal: {:?}", other_msg.message_type());
+            let _ = unmark_device_in_pin_removal_flow(&device_id);
+            Err(format!("Unexpected response: {:?}", other_msg.message_type()))
+        }
+        Err(e) => {
+            log::error!("Failed to send PIN for removal for device {}: {}", device_id, e);
+            let _ = unmark_device_in_pin_removal_flow(&device_id);
+            Err(format!("Failed to send PIN: {}", e))
+        }
+    }
 }
 
 // ========== Recovery Commands (Direct Implementation) ==========
@@ -3681,6 +3799,7 @@ pub async fn send_pin_matrix_ack(
     device_id: String,
     positions: Vec<u8>,  // Positions 1-9 that user clicked
     queue_manager: tauri::State<'_, DeviceQueueManager>,
+    app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
     log::info!("Sending PIN matrix ACK for device: {} with {} positions", device_id, positions.len());
     
@@ -3713,10 +3832,24 @@ pub async fn send_pin_matrix_ack(
     
     // Send the PIN response and wait for device response
     match queue_handle.send_raw(pin_ack.into(), true).await {
-        Ok(keepkey_rust::messages::Message::Success(_)) => {
-            log::info!("✅ PIN accepted! Device unlocked successfully");
+        Ok(keepkey_rust::messages::Message::Success(success)) => {
+            log::info!("✅ PIN accepted! Device operation successful");
             // Unmark device from PIN flow as PIN has been accepted
             let _ = unmark_device_in_pin_flow(&device_id);
+            
+            // Check if this was a PIN removal operation
+            // The success message after PIN removal should indicate PIN protection was disabled
+            if let Some(msg) = &success.message {
+                if msg.contains("removed") || msg.contains("disabled") {
+                    log::info!("PIN protection successfully disabled");
+                    // Emit success event for PIN removal
+                    let _ = app_handle.emit("pin-removal-success", serde_json::json!({
+                        "deviceId": device_id,
+                        "message": msg
+                    }));
+                }
+            }
+            
             Ok(true)
         }
         Ok(keepkey_rust::messages::Message::Failure(f)) => {
@@ -4042,6 +4175,20 @@ pub async fn trigger_pin_request(
             // Keep device marked as in PIN flow - will be unmarked when PIN is completed
             Ok(true)
         }
+        Ok(keepkey_rust::messages::Message::PassphraseRequest(_)) => {
+            log::info!("Device {} is already PIN unlocked but needs passphrase", device_id);
+            // Device is already unlocked (PIN was correct) but needs passphrase
+            // This is not a PIN flow, so unmark it
+            let _ = unmark_device_in_pin_flow(&device_id);
+            // Return success since the device is already unlocked (no PIN needed)
+            Ok(true)
+        }
+        Ok(keepkey_rust::messages::Message::Address(_)) => {
+            log::info!("Device {} is already fully unlocked (got Address)", device_id);
+            // Device is already unlocked and doesn't need PIN or passphrase
+            let _ = unmark_device_in_pin_flow(&device_id);
+            Ok(true)
+        }
         Ok(keepkey_rust::messages::Message::Failure(f)) => {
             // Check if this is the expected "Unknown message" failure when device is already in PIN mode
             if f.message.as_deref() == Some("Unknown message") {
@@ -4356,6 +4503,7 @@ pub async fn enable_pin_protection(
 pub async fn disable_pin_protection(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     log::info!("Disabling PIN protection for device {}", device_id);
     
@@ -4368,25 +4516,71 @@ pub async fn disable_pin_protection(
     let queue_handle = queue_handle
         .ok_or_else(|| format!("No device queue found for device {}", device_id))?;
     
+    // Mark that we're in a special PIN removal flow
+    mark_device_in_pin_removal_flow(&device_id)?;
+    
     // Send ChangePin message to remove PIN
     let change_pin = keepkey_rust::messages::ChangePin {
         remove: Some(true), // true means remove PIN
     };
     let message = Message::ChangePin(change_pin);
     
-    match queue_handle.send_raw(message, true).await {
+    match queue_handle.send_raw(message, false).await {
         Ok(response) => {
             match response {
+                keepkey_rust::messages::Message::ButtonRequest(_) => {
+                    // Send ButtonAck to continue
+                    let button_ack = keepkey_rust::messages::ButtonAck {};
+                    match queue_handle.send_raw(button_ack.into(), false).await {
+                        Ok(keepkey_rust::messages::Message::PinMatrixRequest(_)) => {
+                            log::info!("Device requesting PIN before disabling protection for device {}", device_id);
+                            
+                            // Emit event to frontend to show PIN dialog for removal
+                            app_handle.emit("pin-removal-request", serde_json::json!({
+                                "deviceId": device_id,
+                                "needsPinEntry": true
+                            })).map_err(|e| format!("Failed to emit PIN removal request event: {}", e))?;
+                            
+                            Ok(())
+                        }
+                        Ok(other) => {
+                            unmark_device_in_pin_removal_flow(&device_id);
+                            let error = format!("Unexpected response after ButtonAck: {:?}", other.message_type());
+                            log::error!("{}", error);
+                            Err(error)
+                        }
+                        Err(e) => {
+                            unmark_device_in_pin_removal_flow(&device_id);
+                            let error = format!("Failed to send ButtonAck: {}", e);
+                            log::error!("{}", error);
+                            Err(error)
+                        }
+                    }
+                }
+                keepkey_rust::messages::Message::PinMatrixRequest(_) => {
+                    log::info!("Device requesting PIN before disabling protection for device {}", device_id);
+                    
+                    // Emit event to frontend to show PIN dialog for removal
+                    app_handle.emit("pin-removal-request", serde_json::json!({
+                        "deviceId": device_id,
+                        "needsPinEntry": true
+                    })).map_err(|e| format!("Failed to emit PIN removal request event: {}", e))?;
+                    
+                    Ok(())
+                }
                 keepkey_rust::messages::Message::Success(_) => {
+                    unmark_device_in_pin_removal_flow(&device_id);
                     log::info!("PIN protection disabled successfully for device {}", device_id);
                     Ok(())
                 }
                 keepkey_rust::messages::Message::Failure(failure) => {
+                    unmark_device_in_pin_removal_flow(&device_id);
                     let error = format!("Device rejected PIN removal: {}", failure.message.unwrap_or_default());
                     log::error!("{}", error);
                     Err(error)
                 }
                 _ => {
+                    unmark_device_in_pin_removal_flow(&device_id);
                     let error = "Unexpected response from device".to_string();
                     log::error!("{}", error);
                     Err(error)
@@ -4394,6 +4588,7 @@ pub async fn disable_pin_protection(
             }
         }
         Err(e) => {
+            unmark_device_in_pin_removal_flow(&device_id);
             let error = format!("Failed to disable PIN protection: {}", e);
             log::error!("{}", error);
             Err(error)

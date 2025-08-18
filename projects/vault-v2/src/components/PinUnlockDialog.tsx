@@ -76,17 +76,37 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
     try {
       setIsLoading(true)
       setError(null)
-      setDeviceReadyStatus('Requesting PIN matrix from device...')
+      setDeviceReadyStatus('Checking device lock status...')
       console.log('🔐 Triggering PIN request for device:', deviceId)
       
       const result = await invoke('trigger_pin_request', { deviceId })
       
       if (result === true) {
-        // PIN request was successfully triggered - device should now be showing PIN matrix
-        console.log('✅ PIN trigger successful, device should be showing PIN matrix')
-        setStep('enter')
-        setDeviceReadyStatus('PIN matrix ready')
-        setError(null) // Clear any previous errors
+        // Check if we actually got a PIN flow started
+        // The backend now returns true for PassphraseRequest and Address responses too
+        // which means the device is already unlocked
+        
+        // Small delay to check if device is actually showing PIN
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // If the device was already unlocked (PassphraseRequest or Address response),
+        // the backend would have unmarked the PIN flow
+        const isInPinFlow = await invoke('check_device_in_pin_flow', { deviceId }).catch(() => false)
+        
+        if (isInPinFlow) {
+          console.log('✅ PIN trigger successful, device should be showing PIN matrix')
+          setStep('enter')
+          setDeviceReadyStatus('PIN matrix ready')
+          setError(null) // Clear any previous errors
+        } else {
+          console.log('✅ Device is already unlocked, no PIN needed')
+          setStep('success')
+          setDeviceReadyStatus('Device already unlocked')
+          // Call onUnlocked callback since device is already unlocked
+          setTimeout(() => {
+            onUnlocked()
+          }, 1000)
+        }
       } else {
         throw new Error('PIN trigger returned unexpected result')
       }

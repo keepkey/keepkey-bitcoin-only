@@ -402,6 +402,8 @@ pub fn run() {
             commands::send_pin_matrix_ack,
             commands::trigger_pin_request,
             commands::check_device_pin_ready,
+            commands::check_device_in_pin_flow,
+            commands::send_pin_for_removal,
             // Logging commands
             commands::get_device_log_path,
             commands::get_recent_device_logs,
