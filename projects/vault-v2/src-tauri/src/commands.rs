@@ -4291,7 +4291,31 @@ pub async fn trigger_pin_request(
             // Device is already unlocked (PIN was correct) but needs passphrase
             // This is not a PIN flow, so unmark it
             let _ = unmark_device_in_pin_flow(&device_id);
-            // Return success since the device is already unlocked (no PIN needed)
+            
+            // Emit passphrase request event to frontend
+            let request_id = uuid::Uuid::new_v4().to_string();
+            let payload = serde_json::json!({
+                "requestId": request_id,
+                "deviceId": device_id,
+            });
+            
+            log::info!("📡 Emitting passphrase_request event for device: {}", device_id);
+            if let Err(e) = app.emit("passphrase_request", payload.clone()) {
+                log::error!("Failed to emit passphrase_request event: {}", e);
+            } else {
+                log::info!("✅ Successfully emitted passphrase_request event with payload: {:?}", payload);
+            }
+            
+            // Mark passphrase request as active
+            {
+                let mut passphrase_state = device::PASSPHRASE_REQUEST_STATE.write().await;
+                passphrase_state.insert(device_id.clone(), device::PassphraseRequestState {
+                    is_active: true,
+                    request_id: request_id.clone(),
+                    timestamp: std::time::Instant::now(),
+                });
+            }
+            
             Ok(true)
         }
         Ok(keepkey_rust::messages::Message::Address(_)) => {
