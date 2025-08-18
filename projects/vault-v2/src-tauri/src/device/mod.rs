@@ -17,4 +17,4 @@ pub use events::{DeviceEvent, UICommand, emit_device_event};
 // Re-export USB monitor
 pub use usb_monitor::UsbMonitor;
 // Re-export queue types
-pub use queue::{DEVICE_STATE_CACHE, DeviceStateCache}; 
+pub use queue::{DEVICE_STATE_CACHE, DeviceStateCache, PASSPHRASE_REQUEST_STATE, PassphraseRequestState}; 

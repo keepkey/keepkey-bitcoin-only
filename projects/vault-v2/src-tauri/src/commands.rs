@@ -3942,10 +3942,34 @@ pub async fn send_pin_matrix_ack(
             
             // Handle expected response types after successful PIN entry
             match other_msg {
-                keepkey_rust::messages::Message::PassphraseRequest(_) => {
+                keepkey_rust::messages::Message::PassphraseRequest(_req) => {
                     // This is EXPECTED and NORMAL - PIN was correct, now device needs passphrase
                     log::info!("✅ PIN accepted successfully, device now requesting passphrase");
-                    // The passphrase dialog will be triggered by the queue handler
+                    
+                    // Emit passphrase request event to frontend
+                    let request_id = uuid::Uuid::new_v4().to_string();
+                    let payload = serde_json::json!({
+                        "requestId": request_id,
+                        "deviceId": device_id,
+                    });
+                    
+                    log::info!("📡 Emitting passphrase_request event for device: {}", device_id);
+                    if let Err(e) = app_handle.emit("passphrase_request", payload.clone()) {
+                        log::error!("Failed to emit passphrase_request event: {}", e);
+                    } else {
+                        log::info!("✅ Successfully emitted passphrase_request event with payload: {:?}", payload);
+                    }
+                    
+                    // Mark passphrase request as active
+                    {
+                        let mut passphrase_state = device::PASSPHRASE_REQUEST_STATE.write().await;
+                        passphrase_state.insert(device_id.clone(), device::PassphraseRequestState {
+                            is_active: true,
+                            request_id: request_id.clone(),
+                            timestamp: std::time::Instant::now(),
+                        });
+                    }
+                    
                     Ok(true)
                 }
                 keepkey_rust::messages::Message::Address(_) => {
@@ -4003,7 +4027,7 @@ pub async fn send_passphrase(
             
             // Clear the passphrase request state for this device now that we've sent the passphrase
             {
-                let mut passphrase_state = super::device::queue::PASSPHRASE_REQUEST_STATE.write().await;
+                let mut passphrase_state = device::PASSPHRASE_REQUEST_STATE.write().await;
                 if let Some(removed) = passphrase_state.remove(&device_id) {
                     log::info!("🔓 Cleared passphrase request state for device {} (was request_id: {})", 
                         device_id, removed.request_id);
