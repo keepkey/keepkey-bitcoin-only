@@ -212,20 +212,38 @@
     }
   },
   "passphrase": {
-    "title": "Phrase de Passe",
+    "title": "Entrez Votre Phrase de Passe",
     "subtitle": "Entrez votre phrase de passe",
     "description": "Les phrases de passe créent des portefeuilles cachés. Chaque phrase accède à un portefeuille différent.",
+    "afterSubmitting": "Après avoir soumis votre phrase de passe, utilisez le bouton sur le KeepKey pour l'approuver.",
+    "useWithCaution": "Utiliser avec prudence",
+    "warningLoseAccess": "Si vous oubliez votre phrase de passe, vous perdrez l'accès à vos fonds.",
+    "learnMore": "En savoir plus",
     "enter": "Entrer la phrase de passe",
     "confirm": "Confirmer la phrase de passe",
+    "confirmOnDevice": "Confirmer sur l'Appareil",
     "placeholder": "Entrez votre phrase de passe",
+    "showPassphrase": "Afficher la phrase de passe",
+    "hidePassphrase": "Masquer la phrase de passe",
     "onDevice": "Entrer sur l'appareil",
     "onComputer": "Entrer sur l'ordinateur",
     "warning": "Avertissement: Si vous oubliez votre phrase de passe, vous ne pourrez pas récupérer vos fonds!",
     "mismatch": "Les phrases de passe ne correspondent pas",
+    "alreadySubmitted": "Phrase de passe déjà soumise. Veuillez confirmer sur votre appareil.",
+    "pleaseEnter": "Veuillez entrer une phrase de passe",
+    "noDeviceId": "ID d'appareil non disponible",
+    "deviceNotReady": "L'appareil n'est pas prêt pour la phrase de passe. Veuillez réessayer l'opération.",
+    "timedOut": "L'opération a expiré. Veuillez confirmer sur votre appareil ou réessayer.",
+    "submitting": "Envoi...",
+    "awaitingConfirmation": "En Attente de Confirmation",
+    "alreadySubmittedButton": "Déjà Soumise",
+    "submitPassphrase": "Soumettre la Phrase de Passe",
     "buttons": {
       "confirm": "Confirmer",
       "cancel": "Annuler",
-      "useEmpty": "Utiliser une Phrase Vide"
+      "useEmpty": "Utiliser une Phrase Vide",
+      "submit": "Soumettre",
+      "submitPassphrase": "Soumettre la Phrase de Passe"
     }
   },
   "settings": {

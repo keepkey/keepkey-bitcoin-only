@@ -173,7 +173,16 @@
       "lookAtDevice": "Look at your device screen for the scrambled numbers",
       "clickPositions": "Click the positions where your PIN digits appear",
       "numbersMatch": "Numbers shown match your device display",
+      "numbersMatchNote": "Numbers shown match your device display",
       "useScrambledLayout": "Use the scrambled layout shown on your device",
+      "preparingDevice": "Preparing Device",
+      "deviceReadyForPin": "Your device will display a PIN matrix when ready",
+      "requestPinMatrix": "Request PIN Matrix",
+      "verifyingPin": "Verifying PIN...",
+      "pleaseWait": "Please wait",
+      "deviceUnlocked": "Device Unlocked!",
+      "tryAgain": "Try Again",
+      "fullRetry": "Full Retry",
       "grid": {
         "instruction": "Use the numbered grid on your computer to enter the PIN shown on your device",
         "scrambledNote": "The numbers are scrambled for security - check your device screen"
@@ -182,6 +191,8 @@
       "attemptsRemaining": "{{count}} attempts remaining",
       "buttons": {
         "unlock": "Unlock",
+        "back": "Back",
+        "clear": "Clear",
         "cancel": "Cancel",
         "forgotPin": "Forgot PIN?"
       }
@@ -223,6 +234,8 @@
     "confirm": "Confirm passphrase",
     "confirmOnDevice": "Confirm on Device",
     "placeholder": "Enter your passphrase",
+    "showPassphrase": "Show passphrase",
+    "hidePassphrase": "Hide passphrase",
     "onDevice": "Enter on device",
     "onComputer": "Enter on computer",
     "warning": "Warning: If you forget your passphrase, you cannot recover your funds!",
@@ -232,11 +245,16 @@
     "noDeviceId": "No device ID available",
     "deviceNotReady": "Device not ready for passphrase. Please try the operation again.",
     "timedOut": "Operation timed out. Please confirm on your device or try again.",
+    "submitting": "Submitting...",
+    "awaitingConfirmation": "Awaiting Confirmation",
+    "alreadySubmittedButton": "Already Submitted",
+    "submitPassphrase": "Submit Passphrase",
     "buttons": {
       "confirm": "Confirm",
       "cancel": "Cancel",
       "useEmpty": "Use Empty Passphrase",
-      "submit": "Submit"
+      "submit": "Submit",
+      "submitPassphrase": "Submit Passphrase"
     }
   },
   "settings": {

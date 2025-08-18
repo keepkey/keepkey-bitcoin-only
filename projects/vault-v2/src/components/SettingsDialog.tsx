@@ -445,11 +445,11 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     // Format logs to look like terminal output
     if (log.direction === 'REQUEST' || log.direction === 'SEND') {
       // Outgoing requests
-      const requestType = log.request_type || log.message_type || 'Unknown'
+      const requestType = log.request_type || log.message_type || t('settings:logs.unknown')
       return `-> ${requestType}`
     } else if (log.direction === 'RESPONSE' || log.direction === 'RECEIVE') {
       // Incoming responses
-      const requestType = log.request_type || log.message_type || 'Unknown'
+      const requestType = log.request_type || log.message_type || t('settings:logs.unknown')
       const success = log.success !== false ? '✅' : '❌'
       
       // Try to extract meaningful info from the response
@@ -457,9 +457,9 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
       if (log.data) {
         // Handle GetFeatures responses
         if (log.data.features && log.data.features.label) {
-          responseInfo = `${log.data.features.label} v${log.data.features.version || 'Unknown'}`
+          responseInfo = `${log.data.features.label} v${log.data.features.version || t('settings:logs.unknown')}`
         } else if (log.data.status && log.data.status.features && log.data.status.features.label) {
-          responseInfo = `${log.data.status.features.label} v${log.data.status.features.version || 'Unknown'}`
+          responseInfo = `${log.data.status.features.label} v${log.data.status.features.version || t('settings:logs.unknown')}`
         } else if (log.data.response && typeof log.data.response === 'string') {
           // For xpub responses, show truncated version
           if (log.data.response.startsWith('xpub') || log.data.response.startsWith('ypub') || log.data.response.startsWith('zpub')) {
@@ -794,7 +794,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     >
                       <HStack gap={1}>
                         <FaSyncAlt />
-                        <Text>{autoRefresh ? 'Stop Auto' : 'Auto Refresh'}</Text>
+                        <Text>{autoRefresh ? t('settings:logs.stopAuto') : t('settings:logs.autoRefresh')}</Text>
                       </HStack>
                     </Button>
                     <Button
@@ -806,7 +806,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     >
                       <HStack gap={1}>
                         <FaSyncAlt />
-                        <Text>{isLoadingLogs ? 'Loading...' : 'Refresh'}</Text>
+                        <Text>{isLoadingLogs ? t('settings:logs.loading') : t('settings:logs.refresh')}</Text>
                       </HStack>
                     </Button>
                     <Button
@@ -822,7 +822,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                         ) : (
                           <FaDownload />
                         )}
-                        <Text>{isDownloading ? 'Copying...' : 'Save Logs'}</Text>
+                        <Text>{isDownloading ? t('settings:logs.copying') : t('settings:logs.saveLogs')}</Text>
                       </HStack>
                     </Button>
                     <Button
@@ -1010,9 +1010,9 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={3}>
                       <VStack align="start" gap={1}>
-                        <Text color="white" fontWeight="medium" fontSize="lg">Enable REST & MCP APIs</Text>
+                        <Text color="white" fontWeight="medium" fontSize="lg">{t('settings:api.enableTitle')}</Text>
                         <Text color="gray.400" fontSize="sm">
-                          Allow external applications and AI assistants to connect
+                          {t('settings:api.enableDescription')}
                         </Text>
                       </VStack>
                       <HStack justify="space-between" align="center">
@@ -1023,7 +1023,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                             fontSize="sm" 
                             fontWeight="medium"
                           >
-                            {apiStatus?.running ? "Running" : "Stopped"}
+                            {apiStatus?.running ? t('settings:api.running') : t('settings:api.stopped')}
                           </Text>
                         </HStack>
                         <Button
@@ -1034,7 +1034,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                           disabled={isTogglingApi}
                           minW="80px"
                         >
-                          {apiEnabled ? "Disable" : "Enable"}
+                          {apiEnabled ? t('settings:api.disable') : t('settings:api.enable')}
                         </Button>
                       </HStack>
                     </VStack>
@@ -1166,7 +1166,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     opacity={apiEnabled ? 1 : 0.5}
                   >
                     <VStack align="stretch" gap={3}>
-                      <Text color="white" fontWeight="medium">Service Status</Text>
+                      <Text color="white" fontWeight="medium">{t('settings:api.serviceStatus')}</Text>
                       <HStack justify="space-between" align="center">
                         <Text color="gray.300" fontSize="sm">API Server</Text>
                         <HStack gap={2}>
@@ -1176,7 +1176,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                             fontSize="sm" 
                             fontWeight="medium"
                           >
-                            {apiStatus?.running ? "Running" : "Stopped"}
+                            {apiStatus?.running ? t('settings:api.running') : t('settings:api.stopped')}
                           </Text>
                         </HStack>
                       </HStack>
@@ -1286,7 +1286,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     <Text fontSize="sm">5. Release the button and try the update again</Text>
                   </VStack>
                   
-                  <Text fontSize="sm" color="gray.400">Device ID: {selectedDeviceId || 'Unknown'}</Text>
+                  <Text fontSize="sm" color="gray.400">Device ID: {selectedDeviceId || t('settings:logs.unknown')}</Text>
                 </VStack>
               </DialogBody>
               <Box borderTopWidth="1px" borderColor="gray.700" pt={4} mt={4}>

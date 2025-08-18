@@ -212,20 +212,38 @@
     }
   },
   "passphrase": {
-    "title": "Passphrase",
+    "title": "Geben Sie Ihre Passphrase Ein",
     "subtitle": "Geben Sie Ihre Passphrase ein",
     "description": "Passphrasen erstellen versteckte Wallets. Jede Passphrase greift auf eine andere Wallet zu.",
+    "afterSubmitting": "Nach dem Senden Ihrer Passphrase verwenden Sie die Taste auf dem KeepKey, um sie zu genehmigen.",
+    "useWithCaution": "Mit Vorsicht verwenden",
+    "warningLoseAccess": "Wenn Sie Ihre Passphrase vergessen, verlieren Sie den Zugriff auf Ihre Gelder.",
+    "learnMore": "Mehr erfahren",
     "enter": "Passphrase eingeben",
     "confirm": "Passphrase bestätigen",
+    "confirmOnDevice": "Auf Gerät Bestätigen",
     "placeholder": "Geben Sie Ihre Passphrase ein",
+    "showPassphrase": "Passphrase anzeigen",
+    "hidePassphrase": "Passphrase verbergen",
     "onDevice": "Auf Gerät eingeben",
     "onComputer": "Auf Computer eingeben",
     "warning": "Warnung: Wenn Sie Ihre Passphrase vergessen, können Sie Ihre Gelder nicht wiederherstellen!",
     "mismatch": "Passphrasen stimmen nicht überein",
+    "alreadySubmitted": "Passphrase bereits gesendet. Bitte bestätigen Sie auf Ihrem Gerät.",
+    "pleaseEnter": "Bitte geben Sie eine Passphrase ein",
+    "noDeviceId": "Geräte-ID nicht verfügbar",
+    "deviceNotReady": "Gerät ist nicht bereit für die Passphrase. Bitte versuchen Sie die Operation erneut.",
+    "timedOut": "Operation abgelaufen. Bitte bestätigen Sie auf Ihrem Gerät oder versuchen Sie es erneut.",
+    "submitting": "Senden...",
+    "awaitingConfirmation": "Warte auf Bestätigung",
+    "alreadySubmittedButton": "Bereits Gesendet",
+    "submitPassphrase": "Passphrase Senden",
     "buttons": {
       "confirm": "Bestätigen",
       "cancel": "Abbrechen",
-      "useEmpty": "Leere Passphrase Verwenden"
+      "useEmpty": "Leere Passphrase Verwenden",
+      "submit": "Senden",
+      "submitPassphrase": "Passphrase Senden"
     }
   },
   "settings": {

@@ -9,6 +9,7 @@
     "availableBalance": "Verfügbares Guthaben",
     "balance": "Guthaben",
     "loading": "Portfolio wird geladen...",
+    "fetchingKeys": "Geräteschlüssel werden abgerufen...",
     "syncing": "Synchronisierung mit Ihrem KeepKey",
     "takingLonger": "Dies dauert länger als üblich...",
     "readyToStart": "Bereit zu beginnen?",

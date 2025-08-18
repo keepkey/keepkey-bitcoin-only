@@ -124,10 +124,28 @@
       "warning": "Diese Funktionen können instabil sein"
     },
     "logs": {
-      "title": "Protokolle",
+      "title": "Geräteprotokolle",
       "view": "Protokolle anzeigen",
       "export": "Protokolle exportieren",
-      "clear": "Protokolle löschen"
+      "clear": "Protokolle löschen",
+      "autoRefresh": "Automatische Aktualisierung",
+      "stopAuto": "Auto Stoppen",
+      "refresh": "Aktualisieren",
+      "loading": "Laden...",
+      "saveLogs": "Protokolle Speichern",
+      "copying": "Kopiere...",
+      "unknown": "Unbekannt"
+    },
+    "api": {
+      "title": "MCP & API Zugang",
+      "enableTitle": "REST & MCP APIs Aktivieren",
+      "enableDescription": "Externen Anwendungen und KI-Assistenten erlauben sich zu verbinden",
+      "enable": "Aktivieren",
+      "disable": "Deaktivieren",
+      "running": "Läuft",
+      "stopped": "Gestoppt",
+      "serviceStatus": "Service Status",
+      "restartRequired": "Neustart erforderlich um Änderungen anzuwenden"
     }
   },
   "about": {

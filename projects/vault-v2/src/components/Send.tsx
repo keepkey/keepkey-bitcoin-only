@@ -18,6 +18,7 @@ import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
 import { PioneerAPI, DeviceQueueAPI } from '../lib/api';
 import { createUnsignedUxtoTx } from '../lib/createUnsignedUxtoTx';
+import { useTypedTranslation } from '../hooks/useTypedTranslation';
 
 interface SendPageProps {
   onBack: () => void;
@@ -44,6 +45,7 @@ interface TransactionReview {
 }
 
 const Send: React.FC<SendPageProps> = ({ onBack }) => {
+  const { t } = useTypedTranslation('wallet');
   const { portfolio, loading: walletLoading, error: walletError, selectAsset, selectedAsset, signTransaction, fetchedXpubs } = useWallet();
   
   // Step management
@@ -194,11 +196,11 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
   const getStepTitle = (step: SendStep): string => {
     switch (step) {
-      case 'compose': return 'Compose Transaction';
-      case 'review': return 'Review Details';
-      case 'sign': return 'Sign Transaction';
-      case 'complete': return 'Transaction Complete';
-      default: return 'Compose Transaction';
+      case 'compose': return t('send.composeTransaction');
+      case 'review': return t('send.reviewDetails');
+      case 'sign': return t('send.signTransaction');
+      case 'complete': return t('send.transactionComplete');
+      default: return t('send.composeTransaction');
     }
   };
 
@@ -218,13 +220,13 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
   const handleBuildTransaction = async () => {
     if (!recipientAddress || !amount || !addressValidation.valid) {
-      setError('Please enter a valid recipient address and amount');
+      setError(t('send.enterValidRecipientAndAmount'));
       return;
     }
 
     const inputAmount = parseFloat(amount);
     if (inputAmount <= 0) {
-      setError('Amount must be greater than 0');
+      setError(t('send.amountMustBeGreater'));
       return;
     }
 
@@ -244,7 +246,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
       const availableInDisplayCurrency = amountCurrency === 'USD' 
         ? convertBtcToUsd(availableBalance) 
         : availableBalance;
-      setError(`Insufficient balance. Available: ${availableInDisplayCurrency.toFixed(amountCurrency === 'USD' ? 2 : 8)} ${amountCurrency}`);
+      setError(t('send.insufficientBalanceDetailed', { available: availableInDisplayCurrency.toFixed(amountCurrency === 'USD' ? 2 : 8), currency: amountCurrency }));
       return;
     }
 
@@ -280,7 +282,7 @@ const Send: React.FC<SendPageProps> = ({ onBack }) => {
 
     } catch (error) {
       console.error('Error building transaction:', error);
-      setError(error instanceof Error ? error.message : 'Failed to build transaction');
+      setError(error instanceof Error ? error.message : t('send.failedToBuild'));
     } finally {
       setLoading(false);
     }
@@ -601,7 +603,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
       <Box height="100%" display="flex" alignItems="center" justifyContent="center" bg="transparent">
         <VStack gap={4}>
           <Spinner size="xl" color="blue.400" />
-          <Text color="gray.300" fontSize="lg">Loading Wallet...</Text>
+          <Text color="gray.300" fontSize="lg">{t('send.loadingWallet')}</Text>
         </VStack>
       </Box>
     );
@@ -627,7 +629,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
       <VStack gap={4}>
         {/* Compact Balance Display */}
         <Box bg="gray.800" p={3} borderRadius="md" textAlign="center">
-          <Text color="gray.400" fontSize="xs">Available</Text>
+          <Text color="gray.400" fontSize="xs">{t('send.available')}</Text>
           <Text color="white" fontSize="lg" fontWeight="bold">
             {availableBalance.toFixed(8)} BTC
           </Text>
@@ -637,7 +639,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
           {/* Show balance warning if zero */}
           {availableBalance === 0 && (
             <Text color="yellow.400" fontSize="xs" mt={1}>
-              ⚠️ No balance available. Please fund your wallet.
+              {t('send.noBalanceWarning')}
             </Text>
           )}
         </Box>
@@ -647,11 +649,11 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
           {/* Recipient Address */}
           <Box w="100%">
             <Text color="gray.300" mb={2} fontSize="sm" fontWeight="medium">
-              Recipient Address
+              {t('send.recipient')}
             </Text>
             <HStack>
               <Input
-                placeholder="Enter Bitcoin address"
+                placeholder={t('send.recipientPlaceholder')}
                 value={recipientAddress}
                 onChange={(e) => setRecipientAddress(e.target.value)}
                 color="white"
@@ -662,10 +664,10 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
                 flex="1"
               />
               <IconButton
-                aria-label="Scan QR code"
+                aria-label={t('send.scanQrCode')}
                 size="md"
                 onClick={() => {
-                  alert('QR code scanning will be implemented later');
+                  alert(t('send.qrCodeNotImplemented'));
                 }}
               >
                 <FaQrcode />
@@ -673,12 +675,12 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
             </HStack>
             {!addressValidation.valid && recipientAddress && (
               <Text color="red.400" fontSize="xs" mt={1}>
-                {addressValidation.error || 'Invalid Bitcoin address'}
+                {addressValidation.error || t('send.invalidAddress')}
               </Text>
             )}
             {addressValidation.valid && (
               <Text color="green.400" fontSize="xs" mt={1}>
-                ✓ Valid Bitcoin address
+                {t('send.validAddress')}
               </Text>
             )}
           </Box>
@@ -688,7 +690,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
             <HStack justify="space-between" mb={2}>
               <HStack gap={2}>
                 <Text color="gray.300" fontSize="sm" fontWeight="medium">
-                  Amount
+                  {t('send.amount')}
                 </Text>
                 <Button
                   size="xs"
@@ -708,7 +710,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
                 onClick={handleMaxAmount}
                 disabled={availableBalance === 0}
               >
-                Max
+                {t('send.max')}
               </Button>
             </HStack>
             <Input
@@ -734,7 +736,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
             <Text fontSize="xs" color="gray.500" mt={1}>
               {isMaxSend && (
                 <Text color="orange.400" fontSize="xs" mb={1}>
-                  💰 MAX SEND: Will send all available funds minus network fees
+                  {t('send.maxSendWarning')}
                 </Text>
               )}
               {amount && parseFloat(amount) > 0 && (

@@ -215,6 +215,27 @@
     "cancel": "Cancel Changes",
     "apply": "Apply Changes"
   },
+  "logs": {
+    "title": "Device Logs",
+    "autoRefresh": "Auto Refresh",
+    "stopAuto": "Stop Auto",
+    "refresh": "Refresh",
+    "loading": "Loading...",
+    "saveLogs": "Save Logs",
+    "copying": "Copying...",
+    "unknown": "Unknown"
+  },
+  "api": {
+    "title": "MCP & API Access",
+    "enableTitle": "Enable REST & MCP APIs",
+    "enableDescription": "Allow external applications and AI assistants to connect",
+    "enable": "Enable",
+    "disable": "Disable",
+    "running": "Running",
+    "stopped": "Stopped",
+    "serviceStatus": "Service Status",
+    "restartRequired": "Restart required to apply changes"
+  },
   "messages": {
     "saved": "Settings saved successfully",
     "reset": "Settings reset to defaults",

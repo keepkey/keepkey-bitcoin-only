@@ -11,6 +11,7 @@ import enDevice from './locales/en/device.json';
 import enWallet from './locales/en/wallet.json';
 import enTransaction from './locales/en/transaction.json';
 import enDialogs from './locales/en/dialogs.json';
+import enSetup from './locales/en/setup.json';
 
 // Spanish translations
 import esCommon from './locales/es/common.json';
@@ -21,6 +22,7 @@ import esDevice from './locales/es/device.json';
 import esWallet from './locales/es/wallet.json';
 import esTransaction from './locales/es/transaction.json';
 import esDialogs from './locales/es/dialogs.json';
+import esSetup from './locales/es/setup.json';
 
 // French translations
 import frCommon from './locales/fr/common.json';
@@ -31,6 +33,7 @@ import frDevice from './locales/fr/device.json';
 import frWallet from './locales/fr/wallet.json';
 import frTransaction from './locales/fr/transaction.json';
 import frDialogs from './locales/fr/dialogs.json';
+import frSetup from './locales/fr/setup.json';
 
 // German translations
 import deCommon from './locales/de/common.json';
@@ -41,6 +44,7 @@ import deDevice from './locales/de/device.json';
 import deWallet from './locales/de/wallet.json';
 import deTransaction from './locales/de/transaction.json';
 import deDialogs from './locales/de/dialogs.json';
+import deSetup from './locales/de/setup.json';
 
 const resources = {
   en: {
@@ -52,6 +56,7 @@ const resources = {
     wallet: enWallet,
     transaction: enTransaction,
     dialogs: enDialogs,
+    setup: enSetup,
   },
   es: {
     common: esCommon,
@@ -62,6 +67,7 @@ const resources = {
     wallet: esWallet,
     transaction: esTransaction,
     dialogs: esDialogs,
+    setup: esSetup,
   },
   fr: {
     common: frCommon,
@@ -72,6 +78,7 @@ const resources = {
     wallet: frWallet,
     transaction: frTransaction,
     dialogs: frDialogs,
+    setup: frSetup,
   },
   de: {
     common: deCommon,
@@ -82,6 +89,7 @@ const resources = {
     wallet: deWallet,
     transaction: deTransaction,
     dialogs: deDialogs,
+    setup: deSetup,
   },
 };
 
@@ -97,7 +105,7 @@ i18n
     lng: savedLanguage, // Set initial language from localStorage
     fallbackLng: 'en',
     defaultNS: 'common',
-    ns: ['common', 'onboarding', 'settings', 'errors', 'device', 'wallet', 'transaction', 'dialogs'],
+    ns: ['common', 'onboarding', 'settings', 'errors', 'device', 'wallet', 'transaction', 'dialogs', 'setup'],
     
     interpolation: {
       escapeValue: false, // React already escapes values

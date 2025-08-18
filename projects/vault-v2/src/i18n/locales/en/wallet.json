@@ -69,6 +69,7 @@
     "assets": "Assets",
     "noAssets": "No assets found",
     "loading": "Loading portfolio...",
+    "fetchingKeys": "Fetching device keys...",
     "syncing": "Syncing with your KeepKey",
     "takingLonger": "This is taking longer than usual...",
     "readyToStart": "Ready to get started?",
@@ -236,6 +237,13 @@
       "fast": "Fast",
       "custom": "Custom"
     },
+    "available": "Available",
+    "noBalanceWarning": "⚠️ No balance available. Please fund your wallet.",
+    "loadingWallet": "Loading Wallet...",
+    "validAddress": "✓ Valid Bitcoin address",
+    "maxSendWarning": "💰 MAX SEND: Will send all available funds minus network fees",
+    "qrCodeNotImplemented": "QR code scanning will be implemented later",
+    "insufficientBalanceDetailed": "Insufficient balance. Available: {{available}} {{currency}}",
     "feeEstimate": {
       "slow": "~60 min",
       "medium": "~30 min",

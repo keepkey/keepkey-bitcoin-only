@@ -1,0 +1,67 @@
+{
+  "welcome": {
+    "title": "Willkommen bei KeepKey",
+    "subtitle": "Nur-Bitcoin-Edition",
+    "description": "Die sichere Hardware-Wallet, die sich ausschließlich auf Bitcoin konzentriert",
+    "settingUp": "Gerät wird eingerichtet..."
+  },
+  "setupMethod": {
+    "title": "Einrichtungsmethode Wählen",
+    "subtitle": "Neue Wallet erstellen oder bestehende wiederherstellen",
+    "createWallet": {
+      "title": "Neue Wallet Erstellen",
+      "description": "Neue Wiederherstellungsphrase generieren und eine neue Wallet einrichten",
+      "button": "Neu Erstellen"
+    },
+    "recoverWallet": {
+      "title": "Wallet Wiederherstellen",
+      "description": "Ihre Wallet mit einer bestehenden Wiederherstellungsphrase wiederherstellen",
+      "button": "Wallet Wiederherstellen"
+    }
+  },
+  "deviceLabel": {
+    "title": "Gerät Benennen",
+    "subtitle": "Geben Sie Ihrem KeepKey einen eigenen Namen",
+    "placeholder": "Gerätenamen eingeben",
+    "description": "Dieser Name hilft Ihnen, Ihr Gerät zu identifizieren",
+    "button": "Namen Festlegen"
+  },
+  "pinSetup": {
+    "title": "PIN-Schutz Einrichten",
+    "subtitle": "Schützen Sie Ihr Gerät mit einer PIN",
+    "description": "Eine PIN fügt Ihrem Gerät eine zusätzliche Sicherheitsebene hinzu",
+    "createPin": "PIN Erstellen",
+    "skipPin": "Vorerst Überspringen",
+    "warning": "Ihr Gerät ist ohne PIN ungeschützt"
+  },
+  "backup": {
+    "title": "Wallet Sichern",
+    "subtitle": "Notieren Sie Ihre Wiederherstellungsphrase",
+    "description": "Diese Phrase ist die einzige Möglichkeit, Ihre Wallet wiederherzustellen, wenn Ihr Gerät verloren geht oder beschädigt wird",
+    "warning": "Teilen Sie Ihre Wiederherstellungsphrase niemals mit anderen",
+    "button": "Wiederherstellungsphrase Anzeigen",
+    "skipButton": "Sicherung Überspringen (Nicht Empfohlen)"
+  },
+  "complete": {
+    "title": "Einrichtung Abgeschlossen!",
+    "subtitle": "Ihr KeepKey ist einsatzbereit",
+    "description": "Sie können jetzt Ihre Bitcoin sicher speichern und verwalten",
+    "button": "KeepKey Verwenden"
+  },
+  "firmwareUpdate": {
+    "title": "Firmware-Update",
+    "subtitle": "Geräte-Firmware aktualisieren",
+    "checking": "Nach Updates suchen...",
+    "available": "Update verfügbar",
+    "updating": "Firmware wird aktualisiert...",
+    "complete": "Update abgeschlossen",
+    "failed": "Update fehlgeschlagen"
+  },
+  "bootloaderUpdate": {
+    "title": "Bootloader-Update",
+    "subtitle": "Kritisches Sicherheitsupdate",
+    "description": "Dieses Update verbessert die Gerätesicherheit und -stabilität",
+    "warning": "Trennen Sie Ihr Gerät während des Updates nicht",
+    "button": "Bootloader Aktualisieren"
+  }
+}

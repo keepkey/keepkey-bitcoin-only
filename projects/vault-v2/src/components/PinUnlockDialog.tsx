@@ -298,7 +298,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
               <VStack gap={3} py={4}>
                 <Spinner size="lg" color="blue.400" />
                 <Text fontSize="md" fontWeight="semibold">
-                  Preparing Device
+                  {t('pin.unlock.preparingDevice')}
                 </Text>
                 <Text fontSize="sm" color="gray.400">
                   {deviceReadyStatus}
@@ -309,13 +309,13 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
             {step === 'trigger' && (
               <VStack gap={3} py={4}>
                 <Text color="gray.300" fontSize="sm">
-                  Your device will display a PIN matrix when ready
+                  {t('pin.unlock.deviceReadyForPin')}
                 </Text>
                 {isLoading ? (
                   <Spinner size="md" color="blue.400" />
                 ) : (
                   <Button onClick={triggerPinRequest} colorScheme="blue" size="md">
-                    Request PIN Matrix
+                    {t('pin.unlock.requestPinMatrix')}
                   </Button>
                 )}
               </VStack>
@@ -383,7 +383,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
                     ))}
                   </SimpleGrid>
                   <Text fontSize="10px" color="gray.600" textAlign="center" mt={1}>
-                    Numbers shown match your device display
+                    {t('pin.unlock.numbersMatchNote')}
                   </Text>
                 </Box>
 
@@ -403,7 +403,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
                     flex={1}
                   >
                     <Icon as={FaBackspace} mr={1} />
-                    Back
+                    {t('pin.unlock.buttons.back')}
                   </Button>
                   <Button 
                     onClick={handleClearPin}
@@ -418,7 +418,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
                     disabled={pinPositions.length === 0}
                     flex={1}
                   >
-                    Clear
+                    {t('pin.unlock.buttons.clear')}
                   </Button>
                   <Button
                     onClick={handleSubmitPin}
@@ -432,7 +432,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
                     disabled={pinPositions.length === 0}
                     flex={2}
                   >
-                    Unlock
+                    {t('pin.unlock.buttons.unlock')}
                   </Button>
                 </HStack>
 
@@ -446,10 +446,10 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
               <VStack gap={3} py={4}>
                 <Spinner size="lg" color="blue.400" />
                 <Text fontSize="md" fontWeight="semibold">
-                  Verifying PIN...
+                  {t('pin.unlock.verifyingPin')}
                 </Text>
                 <Text fontSize="sm" color="gray.400">
-                  Please wait
+                  {t('pin.unlock.pleaseWait')}
                 </Text>
               </VStack>
             )}
@@ -458,7 +458,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
               <VStack gap={3} py={4}>
                 <Icon as={FaCheckCircle} color="green.400" boxSize={10} />
                 <Text fontSize="md" fontWeight="semibold" color="green.400">
-                  Device Unlocked!
+                  {t('pin.unlock.deviceUnlocked')}
                 </Text>
               </VStack>
             )}
@@ -477,7 +477,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
                       onClick={handleRetry}
                     >
                       <Icon as={FaSync} mr={1} />
-                      {retryCount >= 2 ? 'Full Retry' : 'Try Again'}
+                      {retryCount >= 2 ? t('pin.unlock.fullRetry') : t('pin.unlock.tryAgain')}
                     </Button>
                   </VStack>
                 </HStack>

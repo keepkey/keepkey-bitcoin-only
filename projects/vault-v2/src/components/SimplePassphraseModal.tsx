@@ -105,6 +105,11 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
       if (errorMessage.includes('Unexpected message')) {
         setError(t('passphrase.deviceNotReady', 'Device not ready for passphrase. Please try the operation again.'));
         setHasSubmittedForSession(true); // Prevent further attempts
+        
+        // Close the modal after a short delay to let user see the error message
+        setTimeout(() => {
+          onClose();
+        }, 2000);
       } else if (errorMessage.includes('timed out')) {
         setError(t('passphrase.timedOut', 'Operation timed out. Please confirm on your device or try again.'));
         // Allow retry for timeout
@@ -171,7 +176,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
         >
           <p style={{ margin: 0, fontSize: '14px', color: '#90CDF4' }}>
             {awaitingDeviceConfirmation 
-              ? '⏳ Please confirm on your KeepKey device...'
+              ? t('passphrase.confirmOnDevice')
               : t('passphrase.afterSubmitting')}
           </p>
         </div>
@@ -197,7 +202,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
             type={showPassphrase ? 'text' : 'password'}
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
-            placeholder="Enter your passphrase"
+            placeholder={t('passphrase.placeholder')}
             autoComplete="off"
             disabled={isSubmitting || awaitingDeviceConfirmation}
             style={{
@@ -254,7 +259,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
               fontWeight: '500',
             }}
           >
-            Cancel
+            {t('passphrase.buttons.cancel')}
           </button>
           <button
             type="button"
@@ -271,10 +276,10 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
               fontWeight: '500',
             }}
           >
-            {isSubmitting ? 'Submitting...' : 
-             awaitingDeviceConfirmation ? 'Awaiting Device...' : 
-             hasSubmittedForSession ? 'Already Submitted' : 
-             'Submit Passphrase'}
+            {isSubmitting ? t('passphrase.submitting') : 
+             awaitingDeviceConfirmation ? t('passphrase.awaitingConfirmation') : 
+             hasSubmittedForSession ? t('passphrase.alreadySubmittedButton') : 
+             t('passphrase.buttons.submitPassphrase')}
           </button>
         </div>
       </div>

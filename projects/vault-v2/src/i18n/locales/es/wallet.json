@@ -9,6 +9,7 @@
     "availableBalance": "Saldo disponible",
     "balance": "Saldo",
     "loading": "Cargando portafolio...",
+    "fetchingKeys": "Obteniendo claves del dispositivo...",
     "syncing": "Sincronizando con tu KeepKey",
     "takingLonger": "Esto está tardando más de lo habitual...",
     "readyToStart": "¿Listo para comenzar?",

@@ -124,10 +124,28 @@
       "warning": "Ces fonctionnalités peuvent être instables"
     },
     "logs": {
-      "title": "Journaux",
+      "title": "Journaux de l'Appareil",
       "view": "Voir les journaux",
       "export": "Exporter les journaux",
-      "clear": "Effacer les journaux"
+      "clear": "Effacer les journaux",
+      "autoRefresh": "Actualisation Automatique",
+      "stopAuto": "Arrêter Auto",
+      "refresh": "Actualiser",
+      "loading": "Chargement...",
+      "saveLogs": "Sauvegarder les Journaux",
+      "copying": "Copie...",
+      "unknown": "Inconnu"
+    },
+    "api": {
+      "title": "Accès MCP et API",
+      "enableTitle": "Activer les APIs REST et MCP",
+      "enableDescription": "Permettre aux applications externes et assistants IA de se connecter",
+      "enable": "Activer",
+      "disable": "Désactiver",
+      "running": "En cours",
+      "stopped": "Arrêté",
+      "serviceStatus": "Statut du Service",
+      "restartRequired": "Redémarrage requis pour appliquer les modifications"
     }
   },
   "about": {

@@ -9,6 +9,7 @@
     "availableBalance": "Solde disponible",
     "balance": "Solde",
     "loading": "Chargement du portefeuille...",
+    "fetchingKeys": "Récupération des clés de l'appareil...",
     "syncing": "Synchronisation avec votre KeepKey",
     "takingLonger": "Cela prend plus de temps que d'habitude...",
     "readyToStart": "Prêt à commencer?",

@@ -212,20 +212,38 @@
     }
   },
   "passphrase": {
-    "title": "Frase de Contraseña",
+    "title": "Ingresa Tu Frase de Contraseña",
     "subtitle": "Ingresa tu frase de contraseña",
     "description": "Las frases de contraseña crean billeteras ocultas. Cada frase accede a una billetera diferente.",
+    "afterSubmitting": "Después de enviar tu frase de contraseña, usa el botón en el KeepKey para aprobarla.",
+    "useWithCaution": "Usar con precaución",
+    "warningLoseAccess": "Si olvidas tu frase de contraseña, perderás el acceso a tus fondos.",
+    "learnMore": "Más información",
     "enter": "Ingresar frase de contraseña",
     "confirm": "Confirmar frase de contraseña",
+    "confirmOnDevice": "Confirmar en el Dispositivo",
     "placeholder": "Ingresa tu frase de contraseña",
+    "showPassphrase": "Mostrar frase de contraseña",
+    "hidePassphrase": "Ocultar frase de contraseña",
     "onDevice": "Ingresar en dispositivo",
     "onComputer": "Ingresar en computadora",
     "warning": "Advertencia: ¡Si olvidas tu frase de contraseña, no podrás recuperar tus fondos!",
     "mismatch": "Las frases de contraseña no coinciden",
+    "alreadySubmitted": "Frase de contraseña ya enviada. Por favor, confirma en tu dispositivo.",
+    "pleaseEnter": "Por favor, ingresa una frase de contraseña",
+    "noDeviceId": "ID de dispositivo no disponible",
+    "deviceNotReady": "El dispositivo no está listo para la frase de contraseña. Por favor, intenta la operación nuevamente.",
+    "timedOut": "La operación expiró. Por favor, confirma en tu dispositivo o intenta de nuevo.",
+    "submitting": "Enviando...",
+    "awaitingConfirmation": "Esperando Confirmación",
+    "alreadySubmittedButton": "Ya Enviada",
+    "submitPassphrase": "Enviar Frase de Contraseña",
     "buttons": {
       "confirm": "Confirmar",
       "cancel": "Cancelar",
-      "useEmpty": "Usar Frase Vacía"
+      "useEmpty": "Usar Frase Vacía",
+      "submit": "Enviar",
+      "submitPassphrase": "Enviar Frase de Contraseña"
     }
   },
   "settings": {
