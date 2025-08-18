@@ -19,6 +19,7 @@ import QRCode from 'react-qr-code';
 import { useWallet } from '../contexts/WalletContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useTypedTranslation } from '../hooks/useTypedTranslation';
+import { PioneerAPI } from '../lib/api';
 
 interface ReceiveProps {
   onBack?: () => void;
@@ -74,14 +75,56 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const [pathWarning, setPathWarning] = useState<string | null>(null);
   const [addressIndex, setAddressIndex] = useState<number>(0);
   const [maxUsedIndex, setMaxUsedIndex] = useState<number>(0);
+  const [indexLoaded, setIndexLoaded] = useState<boolean>(false);
 
-  // Component lifecycle debugging
+  // Component lifecycle debugging and fetch current address index
   useEffect(() => {
     console.log('🚀 Receive component mounted');
+    
+    // Fetch the current address index from Pioneer API when component mounts
+    const fetchCurrentIndex = async () => {
+      if (fetchedXpubs && fetchedXpubs.length > 0) {
+        try {
+          // Get the xpub for the current address type
+          const targetPath = bitcoinAddressType === 'p2pkh' ? "m/44'/0'/0'" :
+                            bitcoinAddressType === 'p2sh-p2wpkh' ? "m/49'/0'/0'" :
+                            "m/84'/0'/0'";
+          
+          const xpubData = fetchedXpubs.find(x => x.path === targetPath);
+          if (xpubData) {
+            console.log('📊 Fetching current address index for xpub:', xpubData.xpub.substring(0, 20) + '...');
+            
+            // Call Pioneer API to get the current address and index
+            const response = await PioneerAPI.getReceiveAddress('Bitcoin', xpubData.xpub);
+            console.log('📊 Pioneer API response:', response);
+            
+            if (response && typeof response.addressIndex === 'number') {
+              console.log('✅ Current address index from API:', response.addressIndex);
+              setAddressIndex(response.addressIndex);
+              setMaxUsedIndex(response.addressIndex);
+              setCurrentAddressIndex(response.addressIndex);
+              setIndexLoaded(true);
+            } else {
+              console.warn('⚠️ No address index in response, using default 0');
+              setIndexLoaded(true);
+            }
+          } else {
+            console.log('⚠️ No xpub found for path:', targetPath);
+          }
+        } catch (error) {
+          console.error('❌ Failed to fetch current address index:', error);
+          // Keep default of 0 on error
+          setIndexLoaded(true);
+        }
+      }
+    };
+    
+    fetchCurrentIndex();
+    
     return () => {
       console.log('🛬 Receive component unmounting');
     };
-  }, []);
+  }, [fetchedXpubs, bitcoinAddressType]);
 
   // Get BTC asset from portfolio
   const btcAsset = portfolio?.assets.find(asset => asset.caip === 'bip122:000000000019d6689c085ae165831e93/slip44:0');
@@ -218,17 +261,56 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   };
   
   // Handle getting a new address
-  const handleGetNewAddress = () => {
+  const handleGetNewAddress = async () => {
     if (newAddressCount >= 3) {
       setError('Maximum of 3 new addresses per session reached');
       return;
     }
     
-    const newIndex = addressIndex + 1;
-    setAddressIndex(newIndex);
-    setNewAddressCount(prev => prev + 1);
-    setAddress(''); // Clear current address
-    generateAddress(newIndex);
+    // Get fresh address from Pioneer API instead of just incrementing
+    try {
+      const targetPath = bitcoinAddressType === 'p2pkh' ? "m/44'/0'/0'" :
+                        bitcoinAddressType === 'p2sh-p2wpkh' ? "m/49'/0'/0'" :
+                        "m/84'/0'/0'";
+      
+      const xpubData = fetchedXpubs.find(x => x.path === targetPath);
+      if (xpubData) {
+        console.log('🔄 Getting new address from Pioneer API...');
+        const response = await PioneerAPI.getReceiveAddress('Bitcoin', xpubData.xpub);
+        
+        if (response && typeof response.addressIndex === 'number') {
+          console.log('✅ New address index from API:', response.addressIndex);
+          setAddressIndex(response.addressIndex);
+          setMaxUsedIndex(Math.max(maxUsedIndex, response.addressIndex));
+          setCurrentAddressIndex(response.addressIndex);
+          setNewAddressCount(prev => prev + 1);
+          setAddress(''); // Clear current address
+          generateAddress(response.addressIndex);
+        } else {
+          // Fallback to incrementing
+          const newIndex = addressIndex + 1;
+          setAddressIndex(newIndex);
+          setNewAddressCount(prev => prev + 1);
+          setAddress(''); // Clear current address
+          generateAddress(newIndex);
+        }
+      } else {
+        // Fallback if no xpub
+        const newIndex = addressIndex + 1;
+        setAddressIndex(newIndex);
+        setNewAddressCount(prev => prev + 1);
+        setAddress(''); // Clear current address
+        generateAddress(newIndex);
+      }
+    } catch (error) {
+      console.error('❌ Failed to get new address from API:', error);
+      // Fallback to incrementing on error
+      const newIndex = addressIndex + 1;
+      setAddressIndex(newIndex);
+      setNewAddressCount(prev => prev + 1);
+      setAddress(''); // Clear current address
+      generateAddress(newIndex);
+    }
   };
   
   // Handle custom path editing
