@@ -29,7 +29,7 @@ export function useDeviceInteraction() {
     reason: null,
   });
   
-  const { openDialog, closeDialog } = useDialog();
+  const { show, hide } = useDialog();
 
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
@@ -51,7 +51,7 @@ export function useDeviceInteraction() {
         
         // Open PIN dialog with correlation
         const dialogId = `device-pin-${device_id}-${request_id}`;
-        openDialog({
+        show({
           id: dialogId,
           component: React.lazy(() => import('../components/DevicePinDialog').then(m => ({ default: m.DevicePinDialog }))),
           props: {
@@ -67,7 +67,7 @@ export function useDeviceInteraction() {
                   pin 
                 });
                 activeRequests.current.delete(request_id);
-                closeDialog(dialogId);
+                hide(dialogId);
               } catch (error) {
                 console.error('PIN submission failed:', error);
                 // Keep dialog open on error
@@ -81,14 +81,14 @@ export function useDeviceInteraction() {
                   requestId: request_id 
                 });
                 activeRequests.current.delete(request_id);
-                closeDialog(dialogId);
+                hide(dialogId);
               } catch (error) {
                 console.error('PIN cancellation failed:', error);
               }
             },
             onClose: () => {
               activeRequests.current.delete(request_id);
-              closeDialog(dialogId);
+              hide(dialogId);
             }
           },
           priority: 'critical',
@@ -137,35 +137,47 @@ export function useDeviceInteraction() {
         });
         
         // Open passphrase dialog with correlation
-        openDialog('passphraseDialog', {
-          deviceId: device_id,
-          requestId: request_id,
-          cacheAllowed: cache_allowed,
-          onSubmit: async (passphrase: string) => {
-            try {
-              await invoke('passphrase_submit', { 
-                deviceId: device_id, 
-                requestId: request_id, 
-                passphrase 
-              });
+        const passphraseDialogId = `passphrase-${device_id}-${request_id}`;
+        show({
+          id: passphraseDialogId,
+          component: React.lazy(() => import('../components/SimplePassphraseModal')),
+          props: {
+            isOpen: true,
+            deviceId: device_id,
+            requestId: request_id,
+            cacheAllowed: cache_allowed,
+            onSubmit: async (passphrase: string) => {
+              try {
+                await invoke('passphrase_submit', { 
+                  deviceId: device_id, 
+                  requestId: request_id, 
+                  passphrase 
+                });
+                activeRequests.current.delete(request_id);
+                hide(passphraseDialogId);
+              } catch (error) {
+                console.error('Passphrase submission failed:', error);
+              }
+            },
+            onCancel: async () => {
+              try {
+                await invoke('passphrase_cancel', { 
+                  deviceId: device_id, 
+                  requestId: request_id 
+                });
+                activeRequests.current.delete(request_id);
+                hide(passphraseDialogId);
+              } catch (error) {
+                console.error('Passphrase cancellation failed:', error);
+              }
+            },
+            onClose: () => {
               activeRequests.current.delete(request_id);
-              closeDialog('passphraseDialog');
-            } catch (error) {
-              console.error('Passphrase submission failed:', error);
+              hide(passphraseDialogId);
             }
           },
-          onCancel: async () => {
-            try {
-              await invoke('passphrase_cancel', { 
-                deviceId: device_id, 
-                requestId: request_id 
-              });
-              activeRequests.current.delete(request_id);
-              closeDialog('passphraseDialog');
-            } catch (error) {
-              console.error('Passphrase cancellation failed:', error);
-            }
-          }
+          priority: 'high',
+          persistent: true,
         });
       });
       unlisteners.push(unlisten);
@@ -222,9 +234,9 @@ export function useDeviceInteraction() {
             
             // Close any open dialogs for this device
             if (request.type === 'pin') {
-              closeDialog(`device-pin-${device_id}-${requestId}`);
+              hide(`device-pin-${device_id}-${requestId}`);
             } else if (request.type === 'passphrase') {
-              closeDialog('passphraseDialog');
+              hide(`passphrase-${device_id}-${requestId}`);
             }
           }
         }
@@ -246,9 +258,9 @@ export function useDeviceInteraction() {
           
           // Close relevant dialog
           if (request?.type === 'pin') {
-            closeDialog(`device-pin-${device_id}-${request_id}`);
+            hide(`device-pin-${device_id}-${request_id}`);
           } else if (request?.type === 'passphrase') {
-            closeDialog('passphraseDialog');
+            hide(`passphrase-${device_id}-${request_id}`);
           }
         }
       });
@@ -268,7 +280,7 @@ export function useDeviceInteraction() {
     return () => {
       unlisteners.forEach(unlisten => unlisten());
     };
-  }, [openDialog, closeDialog, reconnectDialogState.deviceId, reconnectDialogState.isOpen]);
+  }, [show, hide, reconnectDialogState.deviceId, reconnectDialogState.isOpen]);
 
   const closeReconnectDialog = useCallback(() => {
     setReconnectDialogState({

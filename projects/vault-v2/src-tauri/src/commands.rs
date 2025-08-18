@@ -409,12 +409,23 @@ pub async fn get_device_status(
     
     println!("Getting device status for: {}", device_id);
     
-    // Check if device is in PIN flow - if so, we should not send any commands
-    if is_device_in_pin_flow(&device_id) {
-        println!("🔒 Device {} is in PIN flow - using cached state to avoid disrupting PIN entry", device_id);
+    // Check if device is in PIN flow or awaiting PIN/Button - if so, we should not send any commands
+    let device_interaction_state = {
+        let sessions = crate::device::interaction_state::DEVICE_SESSIONS.read().await;
+        sessions.get(&device_id).map(|s| s.state.clone())
+    };
+    
+    let should_use_cache = is_device_in_pin_flow(&device_id) || 
+        matches!(device_interaction_state, 
+            Some(crate::device::interaction_state::DeviceInteractionState::AwaitingPIN { .. }) |
+            Some(crate::device::interaction_state::DeviceInteractionState::AwaitingButton { .. })
+        );
+    
+    if should_use_cache {
+        println!("🔒 Device {} is in PIN flow or awaiting interaction - using cached state to avoid disrupting", device_id);
         
         // Try to get cached features from device state cache
-        let cache = device::DEVICE_STATE_CACHE.read().await;
+        let cache = crate::device::queue::DEVICE_STATE_CACHE.read().await;
         if let Some(cached_state) = cache.get(&device_id) {
             if let Some(cached_features) = &cached_state.last_features {
                 let converted_features = convert_features_to_device_features(cached_features.clone());
@@ -1164,6 +1175,40 @@ pub async fn get_connected_devices_with_features(
                 }
             };
             
+            // Check if device is in an interaction state that we shouldn't interrupt
+            let device_interaction_state = {
+                let sessions = crate::device::interaction_state::DEVICE_SESSIONS.read().await;
+                sessions.get(&device_id).map(|s| s.state.clone())
+            };
+            
+            // If device is awaiting PIN/Button, skip feature fetching
+            if matches!(device_interaction_state, 
+                Some(crate::device::interaction_state::DeviceInteractionState::AwaitingPIN { .. }) |
+                Some(crate::device::interaction_state::DeviceInteractionState::AwaitingButton { .. })
+            ) {
+                println!("⏭️ Skipping features for device {} - awaiting user interaction", device_id);
+                
+                // Try to use cached features
+                let cache = crate::device::queue::DEVICE_STATE_CACHE.read().await;
+                if let Some(cached_state) = cache.get(&device_id) {
+                    if let Some(cached_features) = &cached_state.last_features {
+                        let device_features = convert_features_to_device_features(cached_features.clone());
+                        return Some(serde_json::json!({
+                            "device": device,
+                            "features": device_features,
+                            "interaction_state": format!("{:?}", device_interaction_state)
+                        }));
+                    }
+                }
+                
+                // Return device without features if no cache
+                return Some(serde_json::json!({
+                    "device": device,
+                    "features": null,
+                    "interaction_state": format!("{:?}", device_interaction_state)
+                }));
+            }
+            
             // Try to fetch features through the queue with retry logic
             let features = {
                 let mut last_error = None;
@@ -1233,7 +1278,7 @@ pub async fn get_connected_devices_with_features(
                 }
             };
             
-            serde_json::json!({
+            Some(serde_json::json!({
                 "device": {
                     "unique_id": device.unique_id,
                     "name": device.name,
@@ -1245,7 +1290,7 @@ pub async fn get_connected_devices_with_features(
                     "is_keepkey": device.is_keepkey,
                 },
                 "features": features,
-            })
+            }))
         });
         
         tasks.push(task);
@@ -1255,7 +1300,10 @@ pub async fn get_connected_devices_with_features(
     let mut results = Vec::new();
     for task in tasks {
         match task.await {
-            Ok(result) => results.push(result),
+            Ok(Some(result)) => results.push(result),
+            Ok(None) => {
+                // Device was skipped or had no features
+            },
             Err(e) => {
                 println!("Task failed: {}", e);
                 // Continue with other devices
@@ -4670,17 +4718,19 @@ pub async fn enable_passphrase_protection_v2(
                 label,
             }).await?;
 
-            // Send ButtonAck but don't wait for response
-            // The device will likely send PinMatrixRequest next, which needs to be
-            // handled through a separate flow to avoid sending empty PIN
-            let _ = queue_handle.send_raw(Message::ButtonAck(Default::default()), false).await;
-            
+            // Send ButtonAck without waiting - let the device response surface through events
+            queue_handle
+                .send_raw(Message::ButtonAck(Default::default()), false)
+                .await
+                .map_err(|e| format!("Failed to send button ack: {}", e))?;
+
+            log::info!("✅ ButtonAck sent non-blocking, device response will trigger appropriate events");
             Ok(())
         }
         Message::PinMatrixRequest(_) => {
             // Device is requesting PIN directly (no button press needed)
             // Update state and emit event
-            {
+            let pin_request_id = {
                 let mut sessions = DEVICE_SESSIONS.write().await;
                 if let Some(session) = sessions.get_mut(&device_id) {
                     let interaction_id = session.begin_interaction(
@@ -4691,13 +4741,16 @@ pub async fn enable_passphrase_protection_v2(
                         request_id: interaction_id,
                         operation: OperationType::Settings,
                     })?;
+                    interaction_id
+                } else {
+                    return Err("No device session found".to_string());
                 }
-            }
+            };
 
-            // Emit event for PIN request
+            // Emit event for PIN request with correct PIN request ID
             emit_device_event(&app, DeviceEvent::DeviceAwaitingPin {
                 device_id: device_id.clone(),
-                request_id,
+                request_id: pin_request_id,
                 kind: "settings".to_string(),
             }).await?;
 
@@ -4799,7 +4852,7 @@ async fn handle_settings_response_message(
         }
         Message::PinMatrixRequest(_) => {
             // Update state to awaiting PIN
-            {
+            let pin_request_id = {
                 let mut sessions = DEVICE_SESSIONS.write().await;
                 if let Some(session) = sessions.get_mut(&device_id) {
                     let interaction_id = session.begin_interaction(
@@ -4810,13 +4863,16 @@ async fn handle_settings_response_message(
                         request_id: interaction_id,
                         operation: OperationType::Settings,
                     })?;
+                    interaction_id
+                } else {
+                    return Err("No device session found".to_string());
                 }
-            }
+            };
 
-            // Emit event for PIN request
+            // Emit event for PIN request with correct PIN request ID
             emit_device_event(&app, DeviceEvent::DeviceAwaitingPin {
                 device_id: device_id.clone(),
-                request_id,
+                request_id: pin_request_id,
                 kind: "settings".to_string(),
             }).await?;
 
@@ -4870,8 +4926,16 @@ pub async fn pin_submit(
         .collect();
 
     // Send PinMatrixAck
+    let pin_string: String = positions.iter().map(|&p| p.to_string()).collect();
+    
+    // Guard against empty PIN
+    if pin_string.is_empty() {
+        log::error!("🚫 Refusing to send empty PinMatrixAck");
+        return Err("PIN cannot be empty".to_string());
+    }
+    
     let pin_ack = keepkey_rust::messages::PinMatrixAck {
-        pin: positions.iter().map(|&p| p.to_string()).collect::<String>(),
+        pin: pin_string,
     };
 
     match queue_handle.send_raw(Message::PinMatrixAck(pin_ack), true).await {

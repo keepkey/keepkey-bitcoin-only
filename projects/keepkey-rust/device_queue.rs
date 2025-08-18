@@ -184,6 +184,13 @@ impl DeviceQueueMetrics {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptState {
+    None,
+    AwaitingPin,
+    AwaitingPassphrase,
+}
+
 /// Worker task that processes device commands sequentially
 pub struct DeviceWorker {
     device_id: String,
@@ -194,6 +201,8 @@ pub struct DeviceWorker {
     cmd_rx: mpsc::Receiver<DeviceCmd>,
     /// Track if device is in PIN flow mode (ResetDevice, PIN setup, etc)
     is_pin_flow: bool,
+    /// Track current prompt state to prevent auto-responses
+    prompt_state: PromptState,
 }
 
 impl DeviceWorker {
@@ -210,6 +219,7 @@ impl DeviceWorker {
             metrics: DeviceQueueMetrics::default(),
             cmd_rx,
             is_pin_flow: false,
+            prompt_state: PromptState::None,
         }
     }
     
@@ -492,41 +502,91 @@ impl DeviceWorker {
     
     /// Handle raw message sending 
     async fn handle_send_raw(&mut self, message: Message, bypass_cache: bool) -> Result<Message> {
+        // Block non-prompt messages during prompt states
+        match self.prompt_state {
+            PromptState::AwaitingPin => {
+                if !matches!(&message, Message::PinMatrixAck(_) | Message::Cancel(_)) {
+                    warn!("🚫 Blocking message {:?} while awaiting PIN", message.message_type());
+                    return Err(anyhow!("Device is awaiting PIN input"));
+                }
+                // Clear prompt state when sending PIN ack
+                if matches!(&message, Message::PinMatrixAck(_)) {
+                    info!("📤 Sending PinMatrixAck, clearing AwaitingPin state");
+                    self.prompt_state = PromptState::None;
+                }
+            }
+            PromptState::AwaitingPassphrase => {
+                if !matches!(&message, Message::PassphraseAck(_) | Message::Cancel(_)) {
+                    warn!("🚫 Blocking message {:?} while awaiting passphrase", message.message_type());
+                    return Err(anyhow!("Device is awaiting passphrase input"));
+                }
+                // Clear prompt state when sending passphrase ack
+                if matches!(&message, Message::PassphraseAck(_)) {
+                    info!("📤 Sending PassphraseAck, clearing AwaitingPassphrase state");
+                    self.prompt_state = PromptState::None;
+                }
+            }
+            PromptState::None => {}
+        }
+        
         // Detect if this is a PIN flow related message
+        // IMPORTANT: ApplySettings (used for passphrase enable/disable) can trigger PinMatrixRequest.
+        // We must treat it as a PIN flow message so PinMatrixRequest is passed through
+        // to the frontend instead of being auto-answered by the standard handler.
         let is_pin_flow_message = matches!(
             &message,
-            Message::ResetDevice(_) | 
-            Message::PinMatrixAck(_) | 
+            Message::ResetDevice(_) |
+            Message::PinMatrixAck(_) |
             Message::ChangePin(_) |
             Message::RecoveryDevice(_) |
-            Message::GetAddress(_) |      // GetAddress can trigger PIN requests
-            Message::GetPublicKey(_) |    // GetPublicKey can trigger PIN requests  
-            Message::SignTx(_)            // SignTx can trigger PIN requests
+            Message::ApplySettings(_) |   // <-- ensure settings changes use PIN flow handler
+            Message::GetAddress(_) |       // GetAddress can trigger PIN requests
+            Message::GetPublicKey(_) |     // GetPublicKey can trigger PIN requests
+            Message::SignTx(_)             // SignTx can trigger PIN requests
         );
         
         // Update PIN flow state based on message type
-        if matches!(&message, Message::ResetDevice(_) | Message::ChangePin(_) | Message::RecoveryDevice(_)) {
+        if matches!(&message, Message::ResetDevice(_) | Message::ChangePin(_) | Message::RecoveryDevice(_) | Message::ApplySettings(_)) {
             info!("🔐 Entering PIN flow mode for device {} due to {:?}", self.device_id, message.message_type());
             self.is_pin_flow = true;
         }
         
         // Store PIN flow state before mutable borrow
-        let use_pin_flow_handler = self.is_pin_flow || is_pin_flow_message;
+        // Force PIN flow handler if we're in any prompt state
+        let use_pin_flow_handler = self.is_pin_flow || is_pin_flow_message || self.prompt_state != PromptState::None;
         
         // For raw messages, we generally don't cache unless specifically allowed
         let transport = self.ensure_transport().await?;
         
+        // Desktop mode check - NEVER use standard handler in desktop
+        let desktop_mode = std::env::var("TAURI_ENV").is_ok() || std::env::var("KK_DESKTOP_MODE").is_ok();
+        
         // Use appropriate handler based on current state and message type
-        let response = if use_pin_flow_handler {
-            info!("🔐 Using PIN flow handler for message {:?}", message.message_type());
+        let response = if use_pin_flow_handler || desktop_mode {
+            info!("🔐 Using PIN flow handler for message {:?} (desktop_mode: {}, use_pin_flow: {})", 
+                  message.message_type(), desktop_mode, use_pin_flow_handler);
             transport.with_pin_flow_handler().handle(message)?
         } else {
+            info!("📝 Using standard handler for message {:?}", message.message_type());
             transport.with_standard_handler().handle(message)?
         };
         
-        // Update PIN flow state based on response
+        // Update prompt state based on response
         match &response {
+            Message::PinMatrixRequest(_) => {
+                info!("🔐 Device requesting PIN, setting prompt state to AwaitingPin");
+                self.prompt_state = PromptState::AwaitingPin;
+            }
+            Message::PassphraseRequest(_) => {
+                info!("🔐 Device requesting passphrase, setting prompt state to AwaitingPassphrase");
+                self.prompt_state = PromptState::AwaitingPassphrase;
+            }
             Message::Success(_) | Message::Failure(_) => {
+                // Clear prompt state on completion
+                if self.prompt_state != PromptState::None {
+                    info!("✅ Clearing prompt state after {:?}", response.message_type());
+                    self.prompt_state = PromptState::None;
+                }
                 // PIN flow completed (either success or failure)
                 if self.is_pin_flow {
                     info!("🔓 Exiting PIN flow mode for device {} after {:?}", self.device_id, response.message_type());

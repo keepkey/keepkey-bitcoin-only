@@ -17,14 +17,11 @@ import {
   VStack,
   Grid,
   Spinner,
-  Alert,
-  AlertIcon,
-  AlertDescription,
   IconButton,
 } from '@chakra-ui/react';
 import { LuX, LuDelete } from 'react-icons/lu';
 import { invoke } from '@tauri-apps/api/core';
-import { useTypedTranslation } from '../i18n';
+import { useTypedTranslation } from '../hooks/useTypedTranslation';
 
 interface DevicePinDialogProps {
   isOpen: boolean;
@@ -158,10 +155,15 @@ export const DevicePinDialog = ({
 
             {/* Error Message */}
             {error && (
-              <Alert status="error" borderRadius="md">
-                <AlertIcon />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+              <Box
+                p={3}
+                borderRadius="md"
+                bg="red.50"
+                borderWidth="1px"
+                borderColor="red.200"
+              >
+                <Text color="red.700" fontSize="sm">{error}</Text>
+              </Box>
             )}
 
             {/* PIN Matrix */}
@@ -177,10 +179,10 @@ export const DevicePinDialog = ({
               </Text>
               
               <Grid templateColumns="repeat(3, 1fr)" gap={2}>
-                {[7, 8, 9, 4, 5, 6, 1, 2, 3].map((num) => (
+                {[7, 8, 9, 4, 5, 6, 1, 2, 3].map((num, index) => (
                   <Button
                     key={num}
-                    onClick={() => handlePinButtonClick(num)}
+                    onClick={() => handlePinButtonClick(index + 1)}
                     isDisabled={isSubmitting || pinPositions.length >= 9}
                     size="lg"
                     h="60px"

@@ -109,6 +109,12 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
         if (event.payload.device_id === deviceId) {
           setStatusMessage('Device reconnected successfully!');
           setTimeout(() => setStatusMessage(null), 2000);
+          
+          // Now that device is reconnected, notify parent to refresh
+          if (onPassphraseToggle) {
+            console.log('[PassphraseSettings] Device reconnected, notifying parent to refresh');
+            onPassphraseToggle(isEnabled);
+          }
         }
       });
       unlisteners.push(unlisten);
@@ -160,8 +166,16 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       // Update local state
       setIsEnabled(newState);
       
-      if (onPassphraseToggle) {
+      // Check if device is in PIN/interaction state before notifying parent
+      const interactionState = await invoke<string>('get_device_interaction_state', { deviceId });
+      console.log(`[PassphraseSettings] Device interaction state after operation: ${interactionState}`);
+      
+      // Only notify parent if device is not waiting for user interaction
+      if (onPassphraseToggle && !interactionState.includes('AwaitingPIN') && !interactionState.includes('AwaitingButton')) {
+        console.log('[PassphraseSettings] Device is idle, notifying parent to refresh');
         onPassphraseToggle(newState);
+      } else if (interactionState.includes('AwaitingPIN') || interactionState.includes('AwaitingButton')) {
+        console.log('[PassphraseSettings] Device is awaiting interaction, skipping parent notification to avoid interruption');
       }
       
       // Success message without restart
