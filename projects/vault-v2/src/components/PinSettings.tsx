@@ -7,7 +7,9 @@ import {
   Switch,
 } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { usePinSetupDialog } from '../contexts/DialogContext';
+import { PinRemovalDialog } from './PinRemovalDialog';
 
 interface PinSettingsProps {
   deviceId: string;
@@ -23,6 +25,8 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
   const [isEnabled, setIsEnabled] = useState(initialEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isDisablingPin, setIsDisablingPin] = useState(false);
+  const [showPinRemovalDialog, setShowPinRemovalDialog] = useState(false);
   const pinSetupDialog = usePinSetupDialog();
 
   // Debug log the initial prop value
@@ -79,21 +83,53 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
       } else {
         // Disabling PIN protection
         setIsUpdating(true);
-        setStatusMessage('Enter your current PIN on the KeepKey to disable PIN protection...');
+        setIsDisablingPin(true);
+        setStatusMessage('Requesting PIN verification to disable protection...');
         
-        await invoke('disable_pin_protection', {
-          deviceId,
+        // Set up listener for PIN removal request event
+        const unlisten = await listen('pin-removal-request', async (event: any) => {
+          console.log('[PinSettings] PIN removal request event received:', event.payload);
+          
+          if (event.payload?.deviceId === deviceId) {
+            // Device is now showing PIN matrix for removal
+            setShowPinRemovalDialog(true);
+            
+            // Clean up listener after handling the event
+            unlisten();
+          }
         });
         
-        setIsEnabled(false);
-        setStatusMessage('PIN protection disabled successfully!');
+        // Set up listener for successful PIN removal
+        const unlistenSuccess = await listen('pin-removal-success', (event: any) => {
+          console.log('[PinSettings] PIN removal success event received:', event.payload);
+          
+          if (event.payload?.deviceId === deviceId) {
+            setIsEnabled(false);
+            setStatusMessage('PIN protection disabled successfully!');
+            setIsUpdating(false);
+            setIsDisablingPin(false);
+            
+            if (onPinToggle) {
+              onPinToggle(false);
+            }
+            
+            // Clear success message after a delay
+            setTimeout(() => setStatusMessage(null), 3000);
+            
+            unlistenSuccess();
+          }
+        });
         
-        if (onPinToggle) {
-          onPinToggle(false);
+        try {
+          await invoke('disable_pin_protection', {
+            deviceId,
+          });
+        } catch (err) {
+          console.error('Failed to initiate PIN disable:', err);
+          unlisten(); // Clean up listener on error
+          unlistenSuccess();
+          throw err; // Re-throw to be handled by outer try-catch
         }
-        
-        // Clear success message after a delay
-        setTimeout(() => setStatusMessage(null), 3000);
       }
       
     } catch (err) {
@@ -136,8 +172,9 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
   };
 
   return (
-    <Box p={4} borderWidth={1} borderRadius="md">
-      <Flex direction="column" gap={4}>
+    <>
+      <Box p={4} borderWidth={1} borderRadius="md">
+        <Flex direction="column" gap={4}>
         <Text fontSize="lg" fontWeight="bold">
           PIN Protection
         </Text>
@@ -209,5 +246,26 @@ export const PinSettings: React.FC<PinSettingsProps> = ({
         {/* Device ID removed to save space */}
       </Flex>
     </Box>
+    
+    {/* PIN Removal Dialog */}
+    <PinRemovalDialog
+      isOpen={showPinRemovalDialog}
+      deviceId={deviceId}
+      onSuccess={() => {
+        console.log('[PinSettings] PIN removal dialog success');
+        setShowPinRemovalDialog(false);
+        // Success handling is done via the pin-removal-success event listener
+      }}
+      onClose={() => {
+        console.log('[PinSettings] PIN removal dialog closed');
+        setShowPinRemovalDialog(false);
+        setIsUpdating(false);
+        setIsDisablingPin(false);
+        setStatusMessage(null);
+        // Keep toggle in enabled state since operation was cancelled
+        setIsEnabled(true);
+      }}
+    />
+    </>
   );
 };
