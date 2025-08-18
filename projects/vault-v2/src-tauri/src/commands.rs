@@ -4644,10 +4644,14 @@ pub async fn enable_passphrase_protection_v2(
         ..Default::default()
     };
 
-    // Process the response with proper state transitions
-    match queue_handle.send_raw(Message::ApplySettings(apply_settings), true).await {
-        Ok(Message::ButtonRequest(br)) => {
+    // Send ApplySettings and wait for initial response
+    let response = queue_handle.send_raw(Message::ApplySettings(apply_settings), true).await
+        .map_err(|e| format!("Failed to send ApplySettings: {}", e))?;
+    
+    match response {
+        Message::ButtonRequest(br) => {
             let label = br.data.clone();
+            
             // Update state to awaiting button
             {
                 let mut sessions = DEVICE_SESSIONS.write().await;
@@ -4659,22 +4663,23 @@ pub async fn enable_passphrase_protection_v2(
                 }
             }
 
-            // Emit event
+            // Emit button event
             emit_device_event(&app, DeviceEvent::DeviceAwaitingButton {
                 device_id: device_id.clone(),
                 request_id,
                 label,
             }).await?;
 
-            // Send ButtonAck and get response
-            let response = queue_handle.send_raw(Message::ButtonAck(Default::default()), true).await
-                .map_err(|e| format!("Failed to send button ack: {}", e))?;
-
-            // Continue processing with the response
-            handle_settings_response_message(device_id, request_id, response, app, enabled).await
+            // Send ButtonAck but don't wait for response
+            // The device will likely send PinMatrixRequest next, which needs to be
+            // handled through a separate flow to avoid sending empty PIN
+            let _ = queue_handle.send_raw(Message::ButtonAck(Default::default()), false).await;
+            
+            Ok(())
         }
-        Ok(Message::PinMatrixRequest(_)) => {
-            // Update state to awaiting PIN
+        Message::PinMatrixRequest(_) => {
+            // Device is requesting PIN directly (no button press needed)
+            // Update state and emit event
             {
                 let mut sessions = DEVICE_SESSIONS.write().await;
                 if let Some(session) = sessions.get_mut(&device_id) {
@@ -4689,7 +4694,7 @@ pub async fn enable_passphrase_protection_v2(
                 }
             }
 
-            // Emit event with string request_id for frontend compatibility
+            // Emit event for PIN request
             emit_device_event(&app, DeviceEvent::DeviceAwaitingPin {
                 device_id: device_id.clone(),
                 request_id,
@@ -4698,8 +4703,8 @@ pub async fn enable_passphrase_protection_v2(
 
             Ok(())
         }
-        Ok(Message::Success(_)) => {
-            // Update state to needs reconnect
+        Message::Success(_) => {
+            // Device accepted the settings change without needing PIN
             let reason = if enabled {
                 ReconnectReason::PassphraseEnabled
             } else {
@@ -4717,7 +4722,7 @@ pub async fn enable_passphrase_protection_v2(
             crate::device::state::set_device_needs_reset(&device_id, true).await;
             crate::device::state::set_device_passphrase_state(&device_id, enabled, false).await;
 
-            // Emit event
+            // Emit reconnect event
             emit_device_event(&app, DeviceEvent::DeviceNeedsReconnect {
                 device_id: device_id.clone(),
                 reason: format!("{:?}", reason),
@@ -4725,7 +4730,7 @@ pub async fn enable_passphrase_protection_v2(
 
             Ok(())
         }
-        Ok(Message::Failure(f)) => {
+        Message::Failure(f) => {
             // Reset to idle
             {
                 let mut sessions = DEVICE_SESSIONS.write().await;
@@ -4736,8 +4741,7 @@ pub async fn enable_passphrase_protection_v2(
 
             Err(format!("Device error: {}", f.message.unwrap_or_default()))
         }
-        Ok(_) => Err("Unexpected response from device".to_string()),
-        Err(e) => Err(format!("Failed to communicate with device: {}", e))
+        _ => Err("Unexpected response from device".to_string())
     }
 }
 
@@ -4750,7 +4754,7 @@ async fn handle_settings_response_message(
     enabled: bool,
 ) -> Result<(), String> {
     use crate::device::{
-        interaction_state::{DeviceInteractionState, ReconnectReason, DEVICE_SESSIONS},
+        interaction_state::{DeviceInteractionState, ReconnectReason, DEVICE_SESSIONS, InteractionKind, OperationType},
         events::{DeviceEvent, emit_device_event},
     };
 
@@ -4792,6 +4796,31 @@ async fn handle_settings_response_message(
             }
 
             Err(format!("Device error: {}", f.message.unwrap_or_default()))
+        }
+        Message::PinMatrixRequest(_) => {
+            // Update state to awaiting PIN
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    let interaction_id = session.begin_interaction(
+                        InteractionKind::Pin,
+                        OperationType::Settings
+                    );
+                    session.transition(DeviceInteractionState::AwaitingPIN { 
+                        request_id: interaction_id,
+                        operation: OperationType::Settings,
+                    })?;
+                }
+            }
+
+            // Emit event for PIN request
+            emit_device_event(&app, DeviceEvent::DeviceAwaitingPin {
+                device_id: device_id.clone(),
+                request_id,
+                kind: "settings".to_string(),
+            }).await?;
+
+            Ok(())
         }
         _ => Err("Unexpected response from device".to_string())
     }
