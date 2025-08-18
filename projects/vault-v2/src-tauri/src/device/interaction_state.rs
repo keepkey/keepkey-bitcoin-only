@@ -51,6 +51,7 @@ pub struct DeviceSession {
     pub pending: Option<PendingInteraction>,
     pub passphrase_cached: bool,
     pub passphrase_cache_expiry: Option<Instant>,
+    pub pending_passphrase_setting: Option<bool>, // Track if passphrase is being enabled (true) or disabled (false)
 }
 
 lazy_static::lazy_static! {

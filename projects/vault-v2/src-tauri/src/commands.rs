@@ -4623,9 +4623,12 @@ pub async fn enable_passphrase_protection_v2(
                 pending: None,
                 passphrase_cached: false,
                 passphrase_cache_expiry: None,
+                pending_passphrase_setting: None,
             }
         });
         
+        // Store whether we're enabling or disabling passphrase
+        session.pending_passphrase_setting = Some(enabled);
         session.transition(DeviceInteractionState::PendingSettings { request_id })?;
     }
 
@@ -4686,7 +4689,7 @@ pub async fn enable_passphrase_protection_v2(
                 }
             }
 
-            // Emit event
+            // Emit event with string request_id for frontend compatibility
             emit_device_event(&app, DeviceEvent::DeviceAwaitingPin {
                 device_id: device_id.clone(),
                 request_id,
@@ -4798,7 +4801,7 @@ async fn handle_settings_response_message(
 #[tauri::command]
 pub async fn pin_submit(
     device_id: String,
-    request_id: Uuid,
+    request_id: String, // Changed from Uuid to String for frontend compatibility
     pin: String,
     queue_manager: State<'_, DeviceQueueManager>,
     app: AppHandle,
@@ -4807,11 +4810,15 @@ pub async fn pin_submit(
         interaction_state::{DeviceInteractionState, InteractionKind, DEVICE_SESSIONS},
     };
 
+    // Parse request ID from string
+    let request_id_uuid = Uuid::parse_str(&request_id)
+        .map_err(|_| "Invalid request ID format".to_string())?;
+    
     // Validate the interaction
     {
         let sessions = DEVICE_SESSIONS.read().await;
         if let Some(session) = sessions.get(&device_id) {
-            session.validate_interaction(&request_id, InteractionKind::Pin)?;
+            session.validate_interaction(&request_id_uuid, InteractionKind::Pin)?;
         } else {
             return Err("No active session for device".to_string());
         }
@@ -4845,12 +4852,12 @@ pub async fn pin_submit(
                 let mut sessions = DEVICE_SESSIONS.write().await;
                 if let Some(session) = sessions.get_mut(&device_id) {
                     session.clear_interaction();
-                    session.transition(DeviceInteractionState::PendingSettings { request_id })?;
+                    session.transition(DeviceInteractionState::PendingSettings { request_id: request_id_uuid })?;
                 }
             }
 
             // Continue processing the original operation
-            handle_pin_response(device_id, request_id, response, queue_handle, app).await
+            handle_pin_response(device_id, request_id_uuid, response, queue_handle, app).await
         }
         Err(e) => {
             // Reset to idle on error
@@ -4880,9 +4887,13 @@ async fn handle_pin_response(
 
     match response {
         Message::Success(_) => {
-            // Determine if this was for enabling or disabling passphrase
-            // For now, we'll assume it's enabling (we should track this in session state)
-            let enabled = true; // TODO: Track this in session state
+            // Get the pending passphrase setting from session state
+            let enabled = {
+                let sessions = DEVICE_SESSIONS.read().await;
+                sessions.get(&device_id)
+                    .and_then(|s| s.pending_passphrase_setting)
+                    .unwrap_or(true) // Fallback to true if not tracked
+            };
 
             let reason = if enabled {
                 ReconnectReason::PassphraseEnabled
@@ -4893,6 +4904,7 @@ async fn handle_pin_response(
             {
                 let mut sessions = DEVICE_SESSIONS.write().await;
                 if let Some(session) = sessions.get_mut(&device_id) {
+                    session.pending_passphrase_setting = None; // Clear the pending setting
                     session.transition(DeviceInteractionState::NeedsReconnect { reason: reason.clone() })?;
                 }
             }
@@ -5206,6 +5218,7 @@ pub async fn reset_device_interaction_state(device_id: String) -> Result<(), Str
             pending: None,
             passphrase_cached: false,
             passphrase_cache_expiry: None,
+            pending_passphrase_setting: None,
         });
         log::info!("Created new idle session for device {}", device_id);
         Ok(())
