@@ -80,6 +80,15 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose, isManag
       setDeviceReadyStatus('Checking device lock status...')
       console.log('🔐 Triggering PIN request for device:', deviceId)
       
+      // Check if device is already in PIN flow to avoid duplicate requests
+      const isInPinFlow = await invoke('check_device_in_pin_flow', { deviceId })
+      if (isInPinFlow) {
+        console.log('🔐 Device already in PIN flow, skipping trigger')
+        setDeviceReadyStatus('Device ready - PIN matrix should be visible on device')
+        setStep('enter')
+        return
+      }
+      
       const result = await invoke('trigger_pin_request', { deviceId })
       
       if (result === true) {

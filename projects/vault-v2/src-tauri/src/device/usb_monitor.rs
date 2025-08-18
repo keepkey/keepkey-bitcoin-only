@@ -73,7 +73,7 @@ impl UsbMonitor {
             if !last.contains(new_id) {
                 log::info!("Device connected: {}", new_id);
                 
-                // Handle reconnection
+                // Handle reconnection - only for devices waiting for reconnect
                 {
                     let mut sessions = DEVICE_SESSIONS.write().await;
                     if let Some(session) = sessions.get_mut(new_id) {
@@ -84,16 +84,20 @@ impl UsbMonitor {
                             let device_id = new_id.clone();
                             let app = self.app.clone();
                             tokio::spawn(async move {
-                                reinitialize_device(device_id, app).await;
+                                // Small delay to let device stabilize
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                let _ = reinitialize_device(device_id, app).await;
                             });
                         }
                     }
+                    // Don't emit connected event here - let event controller handle it
                 }
 
-                // Emit event
-                emit_device_event(&self.app, DeviceEvent::DeviceConnected {
-                    device_id: new_id.clone(),
-                }).await.ok();
+                // Don't emit connected event here - event controller already handles device detection
+                // This avoids duplicate device detection and conflicts
+                // emit_device_event(&self.app, DeviceEvent::DeviceConnected {
+                //     device_id: new_id.clone(),
+                // }).await.ok();
             }
         }
 

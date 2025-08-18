@@ -5,6 +5,8 @@ import {
   Flex,
   Spinner,
   Switch,
+  Button,
+  HStack,
 } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -26,6 +28,30 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
 
   // Debug log the initial prop value
   console.log(`[PassphraseSettings] Component mounted/updated - deviceId: ${deviceId}, initialEnabled prop: ${initialEnabled}`);
+  
+  // Initialize device interaction state on mount - but only if needed
+  useEffect(() => {
+    const checkAndInitializeDeviceState = async () => {
+      try {
+        // First check if device is stuck
+        const currentState = await invoke<string>('get_device_interaction_state', { deviceId });
+        console.log(`[PassphraseSettings] Device ${deviceId} initial state: ${currentState}`);
+        
+        // Only reset if device is stuck in a bad state (not Idle and not actively processing)
+        if (currentState && 
+            currentState !== 'No session found (Idle)' && 
+            currentState !== 'Idle' &&
+            !currentState.includes('Awaiting')) {
+          console.log(`[PassphraseSettings] Device seems stuck in ${currentState}, resetting to Idle`);
+          await invoke('reset_device_interaction_state', { deviceId });
+        }
+      } catch (error) {
+        console.error('[PassphraseSettings] Failed to check/initialize device state:', error);
+      }
+    };
+    
+    checkAndInitializeDeviceState();
+  }, [deviceId]);
 
   // Sync local state with device features state
   useEffect(() => {
@@ -111,6 +137,20 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     }
     
     try {
+      // First check device interaction state
+      const currentState = await invoke<string>('get_device_interaction_state', { deviceId });
+      console.log(`[PassphraseSettings] Current device interaction state: ${currentState}`);
+      
+      // If device is busy, try to reset it
+      if (currentState !== 'No session found (Idle)' && currentState !== 'Idle') {
+        console.log('[PassphraseSettings] Device is busy, attempting to reset state...');
+        await invoke('reset_device_interaction_state', { deviceId });
+        console.log('[PassphraseSettings] Device state reset to Idle');
+        
+        // Small delay to ensure state is settled
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
       // Send the enable/disable command to the device using the v2 command
       await invoke('enable_passphrase_protection_v2', {
         deviceId,
@@ -205,7 +245,44 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
             </Box>
           )}
 
-          {/* Device ID removed to save space */}
+          {/* Debug button - remove in production */}
+          {process.env.NODE_ENV === 'development' && (
+            <Box mt={4} p={3} borderTop="1px" borderColor="gray.200">
+              <Text fontSize="xs" color="gray.500" mb={2}>Debug Tools</Text>
+              <HStack spacing={2}>
+                <Button
+                  size="xs"
+                  colorScheme="gray"
+                  onClick={async () => {
+                    try {
+                      const state = await invoke<string>('get_device_interaction_state', { deviceId });
+                      console.log(`Current state: ${state}`);
+                      setStatusMessage(`State: ${state}`);
+                    } catch (err) {
+                      console.error('Failed to get state:', err);
+                    }
+                  }}
+                >
+                  Check State
+                </Button>
+                <Button
+                  size="xs"
+                  colorScheme="orange"
+                  onClick={async () => {
+                    try {
+                      await invoke('reset_device_interaction_state', { deviceId });
+                      setStatusMessage('Device state reset to Idle');
+                      console.log('Device state reset to Idle');
+                    } catch (err) {
+                      console.error('Failed to reset state:', err);
+                    }
+                  }}
+                >
+                  Reset State
+                </Button>
+              </HStack>
+            </Box>
+          )}
       </Flex>
     </Box>
   );

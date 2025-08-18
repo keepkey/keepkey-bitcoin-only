@@ -309,11 +309,13 @@ pub fn run() {
             // Note: The controller is already managed inside spawn_event_controller
             
             // Start USB monitor for hotplug detection
+            // Note: The USB monitor is mainly for detecting reconnections after passphrase changes
+            // Normal device detection is handled by the event controller
             let usb_monitor = std::sync::Arc::new(device::UsbMonitor::new(app.handle().clone()));
             let monitor_clone = usb_monitor.clone();
             tauri::async_runtime::spawn(async move {
-                // Add a small delay to let the app initialize
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                // Add a longer delay to let the event controller initialize first
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 monitor_clone.start().await;
             });
             
@@ -404,6 +406,8 @@ pub fn run() {
             commands::enable_passphrase_protection_v2,
             commands::pin_submit,
             commands::pin_cancel,
+            commands::get_device_interaction_state,
+            commands::reset_device_interaction_state,
             // PIN management commands
             commands::enable_pin_protection,
             commands::disable_pin_protection,

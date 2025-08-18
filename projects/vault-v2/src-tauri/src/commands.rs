@@ -409,6 +409,25 @@ pub async fn get_device_status(
     
     println!("Getting device status for: {}", device_id);
     
+    // Check if device is in PIN flow - if so, we should not send any commands
+    if is_device_in_pin_flow(&device_id) {
+        println!("🔒 Device {} is in PIN flow - using cached state to avoid disrupting PIN entry", device_id);
+        
+        // Try to get cached features from device state cache
+        let cache = device::DEVICE_STATE_CACHE.read().await;
+        if let Some(cached_state) = cache.get(&device_id) {
+            if let Some(cached_features) = &cached_state.last_features {
+                let converted_features = convert_features_to_device_features(cached_features.clone());
+                let status = evaluate_device_status(device_id.clone(), Some(&converted_features));
+                return Ok(Some(status));
+            }
+        }
+        
+        // If no cached state, return a minimal status indicating PIN is needed
+        let status = evaluate_device_status(device_id.clone(), None);
+        return Ok(Some(status));
+    }
+    
     let request_id = uuid::Uuid::new_v4().to_string();
     
     // Log the request
@@ -4191,6 +4210,7 @@ fn handle_passphrase_response(
 pub async fn trigger_pin_request(
     device_id: String,
     queue_manager: tauri::State<'_, DeviceQueueManager>,
+    app: tauri::AppHandle,
 ) -> Result<bool, String> {
     log::info!("Triggering PIN request for device: {}", device_id);
     
@@ -4225,6 +4245,20 @@ pub async fn trigger_pin_request(
     match queue_handle.send_raw(get_address.into(), false).await {
         Ok(keepkey_rust::messages::Message::PinMatrixRequest(_)) => {
             log::info!("Successfully triggered PIN request for device: {}", device_id);
+            
+            // Emit PIN request event to frontend
+            let pin_event_payload = serde_json::json!({
+                "deviceId": device_id,
+                "requestType": "GetAddress",
+                "needsPinEntry": true
+            });
+            
+            if let Err(e) = app.emit("device:pin-request-triggered", &pin_event_payload) {
+                log::error!("Failed to emit PIN request event: {}", e);
+            } else {
+                log::info!("📡 Emitted device:pin-request-triggered event for device: {}", device_id);
+            }
+            
             // Keep device marked as in PIN flow - will be unmarked when PIN is completed
             Ok(true)
         }
@@ -4518,9 +4552,13 @@ pub async fn enable_passphrase_protection_v2(
     {
         let sessions = DEVICE_SESSIONS.read().await;
         if let Some(session) = sessions.get(&device_id) {
+            log::info!("Device {} current state: {:?}", device_id, session.state);
             if session.state != DeviceInteractionState::Idle {
-                return Err("Device is busy with another operation".to_string());
+                log::warn!("Device {} is busy: {:?}", device_id, session.state);
+                return Err(format!("Device is busy with another operation. Current state: {:?}", session.state));
             }
+        } else {
+            log::info!("No session found for device {}, creating new idle session", device_id);
         }
     }
 
@@ -5086,4 +5124,42 @@ pub async fn clear_all_device_caches() {
     drop(state); // Explicitly drop to release the lock
     
     println!("  ✅ All device caches cleared");
+}
+
+/// Get current device interaction state for debugging
+#[tauri::command]
+pub async fn get_device_interaction_state(device_id: String) -> Result<String, String> {
+    use crate::device::interaction_state::DEVICE_SESSIONS;
+    
+    let sessions = DEVICE_SESSIONS.read().await;
+    if let Some(session) = sessions.get(&device_id) {
+        Ok(format!("{:?}", session.state))
+    } else {
+        Ok("No session found (Idle)".to_string())
+    }
+}
+
+/// Reset device interaction state to idle
+#[tauri::command]
+pub async fn reset_device_interaction_state(device_id: String) -> Result<(), String> {
+    use crate::device::interaction_state::{DeviceInteractionState, DEVICE_SESSIONS};
+    
+    let mut sessions = DEVICE_SESSIONS.write().await;
+    if let Some(session) = sessions.get_mut(&device_id) {
+        session.state = DeviceInteractionState::Idle;
+        session.pending = None;
+        log::info!("Reset device {} interaction state to Idle", device_id);
+        Ok(())
+    } else {
+        // Create a new idle session
+        sessions.insert(device_id.clone(), crate::device::interaction_state::DeviceSession {
+            device_id: device_id.clone(),
+            state: DeviceInteractionState::Idle,
+            pending: None,
+            passphrase_cached: false,
+            passphrase_cache_expiry: None,
+        });
+        log::info!("Created new idle session for device {}", device_id);
+        Ok(())
+    }
 }

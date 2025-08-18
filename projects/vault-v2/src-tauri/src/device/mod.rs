@@ -15,4 +15,6 @@ pub use interaction_state::{DeviceSession, DeviceInteractionState, DEVICE_SESSIO
 // Re-export event types
 pub use events::{DeviceEvent, UICommand, emit_device_event};
 // Re-export USB monitor
-pub use usb_monitor::UsbMonitor; 
+pub use usb_monitor::UsbMonitor;
+// Re-export queue types
+pub use queue::{DEVICE_STATE_CACHE, DeviceStateCache}; 

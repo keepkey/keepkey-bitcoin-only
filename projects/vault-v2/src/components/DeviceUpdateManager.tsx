@@ -449,6 +449,70 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         }
       })
 
+      // Listen for PIN request triggered events (from trigger_pin_request)
+      const pinRequestTriggeredUnsubscribe = listen<{
+        deviceId: string
+        requestType: string
+        needsPinEntry: boolean
+      }>('device:pin-request-triggered', async (event) => {
+        console.log('🔒 DeviceUpdateManager: PIN request triggered event received:', event.payload)
+        const { deviceId } = event.payload
+        
+        // Get current device status
+        try {
+          const currentStatus = await invoke('get_device_status', { deviceId })
+          
+          // Show PIN unlock dialog
+          console.log('🔒 DeviceUpdateManager: Showing PIN unlock dialog after PIN request triggered')
+          setDeviceStatus(currentStatus)
+          setConnectedDeviceId(deviceId)
+          setShowEnterBootloaderMode(false)
+          setShowBootloaderUpdate(false)
+          setShowFirmwareUpdate(false)
+          setShowWalletCreation(false)
+          setShowPinUnlock(true)
+        } catch (error) {
+          console.error('🔒 DeviceUpdateManager: Failed to get device status after PIN trigger:', error)
+        }
+      })
+
+      // Listen for passphrase unlock needed events
+      const passphraseUnlockUnsubscribe = listen<{
+        deviceId: string
+        features: DeviceFeatures
+        status: DeviceStatus
+        needsPassphraseUnlock: boolean
+      }>('device:passphrase-unlock-needed', async (event) => {
+        console.log('🔐 DeviceUpdateManager: Passphrase unlock needed event received:', event.payload)
+        const { status } = event.payload
+        
+        // CRITICAL: Hide any invalid state dialogs first - passphrase has priority (comes first in KeepKey flow)
+        if (deviceInvalidStateDialog.isShowing(status.deviceId)) {
+          console.log('🔐 Hiding invalid state dialog to show passphrase dialog')
+          deviceInvalidStateDialog.hide(status.deviceId)
+        }
+        
+        // Show passphrase unlock - this should trigger the passphrase request flow
+        console.log('🔐 DeviceUpdateManager: Passphrase protection enabled, need to unlock first')
+        setDeviceStatus(status)
+        setConnectedDeviceId(status.deviceId)
+        setShowEnterBootloaderMode(false)
+        setShowBootloaderUpdate(false)
+        setShowFirmwareUpdate(false)
+        setShowWalletCreation(false)
+        setShowPinUnlock(false)
+        
+        // Trigger a device operation that requires authentication to prompt for passphrase/PIN
+        try {
+          console.log('🔐 DeviceUpdateManager: Triggering PIN request to unlock device...')
+          // This will trigger the authentication flow (passphrase first, then PIN if needed)
+          await invoke('trigger_pin_request', { deviceId: status.deviceId })
+        } catch (error) {
+          console.log('🔐 DeviceUpdateManager: PIN request triggered (expected authentication prompt)', error)
+          // This error is expected - the operation will prompt for authentication
+        }
+      })
+
       // Listen for device disconnection
       const disconnectedUnsubscribe = listen<string>('device:disconnected', (event) => {
         const disconnectedDeviceId = event.payload;
@@ -499,6 +563,8 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         ;(await accessErrorUnsubscribe)()
         ;(await invalidStateUnsubscribe)()
         ;(await pinUnlockUnsubscribe)()
+        ;(await pinRequestTriggeredUnsubscribe)()
+        ;(await passphraseUnlockUnsubscribe)()
         ;(await disconnectedUnsubscribe)()
         if (timeoutId) clearTimeout(timeoutId)
       }
