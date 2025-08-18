@@ -6,7 +6,7 @@ use keepkey_rust::{
     features::DeviceFeatures,
     messages::Message,
 };
-use uuid;
+use uuid::{self, Uuid};
 use hex;
 use std::io::Cursor;
 // Removed unused imports that were moved to device/updates.rs
@@ -286,6 +286,53 @@ pub async fn get_connected_devices() -> Result<Vec<serde_json::Value>, String> {
         .collect();
     
     Ok(json_devices)
+}
+
+/// Get device state for a specific device
+#[tauri::command]
+pub async fn get_device_state(device_id: String) -> Result<serde_json::Value, String> {
+    let state = crate::device::state::get_device_state(&device_id).await;
+    
+    match state {
+        Some(s) => Ok(serde_json::json!({
+            "deviceId": s.device_id,
+            "isUnlocked": s.is_unlocked,
+            "needsPassphrase": s.needs_passphrase,
+            "needsReset": s.needs_reset,
+            "isBusy": s.is_busy,
+            "currentOperation": s.current_operation,
+            "pinCached": s.pin_cached,
+            "passphraseCached": s.passphrase_cached,
+            "lastUpdate": s.last_update,
+        })),
+        None => Err(format!("No state found for device {}", device_id))
+    }
+}
+
+/// Get all device states
+#[tauri::command]
+pub async fn get_all_device_states() -> Result<serde_json::Value, String> {
+    let states = crate::device::state::get_all_device_states().await;
+    
+    let json_states: serde_json::Map<String, serde_json::Value> = states
+        .into_iter()
+        .map(|(id, state)| {
+            let state_json = serde_json::json!({
+                "deviceId": state.device_id,
+                "isUnlocked": state.is_unlocked,
+                "needsPassphrase": state.needs_passphrase,
+                "needsReset": state.needs_reset,
+                "isBusy": state.is_busy,
+                "currentOperation": state.current_operation,
+                "pinCached": state.pin_cached,
+                "passphraseCached": state.passphrase_cached,
+                "lastUpdate": state.last_update,
+            });
+            (id, state_json)
+        })
+        .collect();
+    
+    Ok(serde_json::Value::Object(json_states))
 }
 
 /// Get blocking actions (enhanced version)
@@ -2151,6 +2198,9 @@ pub async fn send_pin_matrix_response(
                             if pin_cached {
                                 log::info!("✅ PIN unlock successful, device is now unlocked");
                                 
+                                // Update device state
+                                crate::device::state::set_device_pin_state(&device_id, true, true).await;
+                                
                                 // Update session state to completed
                                 if let Ok(mut sessions) = PIN_SESSIONS.lock() {
                                     if let Some(session) = sessions.get_mut(&session_id) {
@@ -3837,6 +3887,9 @@ pub async fn send_pin_matrix_ack(
             // Unmark device from PIN flow as PIN has been accepted
             let _ = unmark_device_in_pin_flow(&device_id);
             
+            // Update device state - PIN is now cached
+            crate::device::state::set_device_pin_state(&device_id, true, true).await;
+            
             // Check if this was a PIN removal operation
             // The success message after PIN removal should indicate PIN protection was disabled
             if let Some(msg) = &success.message {
@@ -4445,6 +4498,371 @@ pub async fn enable_passphrase_protection(
         })?;
     
     log::info!("Passphrase protection set to {} for device {}", enabled, device_id);
+    Ok(())
+}
+
+/// Improved enable passphrase protection with state machine integration
+#[tauri::command]
+pub async fn enable_passphrase_protection_v2(
+    device_id: String,
+    enabled: bool,
+    queue_manager: State<'_, DeviceQueueManager>,
+    app: AppHandle,
+) -> Result<(), String> {
+    use crate::device::{
+        interaction_state::{DeviceInteractionState, DeviceSession, InteractionKind, OperationType, ReconnectReason, DEVICE_SESSIONS},
+        events::{DeviceEvent, emit_device_event},
+    };
+
+    // Check if device is already in an operation
+    {
+        let sessions = DEVICE_SESSIONS.read().await;
+        if let Some(session) = sessions.get(&device_id) {
+            if session.state != DeviceInteractionState::Idle {
+                return Err("Device is busy with another operation".to_string());
+            }
+        }
+    }
+
+    // Create request ID for correlation
+    let request_id = Uuid::new_v4();
+    
+    // Update session state
+    {
+        let mut sessions = DEVICE_SESSIONS.write().await;
+        let session = sessions.entry(device_id.clone()).or_insert_with(|| {
+            DeviceSession {
+                device_id: device_id.clone(),
+                state: DeviceInteractionState::Idle,
+                pending: None,
+                passphrase_cached: false,
+                passphrase_cache_expiry: None,
+            }
+        });
+        
+        session.transition(DeviceInteractionState::PendingSettings { request_id })?;
+    }
+
+    // Get device queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    }.ok_or_else(|| "No device queue found".to_string())?;
+
+    // Send ApplySettings
+    let apply_settings = keepkey_rust::messages::ApplySettings {
+        use_passphrase: Some(enabled),
+        ..Default::default()
+    };
+
+    // Process the response with proper state transitions
+    match queue_handle.send_raw(Message::ApplySettings(apply_settings), true).await {
+        Ok(Message::ButtonRequest(br)) => {
+            let label = br.data.clone();
+            // Update state to awaiting button
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.transition(DeviceInteractionState::AwaitingButton { 
+                        request_id,
+                        label: label.clone(),
+                    })?;
+                }
+            }
+
+            // Emit event
+            emit_device_event(&app, DeviceEvent::DeviceAwaitingButton {
+                device_id: device_id.clone(),
+                request_id,
+                label,
+            }).await?;
+
+            // Send ButtonAck and get response
+            let response = queue_handle.send_raw(Message::ButtonAck(Default::default()), true).await
+                .map_err(|e| format!("Failed to send button ack: {}", e))?;
+
+            // Continue processing with the response
+            handle_settings_response_message(device_id, request_id, response, app, enabled).await
+        }
+        Ok(Message::PinMatrixRequest(_)) => {
+            // Update state to awaiting PIN
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    let interaction_id = session.begin_interaction(
+                        InteractionKind::Pin,
+                        OperationType::Settings
+                    );
+                    session.transition(DeviceInteractionState::AwaitingPIN { 
+                        request_id: interaction_id,
+                        operation: OperationType::Settings,
+                    })?;
+                }
+            }
+
+            // Emit event
+            emit_device_event(&app, DeviceEvent::DeviceAwaitingPin {
+                device_id: device_id.clone(),
+                request_id,
+                kind: "settings".to_string(),
+            }).await?;
+
+            Ok(())
+        }
+        Ok(Message::Success(_)) => {
+            // Update state to needs reconnect
+            let reason = if enabled {
+                ReconnectReason::PassphraseEnabled
+            } else {
+                ReconnectReason::PassphraseDisabled
+            };
+
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.transition(DeviceInteractionState::NeedsReconnect { reason: reason.clone() })?;
+                }
+            }
+
+            // Update device state
+            crate::device::state::set_device_needs_reset(&device_id, true).await;
+            crate::device::state::set_device_passphrase_state(&device_id, enabled, false).await;
+
+            // Emit event
+            emit_device_event(&app, DeviceEvent::DeviceNeedsReconnect {
+                device_id: device_id.clone(),
+                reason: format!("{:?}", reason),
+            }).await?;
+
+            Ok(())
+        }
+        Ok(Message::Failure(f)) => {
+            // Reset to idle
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.transition(DeviceInteractionState::Idle)?;
+                }
+            }
+
+            Err(format!("Device error: {}", f.message.unwrap_or_default()))
+        }
+        Ok(_) => Err("Unexpected response from device".to_string()),
+        Err(e) => Err(format!("Failed to communicate with device: {}", e))
+    }
+}
+
+/// Helper function to handle settings response message
+async fn handle_settings_response_message(
+    device_id: String,
+    request_id: Uuid,
+    response: Message,
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    use crate::device::{
+        interaction_state::{DeviceInteractionState, ReconnectReason, DEVICE_SESSIONS},
+        events::{DeviceEvent, emit_device_event},
+    };
+
+    match response {
+        Message::Success(_) => {
+            // Update state to needs reconnect
+            let reason = if enabled {
+                ReconnectReason::PassphraseEnabled
+            } else {
+                ReconnectReason::PassphraseDisabled
+            };
+
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.transition(DeviceInteractionState::NeedsReconnect { reason: reason.clone() })?;
+                }
+            }
+
+            // Update device state
+            crate::device::state::set_device_needs_reset(&device_id, true).await;
+            crate::device::state::set_device_passphrase_state(&device_id, enabled, false).await;
+
+            // Emit event
+            emit_device_event(&app, DeviceEvent::DeviceNeedsReconnect {
+                device_id: device_id.clone(),
+                reason: format!("{:?}", reason),
+            }).await?;
+
+            Ok(())
+        }
+        Message::Failure(f) => {
+            // Reset to idle
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.transition(DeviceInteractionState::Idle)?;
+                }
+            }
+
+            Err(format!("Device error: {}", f.message.unwrap_or_default()))
+        }
+        _ => Err("Unexpected response from device".to_string())
+    }
+}
+
+/// Submit PIN with request correlation
+#[tauri::command]
+pub async fn pin_submit(
+    device_id: String,
+    request_id: Uuid,
+    pin: String,
+    queue_manager: State<'_, DeviceQueueManager>,
+    app: AppHandle,
+) -> Result<(), String> {
+    use crate::device::{
+        interaction_state::{DeviceInteractionState, InteractionKind, DEVICE_SESSIONS},
+    };
+
+    // Validate the interaction
+    {
+        let sessions = DEVICE_SESSIONS.read().await;
+        if let Some(session) = sessions.get(&device_id) {
+            session.validate_interaction(&request_id, InteractionKind::Pin)?;
+        } else {
+            return Err("No active session for device".to_string());
+        }
+    }
+
+    // Validate non-empty PIN
+    if pin.is_empty() {
+        return Err("PIN cannot be empty".to_string());
+    }
+
+    // Get queue handle
+    let queue_handle = {
+        let manager = queue_manager.lock().await;
+        manager.get(&device_id).cloned()
+    }.ok_or_else(|| "No device queue found".to_string())?;
+
+    // Parse PIN positions
+    let positions: Vec<u32> = pin.chars()
+        .filter_map(|c| c.to_digit(10))
+        .collect();
+
+    // Send PinMatrixAck
+    let pin_ack = keepkey_rust::messages::PinMatrixAck {
+        pin: positions.iter().map(|&p| p.to_string()).collect::<String>(),
+    };
+
+    match queue_handle.send_raw(Message::PinMatrixAck(pin_ack), true).await {
+        Ok(response) => {
+            // Clear the interaction
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.clear_interaction();
+                    session.transition(DeviceInteractionState::PendingSettings { request_id })?;
+                }
+            }
+
+            // Continue processing the original operation
+            handle_pin_response(device_id, request_id, response, queue_handle, app).await
+        }
+        Err(e) => {
+            // Reset to idle on error
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.transition(DeviceInteractionState::Idle)?;
+                }
+            }
+            Err(format!("Failed to submit PIN: {}", e))
+        }
+    }
+}
+
+/// Handle PIN response
+async fn handle_pin_response(
+    device_id: String,
+    request_id: Uuid,
+    response: Message,
+    queue_handle: DeviceQueueHandle,
+    app: AppHandle,
+) -> Result<(), String> {
+    use crate::device::{
+        interaction_state::{DeviceInteractionState, ReconnectReason, DEVICE_SESSIONS},
+        events::{DeviceEvent, emit_device_event},
+    };
+
+    match response {
+        Message::Success(_) => {
+            // Determine if this was for enabling or disabling passphrase
+            // For now, we'll assume it's enabling (we should track this in session state)
+            let enabled = true; // TODO: Track this in session state
+
+            let reason = if enabled {
+                ReconnectReason::PassphraseEnabled
+            } else {
+                ReconnectReason::PassphraseDisabled
+            };
+
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.transition(DeviceInteractionState::NeedsReconnect { reason: reason.clone() })?;
+                }
+            }
+
+            // Update device state
+            crate::device::state::set_device_needs_reset(&device_id, true).await;
+            crate::device::state::set_device_passphrase_state(&device_id, enabled, false).await;
+
+            // Emit event
+            emit_device_event(&app, DeviceEvent::DeviceNeedsReconnect {
+                device_id: device_id.clone(),
+                reason: format!("{:?}", reason),
+            }).await?;
+
+            Ok(())
+        }
+        Message::Failure(f) => {
+            // Reset to idle
+            {
+                let mut sessions = DEVICE_SESSIONS.write().await;
+                if let Some(session) = sessions.get_mut(&device_id) {
+                    session.transition(DeviceInteractionState::Idle)?;
+                }
+            }
+
+            Err(format!("PIN submission failed: {}", f.message.unwrap_or_default()))
+        }
+        Message::ButtonRequest(_br) => {
+            // After PIN, we might get button request
+            // Send ButtonAck and get response
+            let response = queue_handle.send_raw(Message::ButtonAck(Default::default()), true).await
+                .map_err(|e| format!("Failed to send button ack: {}", e))?;
+            
+            // Handle the response
+            handle_settings_response_message(device_id, request_id, response, app, true).await
+        }
+        _ => Err("Unexpected response after PIN submission".to_string())
+    }
+}
+
+/// Cancel PIN with request correlation
+#[tauri::command]
+pub async fn pin_cancel(
+    device_id: String,
+    request_id: Uuid,
+) -> Result<(), String> {
+    use crate::device::{
+        interaction_state::{DeviceInteractionState, InteractionKind, DEVICE_SESSIONS},
+    };
+
+    let mut sessions = DEVICE_SESSIONS.write().await;
+    if let Some(session) = sessions.get_mut(&device_id) {
+        session.validate_interaction(&request_id, InteractionKind::Pin)?;
+        session.clear_interaction();
+        session.transition(DeviceInteractionState::Idle)?;
+    }
     Ok(())
 }
 

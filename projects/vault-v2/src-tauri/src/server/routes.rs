@@ -31,6 +31,19 @@ pub struct DeviceInfo {
     pub serial_number: Option<String>,
     pub is_keepkey: bool,
     pub keepkey_info: Option<KeepKeyInfo>,
+    pub state: Option<DeviceStateInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceStateInfo {
+    pub is_unlocked: bool,
+    pub needs_passphrase: bool,
+    pub needs_reset: bool,
+    pub is_busy: bool,
+    pub current_operation: Option<String>,
+    pub pin_cached: bool,
+    pub passphrase_cached: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -196,6 +209,34 @@ pub async fn api_list_devices(State(state): State<Arc<ServerState>>) -> Result<J
             }
         };
         
+        // Get device state from tracker
+        let device_state = if let Some(state) = crate::device::state::get_device_state(&device.unique_id).await {
+            Some(DeviceStateInfo {
+                is_unlocked: state.is_unlocked,
+                needs_passphrase: state.needs_passphrase,
+                needs_reset: state.needs_reset,
+                is_busy: state.is_busy,
+                current_operation: state.current_operation,
+                pin_cached: state.pin_cached,
+                passphrase_cached: state.passphrase_cached,
+            })
+        } else {
+            // If no state exists yet, try to derive from features if available
+            if let Some(ref kk_info) = keepkey_info {
+                Some(DeviceStateInfo {
+                    is_unlocked: !kk_info.initialized || false, // Will be updated when we get features
+                    needs_passphrase: false,
+                    needs_reset: false,
+                    is_busy: false,
+                    current_operation: None,
+                    pin_cached: false,
+                    passphrase_cached: false,
+                })
+            } else {
+                None
+            }
+        };
+
         device_infos.push(DeviceInfo {
             device_id: device.unique_id,
             name: device.name,
@@ -206,6 +247,7 @@ pub async fn api_list_devices(State(state): State<Arc<ServerState>>) -> Result<J
             serial_number: device.serial_number,
             is_keepkey: device.is_keepkey,
             keepkey_info,
+            state: device_state,
         });
     }
     

@@ -275,6 +275,9 @@ pub async fn add_to_device_queue(
     }
 
 
+    // Mark device as busy when starting operation
+    crate::device::state::set_device_busy(&request.device_id, Some(request_type.to_string())).await;
+    
     // Process the request based on type
     let result = match request.request {
         DeviceRequest::GetXpub { ref path } => {
@@ -402,6 +405,9 @@ pub async fn add_to_device_queue(
                 .get_features()
                 .await
                 .map_err(|e| format!("Failed to get features: {}", e))?;
+            
+            // Update device state based on features
+            crate::device::state::update_device_state_from_features(&request.device_id, &features).await;
             
             // Create a serializable version of features
             let features_json = serde_json::json!({
@@ -778,6 +784,9 @@ pub async fn add_to_device_queue(
             }
         }
     };
+    
+    // Mark device as not busy when operation completes
+    crate::device::state::set_device_busy(&request.device_id, None).await;
     
     // Store the response for queue status queries
     {

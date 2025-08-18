@@ -308,6 +308,15 @@ pub fn run() {
             let event_controller = event_controller::spawn_event_controller(&app.handle());
             // Note: The controller is already managed inside spawn_event_controller
             
+            // Start USB monitor for hotplug detection
+            let usb_monitor = std::sync::Arc::new(device::UsbMonitor::new(app.handle().clone()));
+            let monitor_clone = usb_monitor.clone();
+            tauri::async_runtime::spawn(async move {
+                // Add a small delay to let the app initialize
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                monitor_clone.start().await;
+            });
+            
             // Start background log cleanup task
             let _app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -369,6 +378,9 @@ pub fn run() {
             // Basic device enumeration (non-queue operations)
             commands::get_connected_devices,
             commands::get_blocking_actions,
+            // Device state management
+            commands::get_device_state,
+            commands::get_all_device_states,
             // New device commands (all go through queue)
             commands::get_device_status,
             commands::get_device_info_by_id,
@@ -389,6 +401,9 @@ pub fn run() {
             commands::handle_passphrase_request,
             commands::send_passphrase,
             commands::enable_passphrase_protection,
+            commands::enable_passphrase_protection_v2,
+            commands::pin_submit,
+            commands::pin_cancel,
             // PIN management commands
             commands::enable_pin_protection,
             commands::disable_pin_protection,

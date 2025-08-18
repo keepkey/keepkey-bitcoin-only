@@ -156,27 +156,43 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
 
   // Hide a specific dialog
   const hide = useCallback((id: string) => {
+    console.log(`🎯 [DialogContext] hide() called for dialog:`, id);
     setState((prevState) => {
+      console.log(`🎯 [DialogContext] Current queue before hide:`, prevState.queue.map(d => d.id));
+      console.log(`🎯 [DialogContext] Current active before hide:`, prevState.active?.id);
+      
       const dialog = prevState.queue.find(d => d.id === id);
       const newQueue = prevState.queue.filter(d => d.id !== id);
       const wasActive = prevState.active?.id === id;
       const newActive = processQueue(newQueue);
       
-      // Call onClose if dialog was found
-      if (dialog?.onClose) {
-        dialog.onClose();
-      }
+      console.log(`🎯 [DialogContext] Dialog found:`, dialog?.id);
+      console.log(`🎯 [DialogContext] New queue after hide:`, newQueue.map(d => d.id));
+      console.log(`🎯 [DialogContext] New active after hide:`, newActive?.id);
       
-      // If active dialog changed, call onOpen for new active
-      if (wasActive && newActive && newActive.onOpen) {
-        newActive.onOpen();
-      }
-      
-      return {
+      // Store the new state
+      const newState = {
         ...prevState,
         queue: newQueue,
         active: newActive,
       };
+      
+      // Call onClose if dialog was found (after state update to avoid recursion)
+      if (dialog?.onClose) {
+        // Use setTimeout to ensure state update happens first
+        setTimeout(() => {
+          dialog.onClose();
+        }, 0);
+      }
+      
+      // If active dialog changed, call onOpen for new active
+      if (wasActive && newActive && newActive.onOpen) {
+        setTimeout(() => {
+          newActive.onOpen();
+        }, 0);
+      }
+      
+      return newState;
     });
   }, [processQueue]);
 
@@ -279,6 +295,12 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     releaseAppFocus,
     isWizardActive,
   };
+
+  console.log('🎭 [DialogContext] State in render:', { 
+    activeId: state.active?.id, 
+    queueLength: state.queue.length,
+    queueIds: state.queue.map(d => d.id)
+  });
 
   return (
     <DialogContext.Provider value={value}>
@@ -407,7 +429,7 @@ function DialogRenderer({ dialog, onClose }: { dialog: DialogConfig; onClose: ()
   return (
     <DialogErrorBoundary onClose={onClose} dialogId={dialog.id}>
       <Suspense fallback={<LoadingFallback />}>
-        <Component {...dialog.props} onClose={handleClose} />
+        <Component {...dialog.props} />
       </Suspense>
     </DialogErrorBoundary>
   );
@@ -696,6 +718,10 @@ export function usePinUnlockDialog() {
         },
         priority: 'critical', // Highest priority - PIN is needed for all operations
         persistent: true, // User must enter PIN or explicitly close
+        onClose: () => {
+          // This is called when the dialog is removed from the queue
+          console.log(`🔒 [PinUnlockDialog] Cleanup on queue removal`);
+        }
       });
     },
     hide: (deviceId: string) => hide(`pin-unlock-${deviceId}`),

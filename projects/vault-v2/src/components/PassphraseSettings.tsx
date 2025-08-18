@@ -7,7 +7,7 @@ import {
   Switch,
 } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
 interface PassphraseSettingsProps {
   deviceId: string;
@@ -38,9 +38,66 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     console.log(`[PassphraseSettings] Device ${deviceId} - passphrase protection state: ${isEnabled ? 'enabled' : 'disabled'}`);
   }, [isEnabled, deviceId]);
 
-  // Note: Removed passphrase_request listener since enabling passphrase protection
-  // now directly succeeds with ApplySettings and doesn't require passphrase entry
-  // during the enable flow. The app will restart and prompt for passphrase on next use.
+  // Listen for device events
+  useEffect(() => {
+    const unlisteners: UnlistenFn[] = [];
+
+    // Listen for PIN requests for settings changes
+    const setupPinListener = async () => {
+      const unlisten = await listen<{
+        device_id: string;
+        request_id: string;
+        kind: string;
+      }>('device:awaiting_pin', (event) => {
+        if (event.payload.device_id === deviceId && event.payload.kind === 'settings') {
+          setStatusMessage('Please enter your PIN to change passphrase settings.');
+          // Note: The PIN dialog should be handled by a global component
+          // that listens for these events
+        }
+      });
+      unlisteners.push(unlisten);
+    };
+
+    // Listen for device reconnection needs
+    const setupReconnectListener = async () => {
+      const unlisten = await listen<{
+        device_id: string;
+        reason: string;
+      }>('device:needs_reconnect', (event) => {
+        if (event.payload.device_id === deviceId) {
+          const reason = event.payload.reason;
+          if (reason.includes('Passphrase')) {
+            setStatusMessage('Please unplug and reconnect your KeepKey to apply the passphrase changes.');
+            setIsUpdating(false);
+          }
+        }
+      });
+      unlisteners.push(unlisten);
+    };
+
+    // Listen for device reconnection
+    const setupConnectedListener = async () => {
+      const unlisten = await listen<{
+        device_id: string;
+      }>('device:connected', (event) => {
+        if (event.payload.device_id === deviceId) {
+          setStatusMessage('Device reconnected successfully!');
+          setTimeout(() => setStatusMessage(null), 2000);
+        }
+      });
+      unlisteners.push(unlisten);
+    };
+
+    // Setup all listeners
+    setupPinListener();
+    setupReconnectListener();
+    setupConnectedListener();
+
+    // Cleanup listeners on unmount
+    return () => {
+      unlisteners.forEach(unlisten => unlisten());
+    };
+  }, [deviceId]);
 
   const handleTogglePassphrase = async () => {
     if (isUpdating) return;
@@ -54,60 +111,30 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     }
     
     try {
-      // Send the enable/disable command to the device
-      await invoke('enable_passphrase_protection', {
+      // Send the enable/disable command to the device using the v2 command
+      await invoke('enable_passphrase_protection_v2', {
         deviceId,
         enabled: newState,
       });
       
-      // Handle both enable and disable with restart
-      if (newState) {
-        // If enabling, update state and restart immediately
-        setIsEnabled(true);
-        
-        if (onPassphraseToggle) {
-          onPassphraseToggle(true);
-        }
-        
-        setStatusMessage('Passphrase protection enabled successfully! Restarting app...');
-        
-        // Restart entire app after a short delay to show success message
-        setTimeout(async () => {
-          try {
-            console.log('Restarting entire app after enabling passphrase protection');
-            await relaunch();
-          } catch (err) {
-            console.error('Failed to restart app:', err);
-            // Fallback to window reload if relaunch fails
-            window.location.reload();
-          }
-        }, 2000);
-        
-        setIsUpdating(false);
-      } else {
-        // If disabling, tell user to unplug device and restart the app
-        setIsEnabled(false);
-        
-        if (onPassphraseToggle) {
-          onPassphraseToggle(false);
-        }
-        
-        setStatusMessage('Passphrase protection disabled - Please unplug your KeepKey and reconnect it. Restarting app...');
-        
-        // Give user time to see the unplug message, then restart entire app
-        setTimeout(async () => {
-          try {
-            console.log('Restarting entire app after disabling passphrase protection');
-            await relaunch();
-          } catch (err) {
-            console.error('Failed to restart app:', err);
-            // Fallback to window reload if relaunch fails
-            window.location.reload();
-          }
-        }, 3000); // Increased to 3 seconds to give user time to see the unplug message
-        
-        setIsUpdating(false);
+      // Update local state
+      setIsEnabled(newState);
+      
+      if (onPassphraseToggle) {
+        onPassphraseToggle(newState);
       }
+      
+      // Success message without restart
+      if (newState) {
+        setStatusMessage('Passphrase protection enabled successfully!');
+      } else {
+        setStatusMessage('Passphrase protection disabled successfully!');
+      }
+      
+      // Clear status message after 3 seconds
+      setTimeout(() => setStatusMessage(null), 3000);
+      
+      setIsUpdating(false);
     } catch (err) {
       console.error('Failed to update passphrase protection:', err);
       

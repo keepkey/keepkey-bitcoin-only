@@ -36,6 +36,7 @@ pub struct ServerState {
         schemas(
             routes::HealthResponse,
             routes::DeviceInfo,
+            routes::DeviceStateInfo,
             routes::KeepKeyInfo,
             routes::Features,
             // Context schemas - commented out until needed
