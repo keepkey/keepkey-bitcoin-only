@@ -76,84 +76,130 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const [addressIndex, setAddressIndex] = useState<number>(0);
   const [maxUsedIndex, setMaxUsedIndex] = useState<number>(0);
   const [indexLoaded, setIndexLoaded] = useState<boolean>(false);
+  const [changeIndex, setChangeIndex] = useState<number>(0);
+  const [changeIndexLoaded, setChangeIndexLoaded] = useState<boolean>(false);
 
-  // Component lifecycle debugging and fetch current address index
+  // Function to refresh receive index from API
+  const refreshReceiveIndex = async () => {
+    if (!fetchedXpubs || fetchedXpubs.length === 0) {
+      console.log('⚠️ No xpubs available for receive index refresh');
+      return;
+    }
+    
+    // 🐛 DEBUG: Show all available xpubs for debugging
+    console.log('🔍 DEBUG: All available xpubs:', fetchedXpubs.map(x => ({
+      path: x.path,
+      type: x.xpub.startsWith('xpub') ? 'Legacy(P2PKH)' : 
+            x.xpub.startsWith('ypub') ? 'SegWit(P2SH-P2WPKH)' :
+            x.xpub.startsWith('zpub') ? 'Native SegWit(P2WPKH)' : 'Unknown',
+      xpub: x.xpub
+    })));
+    
+    try {
+      const targetPath = bitcoinAddressType === 'p2pkh' ? "m/44'/0'/0'" :
+                        bitcoinAddressType === 'p2sh-p2wpkh' ? "m/49'/0'/0'" :
+                        "m/84'/0'/0'";
+      
+      const xpubData = fetchedXpubs.find(x => x.path === targetPath);
+      if (xpubData) {
+        console.log('🔄 Refreshing receive index for:', {
+          addressType: bitcoinAddressType,
+          targetPath,
+          xpubType: xpubData.xpub.startsWith('xpub') ? 'Legacy(P2PKH)' : 
+                    xpubData.xpub.startsWith('ypub') ? 'SegWit(P2SH-P2WPKH)' :
+                    xpubData.xpub.startsWith('zpub') ? 'Native SegWit(P2WPKH)' : 'Unknown',
+          fullXpub: xpubData.xpub
+        });
+        
+        const response = await PioneerAPI.getReceiveAddress('Bitcoin', xpubData.xpub);
+        console.log('📊 Receive index response:', response);
+        
+        const index = response?.receiveIndex ?? 0;
+        if (response) {
+          if (response.receiveIndex === null) {
+            console.log('📋 No receive addresses used yet, starting at index 0');
+            setAddressIndex(0);
+            setMaxUsedIndex(0);
+            setCurrentAddressIndex(0);
+          } else if (typeof index === 'number' && index >= 0) {
+            console.log('✅ Current receive index from API:', index);
+            setAddressIndex(index);
+            setMaxUsedIndex(index);
+            setCurrentAddressIndex(index);
+          }
+          setIndexLoaded(true);
+        }
+      } else {
+        console.log('⚠️ No xpub found for target path:', targetPath);
+        console.log('📋 Available paths:', fetchedXpubs.map(x => x.path));
+      }
+    } catch (error) {
+      console.error('❌ Failed to refresh receive index:', error);
+      setIndexLoaded(true);
+    }
+  };
+  
+  // Function to refresh change index from API
+  const refreshChangeIndex = async () => {
+    if (!fetchedXpubs || fetchedXpubs.length === 0) {
+      console.log('⚠️ No xpubs available for change index refresh');
+      return;
+    }
+    
+    try {
+      const targetPath = bitcoinAddressType === 'p2pkh' ? "m/44'/0'/0'" :
+                        bitcoinAddressType === 'p2sh-p2wpkh' ? "m/49'/0'/0'" :
+                        "m/84'/0'/0'";
+      
+      const xpubData = fetchedXpubs.find(x => x.path === targetPath);
+      if (xpubData) {
+        console.log('🔄 Refreshing change index for:', {
+          addressType: bitcoinAddressType,
+          targetPath,
+          xpubType: xpubData.xpub.startsWith('xpub') ? 'Legacy(P2PKH)' : 
+                    xpubData.xpub.startsWith('ypub') ? 'SegWit(P2SH-P2WPKH)' :
+                    xpubData.xpub.startsWith('zpub') ? 'Native SegWit(P2WPKH)' : 'Unknown',
+          fullXpub: xpubData.xpub
+        });
+        
+        // Use the PioneerAPI directly to get change address index
+        const response = await PioneerAPI.getChangeAddress('Bitcoin', xpubData.xpub);
+        console.log('📊 Change index response:', response);
+        
+        if (response && typeof response.changeIndex === 'number') {
+          console.log('✅ Current change index from API:', response.changeIndex);
+          setChangeIndex(response.changeIndex);
+        } else {
+          console.log('📋 No change index found, using 0');
+          setChangeIndex(0);
+        }
+        setChangeIndexLoaded(true);
+      }
+    } catch (error) {
+      console.error('❌ Failed to refresh change index:', error);
+      setChangeIndex(0);
+      setChangeIndexLoaded(true);
+    }
+  };
+
+  // Component lifecycle debugging and fetch both receive and change indices
   useEffect(() => {
     console.log('🚀 Receive component mounted');
     
-    // Fetch the current address index from Pioneer API when component mounts
-    const fetchCurrentIndex = async () => {
+    // Fetch both indices when component mounts
+    const fetchIndices = async () => {
       if (fetchedXpubs && fetchedXpubs.length > 0) {
-        try {
-          // Get the xpub for the current address type
-          const targetPath = bitcoinAddressType === 'p2pkh' ? "m/44'/0'/0'" :
-                            bitcoinAddressType === 'p2sh-p2wpkh' ? "m/49'/0'/0'" :
-                            "m/84'/0'/0'";
-          
-          const xpubData = fetchedXpubs.find(x => x.path === targetPath);
-          if (xpubData) {
-            console.log('📊 Fetching current address index for:', {
-              addressType: bitcoinAddressType,
-              targetPath,
-              xpubType: xpubData.xpub.startsWith('xpub') ? 'Legacy(P2PKH)' : 
-                        xpubData.xpub.startsWith('ypub') ? 'SegWit(P2SH-P2WPKH)' :
-                        xpubData.xpub.startsWith('zpub') ? 'Native SegWit(P2WPKH)' : 'Unknown',
-              fullXpub: xpubData.xpub
-            });
-            
-            // Call Pioneer API to get the current address and index
-            const response = await PioneerAPI.getReceiveAddress('Bitcoin', xpubData.xpub);
-            console.log('📊 Pioneer API response:', response);
-            console.log('📊 Response keys:', Object.keys(response || {}));
-            console.log('📊 Full response data:', JSON.stringify(response, null, 2));
-            
-            // The Pioneer API returns { receiveIndex } not { addressIndex }
-            // If receiveIndex is null, it means no addresses have been used yet, so start at 0
-            const index = response?.receiveIndex ?? 0;
-            
-            if (response) {
-              if (response.receiveIndex === null) {
-                console.log('📋 No addresses used yet for this address type, starting at index 0');
-                setAddressIndex(0);
-                setMaxUsedIndex(0);
-                setCurrentAddressIndex(0);
-                setIndexLoaded(true);
-              } else if (typeof index === 'number' && index >= 0) {
-                console.log('✅ Current receive index from API:', index);
-                setAddressIndex(index);
-                setMaxUsedIndex(index);
-                setCurrentAddressIndex(index);
-                setIndexLoaded(true);
-                
-                // Store it in localStorage for quick access next time
-                const storedIndexKey = `addressIndex_${xpubData.xpub.substring(0, 10)}`;
-                localStorage.setItem(storedIndexKey, index.toString());
-              } else {
-                console.warn('⚠️ Invalid receive index in response:', index);
-                setAddressIndex(0);
-                setMaxUsedIndex(0);
-                setCurrentAddressIndex(0);
-                setIndexLoaded(true);
-              }
-            } else {
-              console.error('❌ No response from Pioneer API');
-              setAddressIndex(0);
-              setMaxUsedIndex(0);
-              setCurrentAddressIndex(0);
-              setIndexLoaded(true);
-            }
-          } else {
-            console.log('⚠️ No xpub found for path:', targetPath);
-          }
-        } catch (error) {
-          console.error('❌ Failed to fetch current address index:', error);
-          // Keep default of 0 on error
-          setIndexLoaded(true);
-        }
+        console.log('📊 Fetching both receive and change indices on component mount');
+        
+        // Fetch both indices in parallel
+        await Promise.all([
+          refreshReceiveIndex(),
+          refreshChangeIndex()
+        ]);
       }
     };
     
-    fetchCurrentIndex();
+    fetchIndices();
     
     return () => {
       console.log('🛬 Receive component unmounting');
@@ -549,6 +595,47 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                 <Text color="gray.400" fontSize="sm" textAlign="center" maxW="300px">
                   {t('receive.generateAddressDescription')}
                 </Text>
+                
+                {/* Index Display on Main Page */}
+                <VStack gap={3} bg="gray.900" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
+                  <Text color="gray.300" fontSize="sm" fontWeight="medium">Address Indices</Text>
+                  <HStack gap={6} justify="center">
+                    <VStack gap={1}>
+                      <Text color="gray.400" fontSize="xs">Receive Index</Text>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        colorScheme="blue"
+                        onClick={refreshReceiveIndex}
+                        isLoading={!indexLoaded}
+                        loadingText="..."
+                        minW="60px"
+                        title="Click to refresh receive index"
+                      >
+                        {indexLoaded ? addressIndex : '...'}
+                      </Button>
+                    </VStack>
+                    <VStack gap={1}>
+                      <Text color="gray.400" fontSize="xs">Change Index</Text>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        colorScheme="green"
+                        onClick={refreshChangeIndex}
+                        isLoading={!changeIndexLoaded}
+                        loadingText="..."
+                        minW="60px"
+                        title="Click to refresh change index"
+                      >
+                        {changeIndexLoaded ? changeIndex : '...'}
+                      </Button>
+                    </VStack>
+                  </HStack>
+                  <Text color="gray.500" fontSize="xs" textAlign="center">
+                    Click numbers to refresh from Pioneer API
+                  </Text>
+                </VStack>
+                
                 {error && (
                   <Box bg="red.900" p={3} borderRadius="md" border="1px solid" borderColor="red.600">
                     <Text color="red.200" fontSize="sm">{t('receive.error.icon')} {error}</Text>
