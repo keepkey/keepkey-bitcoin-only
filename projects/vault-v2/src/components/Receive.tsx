@@ -92,7 +92,14 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
           
           const xpubData = fetchedXpubs.find(x => x.path === targetPath);
           if (xpubData) {
-            console.log('📊 Fetching current address index for xpub:', xpubData.xpub.substring(0, 20) + '...');
+            console.log('📊 Fetching current address index for:', {
+              addressType: bitcoinAddressType,
+              targetPath,
+              xpubType: xpubData.xpub.startsWith('xpub') ? 'Legacy(P2PKH)' : 
+                        xpubData.xpub.startsWith('ypub') ? 'SegWit(P2SH-P2WPKH)' :
+                        xpubData.xpub.startsWith('zpub') ? 'Native SegWit(P2WPKH)' : 'Unknown',
+              fullXpub: xpubData.xpub
+            });
             
             // Call Pioneer API to get the current address and index
             const response = await PioneerAPI.getReceiveAddress('Bitcoin', xpubData.xpub);
@@ -101,20 +108,35 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
             console.log('📊 Full response data:', JSON.stringify(response, null, 2));
             
             // The Pioneer API returns { receiveIndex } not { addressIndex }
+            // If receiveIndex is null, it means no addresses have been used yet, so start at 0
             const index = response?.receiveIndex ?? 0;
             
-            if (response && typeof index === 'number' && index >= 0) {
-              console.log('✅ Current receive index from API:', index);
-              setAddressIndex(index);
-              setMaxUsedIndex(index);
-              setCurrentAddressIndex(index);
-              setIndexLoaded(true);
-              
-              // Store it in localStorage for quick access next time
-              const storedIndexKey = `addressIndex_${xpubData.xpub.substring(0, 10)}`;
-              localStorage.setItem(storedIndexKey, index.toString());
+            if (response) {
+              if (response.receiveIndex === null) {
+                console.log('📋 No addresses used yet for this address type, starting at index 0');
+                setAddressIndex(0);
+                setMaxUsedIndex(0);
+                setCurrentAddressIndex(0);
+                setIndexLoaded(true);
+              } else if (typeof index === 'number' && index >= 0) {
+                console.log('✅ Current receive index from API:', index);
+                setAddressIndex(index);
+                setMaxUsedIndex(index);
+                setCurrentAddressIndex(index);
+                setIndexLoaded(true);
+                
+                // Store it in localStorage for quick access next time
+                const storedIndexKey = `addressIndex_${xpubData.xpub.substring(0, 10)}`;
+                localStorage.setItem(storedIndexKey, index.toString());
+              } else {
+                console.warn('⚠️ Invalid receive index in response:', index);
+                setAddressIndex(0);
+                setMaxUsedIndex(0);
+                setCurrentAddressIndex(0);
+                setIndexLoaded(true);
+              }
             } else {
-              console.warn('⚠️ No valid receive index in response, using default 0. Response:', response);
+              console.error('❌ No response from Pioneer API');
               setAddressIndex(0);
               setMaxUsedIndex(0);
               setCurrentAddressIndex(0);
