@@ -64,6 +64,7 @@
   },
   "navigation": {
     "home": "Home",
+    "wallet": "Wallet",
     "settings": "Settings",
     "help": "Help",
     "about": "About",

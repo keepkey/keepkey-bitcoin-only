@@ -314,11 +314,19 @@ pub async fn add_to_device_queue(
                     
                     // Check if there's already an active passphrase request for this device
                     {
-                        let passphrase_state = PASSPHRASE_REQUEST_STATE.read().await;
+                        let mut passphrase_state = PASSPHRASE_REQUEST_STATE.write().await;
                         if let Some(state) = passphrase_state.get(&request.device_id) {
                             if state.is_active {
-                                println!("⚠️ Passphrase request already active for device {}, skipping duplicate", request.device_id);
-                                return Err("PASSPHRASE_ALREADY_REQUESTED".to_string());
+                                // Check if the request is stale (older than 2 minutes)
+                                if state.timestamp.elapsed().as_secs() > 120 {
+                                    println!("🧹 Clearing stale passphrase request for device {} (age: {}s)", 
+                                        request.device_id, state.timestamp.elapsed().as_secs());
+                                    passphrase_state.remove(&request.device_id);
+                                    // Continue with new request
+                                } else {
+                                    println!("⚠️ Passphrase request already active for device {}, skipping duplicate", request.device_id);
+                                    return Err("PASSPHRASE_ALREADY_REQUESTED".to_string());
+                                }
                             }
                         }
                     }

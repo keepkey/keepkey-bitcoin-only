@@ -64,6 +64,7 @@
   },
   "navigation": {
     "home": "Inicio",
+    "wallet": "Cartera",
     "settings": "Configuración",
     "help": "Ayuda",
     "about": "Acerca de",

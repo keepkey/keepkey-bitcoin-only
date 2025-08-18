@@ -203,6 +203,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   async function getXpubsFromDeviceQueue() {
     const tag = TAG + " | getXpubsFromDeviceQueue | ";
     
+    // Prevent multiple simultaneous executions
+    if (isInitializing || initializingRef.current) {
+      console.log(tag, 'Already fetching xpubs or initializing, skipping duplicate call');
+      return;
+    }
+    
     try {
       // Get fresh list of connected devices to ensure we have current device IDs
       const connectedDevicesResponse = await DeviceQueueAPI.getConnectedDevices();
