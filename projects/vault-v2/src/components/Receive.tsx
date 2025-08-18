@@ -97,15 +97,27 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
             // Call Pioneer API to get the current address and index
             const response = await PioneerAPI.getReceiveAddress('Bitcoin', xpubData.xpub);
             console.log('📊 Pioneer API response:', response);
+            console.log('📊 Response keys:', Object.keys(response || {}));
+            console.log('📊 Full response data:', JSON.stringify(response, null, 2));
             
-            if (response && typeof response.addressIndex === 'number') {
-              console.log('✅ Current address index from API:', response.addressIndex);
-              setAddressIndex(response.addressIndex);
-              setMaxUsedIndex(response.addressIndex);
-              setCurrentAddressIndex(response.addressIndex);
+            // The Pioneer API returns { receiveIndex } not { addressIndex }
+            const index = response?.receiveIndex ?? 0;
+            
+            if (response && typeof index === 'number' && index >= 0) {
+              console.log('✅ Current receive index from API:', index);
+              setAddressIndex(index);
+              setMaxUsedIndex(index);
+              setCurrentAddressIndex(index);
               setIndexLoaded(true);
+              
+              // Store it in localStorage for quick access next time
+              const storedIndexKey = `addressIndex_${xpubData.xpub.substring(0, 10)}`;
+              localStorage.setItem(storedIndexKey, index.toString());
             } else {
-              console.warn('⚠️ No address index in response, using default 0');
+              console.warn('⚠️ No valid receive index in response, using default 0. Response:', response);
+              setAddressIndex(0);
+              setMaxUsedIndex(0);
+              setCurrentAddressIndex(0);
               setIndexLoaded(true);
             }
           } else {

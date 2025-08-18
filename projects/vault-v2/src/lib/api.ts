@@ -31,8 +31,9 @@ export interface PioneerFeeRateResponse {
 }
 
 export interface PioneerAddressResponse {
-  address: string;
-  addressIndex: number;
+  address?: string;
+  addressIndex?: number;
+  receiveIndex?: number; // The actual field returned by the API
 }
 
 export interface PioneerUtxoResponse {
