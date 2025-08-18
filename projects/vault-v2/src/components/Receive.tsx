@@ -100,9 +100,10 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   useEffect(() => {
     setAddressType(getAddressTypeFromSettings());
     const basePath = getDerivationPathFromSettings();
-    // Update path with current address index
+    // Update path with current address index - ensure addressIndex is a number
     const pathParts = basePath.split('/');
-    pathParts[pathParts.length - 1] = addressIndex.toString();
+    const indexValue = typeof addressIndex === 'number' ? addressIndex : 0;
+    pathParts[pathParts.length - 1] = indexValue.toString();
     const newPath = pathParts.join('/');
     setDerivationPath(newPath);
     setCustomPath(newPath);
@@ -134,6 +135,8 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
 
   // Generate receive address
   const generateAddress = (useCustomIndex?: number) => {
+    console.log('🔍 generateAddress called with:', { useCustomIndex, addressIndex, addressIndexType: typeof addressIndex });
+    
     if (!btcAsset) {
       setError(t('receive.noAssetFound'));
       return;
@@ -146,7 +149,18 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     selectAsset(btcAsset);
     
     // Use custom index if provided, otherwise use current addressIndex
-    const indexToUse = useCustomIndex !== undefined ? useCustomIndex : addressIndex;
+    // Ensure we have a valid number
+    let indexToUse: number;
+    if (typeof useCustomIndex === 'number') {
+      indexToUse = useCustomIndex;
+    } else if (typeof addressIndex === 'number') {
+      indexToUse = addressIndex;
+    } else {
+      console.warn('⚠️ addressIndex is not a number:', addressIndex, 'defaulting to 0');
+      indexToUse = 0; // Default to 0 if neither is valid
+    }
+    
+    console.log('📍 Using index:', indexToUse);
     
     // Use address type and update derivation path with index
     setAddressType(getAddressTypeFromSettings());
