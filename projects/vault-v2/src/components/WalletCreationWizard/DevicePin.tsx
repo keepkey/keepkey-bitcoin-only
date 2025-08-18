@@ -142,6 +142,22 @@ export function DevicePin({ deviceId, deviceLabel, mode, onComplete, onBack, isL
     }
   }, [positions, isLoading, isSubmitting, session, onComplete]);
 
+  const handleCancel = useCallback(async () => {
+    if (session) {
+      try {
+        // Cancel the PIN creation session
+        await PinService.cancelPinCreation(session.session_id);
+        console.log('PIN creation cancelled');
+      } catch (error) {
+        console.error('Failed to cancel PIN creation:', error);
+      }
+    }
+    // Call the onBack callback
+    if (onBack) {
+      onBack();
+    }
+  }, [session, onBack]);
+
   const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     e.preventDefault();
     
@@ -328,7 +344,7 @@ export function DevicePin({ deviceId, deviceLabel, mode, onComplete, onBack, isL
             <HStack gap={4} w="full">
               {onBack && (
                 <Button
-                  onClick={onBack}
+                  onClick={handleCancel}
                   variant="outline"
                   size="lg"
                   flex={1}
@@ -342,7 +358,7 @@ export function DevicePin({ deviceId, deviceLabel, mode, onComplete, onBack, isL
                   }}
                   disabled={isLoading || isSubmitting}
                 >
-                  Back
+                  Cancel
                 </Button>
               )}
               

@@ -7,6 +7,7 @@ import {
 } from './ui/dialog';
 import { DevicePin } from './WalletCreationWizard/DevicePin';
 import { PinCreationSession } from '../types/pin';
+import { FaTimes } from 'react-icons/fa';
 
 interface PinCreationDialogProps {
   isOpen: boolean;
@@ -66,11 +67,12 @@ export const PinCreationDialog: React.FC<PinCreationDialogProps> = ({
         <DialogCloseTrigger
           color="gray.400"
           _hover={{ color: "white", bg: "gray.700" }}
-          size="lg"
           top={4}
           right={4}
           zIndex={1}
-        />
+        >
+          <FaTimes size={24} />
+        </DialogCloseTrigger>
         
         <Box
           display="flex"
