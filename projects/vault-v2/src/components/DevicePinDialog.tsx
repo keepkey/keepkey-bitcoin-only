@@ -179,10 +179,15 @@ export const DevicePinDialog = ({
               </Text>
               
               <Grid templateColumns="repeat(3, 1fr)" gap={2}>
-                {[7, 8, 9, 4, 5, 6, 1, 2, 3].map((num, index) => (
+                {/* KeepKey standard PIN layout:
+                    7 8 9
+                    4 5 6
+                    1 2 3
+                   Grid positions 1-9 map to these values */}
+                {[7, 8, 9, 4, 5, 6, 1, 2, 3].map((position, index) => (
                   <Button
-                    key={num}
-                    onClick={() => handlePinButtonClick(index + 1)}
+                    key={index}
+                    onClick={() => handlePinButtonClick(position)}
                     isDisabled={isSubmitting || pinPositions.length >= 9}
                     size="lg"
                     h="60px"
