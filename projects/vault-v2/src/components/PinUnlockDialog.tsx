@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Button, Text, HStack, Icon, VStack, Box, Spinner, SimpleGrid, Heading } from '@chakra-ui/react'
-import { FaCircle, FaExclamationTriangle, FaTimes, FaCheckCircle, FaSync, FaBackspace } from 'react-icons/fa'
+import { FaCircle, FaExclamationTriangle, FaTimes, FaCheckCircle, FaSync, FaBackspace, FaUsb } from 'react-icons/fa'
 import { useTypedTranslation } from '../hooks/useTypedTranslation'
 
 interface PinUnlockDialogProps {
@@ -9,6 +9,7 @@ interface PinUnlockDialogProps {
   deviceId: string
   onUnlocked: () => void
   onClose: () => void
+  isManagementOperation?: boolean // true when creating/removing PIN, false for normal unlock
 }
 
 // The KeepKey device shows this scrambled layout on its screen:
@@ -18,12 +19,12 @@ interface PinUnlockDialogProps {
 // We need to send these exact numbers when the user clicks each position
 const PIN_MATRIX_LAYOUT = [7, 8, 9, 4, 5, 6, 1, 2, 3] as const
 
-export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUnlockDialogProps) => {
+export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose, isManagementOperation = false }: PinUnlockDialogProps) => {
   const { t } = useTypedTranslation('dialogs')
   const [pinPositions, setPinPositions] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [step, setStep] = useState<'verifying' | 'trigger' | 'enter' | 'submitting' | 'success'>('verifying')
+  const [step, setStep] = useState<'verifying' | 'trigger' | 'enter' | 'submitting' | 'success' | 'reconnect'>('verifying')
   const [retryCount, setRetryCount] = useState(0)
   const [deviceReadyStatus, setDeviceReadyStatus] = useState<string>('Checking device...')
 
@@ -179,15 +180,24 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
       })
       
       if (result === true) {
-        // PIN submitted successfully - show success feedback briefly before closing
+        // PIN submitted successfully
         console.log('✅ PIN submitted successfully')
-        setStep('success')
         
-        // Auto-close after brief success display
-        setTimeout(() => {
-          console.log('🔒 PIN dialog auto-closing after success')
-          onUnlocked()
-        }, 1000)
+        // Only show reconnect prompt for PIN management operations (create/remove)
+        // For normal unlock, just show success and close
+        if (isManagementOperation) {
+          console.log('🔄 PIN management operation - showing reconnect prompt')
+          setStep('reconnect')
+          // Don't auto-close - user needs to reconnect device
+        } else {
+          console.log('🔓 Normal PIN unlock - showing success briefly')
+          setStep('success')
+          // Auto-close after brief success display
+          setTimeout(() => {
+            console.log('🔒 PIN dialog auto-closing after success')
+            onUnlocked()
+          }, 1000)
+        }
       } else {
         throw new Error('PIN verification failed')
       }
@@ -480,6 +490,54 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
                 <Text fontSize="md" fontWeight="semibold" color="green.400">
                   {t('pin.unlock.deviceUnlocked')}
                 </Text>
+              </VStack>
+            )}
+
+            {step === 'reconnect' && (
+              <VStack gap={4} py={4}>
+                <Icon as={FaUsb} color="blue.400" boxSize={10} />
+                <VStack gap={2}>
+                  <Text fontSize="md" fontWeight="semibold" color="white">
+                    Please Reconnect Your KeepKey
+                  </Text>
+                  <Text fontSize="sm" color="gray.300" textAlign="center">
+                    Your PIN was successfully entered. Please unplug your KeepKey and plug it back in to complete the unlock process.
+                  </Text>
+                </VStack>
+                <Box
+                  p={3}
+                  bg="blue.900"
+                  borderColor="blue.700"
+                  border="1px solid"
+                  borderRadius="md"
+                  w="full"
+                >
+                  <VStack gap={2} align="start">
+                    <Text fontSize="sm" fontWeight="semibold" color="blue.200">
+                      Steps:
+                    </Text>
+                    <Text fontSize="xs" color="blue.100">
+                      1. Unplug your KeepKey from the USB port
+                    </Text>
+                    <Text fontSize="xs" color="blue.100">
+                      2. Wait 2-3 seconds
+                    </Text>
+                    <Text fontSize="xs" color="blue.100">
+                      3. Plug your KeepKey back in
+                    </Text>
+                    <Text fontSize="xs" color="blue.100">
+                      4. The device will be ready to use
+                    </Text>
+                  </VStack>
+                </Box>
+                <Button
+                  onClick={onUnlocked}
+                  colorScheme="blue"
+                  size="md"
+                  w="full"
+                >
+                  I've Reconnected My Device
+                </Button>
               </VStack>
             )}
 
