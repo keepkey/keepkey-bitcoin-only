@@ -16,6 +16,7 @@ import { FaArrowLeft, FaCopy, FaCheck, FaEye, FaChevronDown, FaChevronUp } from 
 import { SiBitcoin } from 'react-icons/si'; // Only if used in JSX
 import QRCode from 'react-qr-code';
 import { useWallet } from '../contexts/WalletContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { useTypedTranslation } from '../hooks/useTypedTranslation';
 
 interface ReceiveProps {
@@ -25,6 +26,7 @@ interface ReceiveProps {
 const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const { portfolio, getReceiveAddress, selectAsset, loading: walletLoading, selectedAsset, fetchedXpubs } = useWallet();
   const { t } = useTypedTranslation('wallet');
+  const { bitcoinAddressType } = useSettings();
   
   const [address, setAddress] = useState<string>('');
   const [hasCopied, setHasCopied] = useState(false);
@@ -32,8 +34,34 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [shouldGenerate, setShouldGenerate] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [addressType, setAddressType] = useState<'legacy' | 'segwit' | 'native-segwit'>('native-segwit');
-  const [derivationPath, setDerivationPath] = useState<string>("m/84'/0'/0'/0/0");
+  
+  // Map settings address type to local state format
+  const getAddressTypeFromSettings = () => {
+    switch (bitcoinAddressType) {
+      case 'p2pkh':
+        return 'legacy';
+      case 'p2sh-p2wpkh':
+        return 'segwit';
+      case 'p2wpkh':
+      default:
+        return 'native-segwit';
+    }
+  };
+  
+  const getDerivationPathFromSettings = () => {
+    switch (bitcoinAddressType) {
+      case 'p2pkh':
+        return "m/44'/0'/0'/0/0";
+      case 'p2sh-p2wpkh':
+        return "m/49'/0'/0'/0/0";
+      case 'p2wpkh':
+      default:
+        return "m/84'/0'/0'/0/0";
+    }
+  };
+  
+  const [addressType, setAddressType] = useState<'legacy' | 'segwit' | 'native-segwit'>(getAddressTypeFromSettings());
+  const [derivationPath, setDerivationPath] = useState<string>(getDerivationPathFromSettings());
   const [isTimeout, setIsTimeout] = useState(false);
   const [loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
 
@@ -58,6 +86,12 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     }
   }, [portfolio, btcAsset]);
 
+  // Update address type and path when settings change
+  useEffect(() => {
+    setAddressType(getAddressTypeFromSettings());
+    setDerivationPath(getDerivationPathFromSettings());
+  }, [bitcoinAddressType]);
+
   // Generate receive address
   const generateAddress = () => {
     if (!btcAsset) {
@@ -71,10 +105,9 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     setLoadingStartTime(Date.now());
     selectAsset(btcAsset);
     
-    // Set address type and derivation path based on selected type
-    // For now, defaulting to native segwit but this could be made configurable
-    setAddressType('native-segwit');
-    setDerivationPath("m/84'/0'/0'/0/0");
+    // Use address type and derivation path from settings
+    setAddressType(getAddressTypeFromSettings());
+    setDerivationPath(getDerivationPathFromSettings());
     
     setShouldGenerate(true); // Triggers useEffect below
   };
@@ -84,7 +117,8 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
       (async () => {
         try {
           console.log('🎯 Starting address generation...');
-          const addr = await getReceiveAddress();
+          console.log('🔐 Using Bitcoin address type:', bitcoinAddressType);
+          const addr = await getReceiveAddress(bitcoinAddressType);
           console.log('📬 Received address from getReceiveAddress:', addr);
           if (addr) {
             setAddress(addr);

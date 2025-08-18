@@ -16,6 +16,7 @@ import {
 import { FaArrowLeft, FaQrcode, FaPaperPlane, FaEye, FaSignature, FaCheck, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { PioneerAPI, DeviceQueueAPI } from '../lib/api';
 import { createUnsignedUxtoTx } from '../lib/createUnsignedUxtoTx';
 import { useTypedTranslation } from '../hooks/useTypedTranslation';
@@ -47,6 +48,7 @@ interface TransactionReview {
 const Send: React.FC<SendPageProps> = ({ onBack }) => {
   const { t } = useTypedTranslation('wallet');
   const { portfolio, loading: walletLoading, error: walletError, selectAsset, selectedAsset, signTransaction, fetchedXpubs } = useWallet();
+  const { bitcoinAddressType } = useSettings();
   
   // Step management
   const [currentStep, setCurrentStep] = useState<SendStep>('compose');
@@ -390,7 +392,8 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
         pubkeys,
         pioneer,
         null, // keepKeySdk (not needed for signing)
-        isMaxSend // Use tracked max send state instead of hardcoded false
+        isMaxSend, // Use tracked max send state instead of hardcoded false
+        bitcoinAddressType // Pass the user's address type preference
       );
       
       console.log('📊 Transaction built by coinselect:');
