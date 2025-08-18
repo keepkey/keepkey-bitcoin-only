@@ -101,7 +101,7 @@ export const PinRemovalDialog = ({ isOpen, deviceId, onSuccess, onClose }: PinRe
       display="flex"
       alignItems="center"
       justifyContent="center"
-      zIndex={9999}
+      zIndex={10001}
     >
       <Box
         bg="white"

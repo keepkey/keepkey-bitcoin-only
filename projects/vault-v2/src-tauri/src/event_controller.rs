@@ -283,27 +283,15 @@ impl EventController {
                                             
                                             // Check for timeout errors specifically
                                             if e.contains("Timeout while fetching device features") {
-                                                println!("⏱️ Device timeout detected - device may be in invalid state");
-                                                println!("❌ OOPS this should never happen - device communication failed!");
+                                                println!("⏱️ Device timeout detected - device may be idle or sleeping");
                                                 
-                                                // Log detailed error for debugging
-                                                eprintln!("ERROR: Device timeout indicates invalid state - this should be prevented!");
-                                                eprintln!("Device ID: {}", device_for_task.unique_id);
-                                                eprintln!("Error: {}", e);
+                                                // Don't show error dialog for idle timeouts
+                                                // The device is likely just idle/sleeping and will reconnect when needed
+                                                // Only log for debugging
+                                                println!("Device {} appears to be idle/sleeping, this is normal", device_for_task.unique_id);
                                                 
-                                                // Emit device invalid state event for UI to handle
-                                                let invalid_state_payload = serde_json::json!({
-                                                    "deviceId": device_for_task.unique_id,
-                                                    "error": e,
-                                                    "errorType": "DEVICE_TIMEOUT",
-                                                    "status": "invalid_state"
-                                                });
-                                                let _ = app_for_task.emit("device:invalid-state", &invalid_state_payload);
-                                                
-                                                // Also emit status update
-                                                let _ = app_for_task.emit("status:update", serde_json::json!({
-                                                    "status": "Device timeout - please reconnect"
-                                                }));
+                                                // Don't emit invalid state for idle timeouts
+                                                // The user doesn't need to see an error when device is idle
                                             }
                                             // Check if this is a device access error
                                             else if e.contains("Device Already In Use") || 

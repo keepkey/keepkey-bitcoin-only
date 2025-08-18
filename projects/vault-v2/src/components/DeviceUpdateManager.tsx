@@ -255,6 +255,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
     let featuresUnsubscribe: Promise<() => void> | null = null
     let connectedUnsubscribe: Promise<() => void> | null = null
     let timeoutId: NodeJS.Timeout | null = null
+    let pinCheckDebounceTimer: NodeJS.Timeout | null = null
 
     const setupListeners = async () => {
       console.log('DeviceUpdateManager: Setting up event listeners...')
@@ -418,13 +419,33 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
           deviceInvalidStateDialog.hide(status.deviceId)
         }
         
-        // Verify device is actually ready for PIN operations before showing dialog
-        try {
-          const isPinReady = await invoke('check_device_pin_ready', { deviceId: status.deviceId })
-          
-          if (isPinReady) {
-            // Show PIN unlock dialog
-            console.log('🔒 DeviceUpdateManager: Device confirmed ready for PIN, showing unlock dialog')
+        // Debounce PIN ready checks to prevent spamming
+        if (pinCheckDebounceTimer) {
+          clearTimeout(pinCheckDebounceTimer)
+        }
+        
+        pinCheckDebounceTimer = setTimeout(async () => {
+          // Verify device is actually ready for PIN operations before showing dialog
+          try {
+            const isPinReady = await invoke('check_device_pin_ready', { deviceId: status.deviceId })
+            
+            if (isPinReady) {
+              // Show PIN unlock dialog
+              console.log('🔒 DeviceUpdateManager: Device confirmed ready for PIN, showing unlock dialog')
+              setDeviceStatus(status)
+              setConnectedDeviceId(status.deviceId)
+              setShowEnterBootloaderMode(false)
+              setShowBootloaderUpdate(false)
+              setShowFirmwareUpdate(false)
+              setShowWalletCreation(false)
+              setShowPinUnlock(true)
+            } else {
+              console.log('🔒 DeviceUpdateManager: Device not ready for PIN unlock, waiting...')
+              // Device may not be ready yet, wait for next status update
+            }
+          } catch (error) {
+            console.error('🔒 DeviceUpdateManager: Failed to check PIN readiness:', error)
+            // Fallback to showing the dialog anyway
             setDeviceStatus(status)
             setConnectedDeviceId(status.deviceId)
             setShowEnterBootloaderMode(false)
@@ -432,21 +453,8 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
             setShowFirmwareUpdate(false)
             setShowWalletCreation(false)
             setShowPinUnlock(true)
-          } else {
-            console.log('🔒 DeviceUpdateManager: Device not ready for PIN unlock, waiting...')
-            // Device may not be ready yet, wait for next status update
           }
-        } catch (error) {
-          console.error('🔒 DeviceUpdateManager: Failed to check PIN readiness:', error)
-          // Fallback to showing the dialog anyway
-          setDeviceStatus(status)
-          setConnectedDeviceId(status.deviceId)
-          setShowEnterBootloaderMode(false)
-          setShowBootloaderUpdate(false)
-          setShowFirmwareUpdate(false)
-          setShowWalletCreation(false)
-          setShowPinUnlock(true)
-        }
+        }, 300) // Wait 300ms before checking, to debounce rapid events
       })
 
       // Listen for device disconnection
@@ -509,6 +517,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
     return () => {
       // Cleanup function will be called automatically
       if (timeoutId) clearTimeout(timeoutId)
+      if (pinCheckDebounceTimer) clearTimeout(pinCheckDebounceTimer)
     }
   }, [onComplete, setupInProgress, deviceInvalidStateDialog, onSetupWizardActiveChange, refreshPortfolio, fetchedXpubs])
 
