@@ -409,7 +409,7 @@ function App() {
                     });
 
                     // Listen for passphrase success event to close the modal
-                    const unlistenPassphraseSuccess = await listen('passphrase:success', (event) => {
+                    const unlistenPassphraseSuccess = await listen('passphrase:success', async (event) => {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const payload = event.payload as any;
                         console.log('🔐 [App] Passphrase success received:', payload);
@@ -420,6 +420,48 @@ function App() {
                         } else {
                             passphraseDialog.hide();
                         }
+                        
+                        // Auto-recovery: If app seems stuck after passphrase, reinitialize after delay
+                        console.log('🔐 [App] Starting auto-recovery timer after passphrase success...');
+                        
+                        // First attempt: Quick check and try to reinitialize
+                        setTimeout(async () => {
+                            try {
+                                // Check if we're still stuck (loading status not progressed)
+                                if (loadingStatus === 'Scanning for devices...' || loadingStatus === 'Initializing app...') {
+                                    console.log('🔄 [App] Auto-recovery: App appears stuck after passphrase, reinitializing...');
+                                    console.log('🔄 [App] Current loading status:', loadingStatus);
+                                    
+                                    // Trigger frontend ready to re-establish device connection
+                                    await invoke('frontend_ready');
+                                    console.log('🔄 [App] Auto-recovery: Frontend ready sent');
+                                    
+                                    // Also try to get device status to trigger initialization
+                                    try {
+                                        await invoke('get_connected_devices_with_features');
+                                        console.log('🔄 [App] Auto-recovery: Device query sent');
+                                    } catch (e) {
+                                        console.log('🔄 [App] Auto-recovery: Device query failed:', e);
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('🔄 [App] Auto-recovery first attempt failed:', error);
+                            }
+                        }, 1500); // First check after 1.5 seconds
+                        
+                        // Second attempt: More aggressive restart if still stuck
+                        setTimeout(async () => {
+                            try {
+                                if (!deviceConnected || loadingStatus === 'Scanning for devices...' || loadingStatus === 'Initializing app...') {
+                                    console.log('🔄 [App] Auto-recovery: Still stuck after 5 seconds, performing backend restart...');
+                                    console.log('🔄 [App] Device connected:', deviceConnected, 'Loading status:', loadingStatus);
+                                    await invoke('restart_backend_startup');
+                                    console.log('🔄 [App] Auto-recovery: Backend restart initiated');
+                                }
+                            } catch (error) {
+                                console.error('🔄 [App] Auto-recovery second attempt failed:', error);
+                            }
+                        }, 5000); // Second check after 5 seconds
                     });
 
                     // Listen for "no device found" event from backend

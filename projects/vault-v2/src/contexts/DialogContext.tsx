@@ -64,13 +64,20 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
     
-    // First check if there's a PIN dialog - it always has highest priority
+    // Check for critical security dialogs that must be shown immediately
+    // PIN dialog has highest priority when present
     const pinDialog = queue.find(d => d.id.includes('pin-unlock'));
     if (pinDialog) {
       return pinDialog;
     }
     
-    // Sort by priority (highest first)
+    // Passphrase dialog should be shown immediately after PIN
+    const passphraseDialog = queue.find(d => d.id.includes('passphrase'));
+    if (passphraseDialog) {
+      return passphraseDialog;
+    }
+    
+    // Sort remaining dialogs by priority (highest first)
     const sorted = [...queue].sort((a, b) => {
       const priorityA = PRIORITY_ORDER[a.priority || 'normal'];
       const priorityB = PRIORITY_ORDER[b.priority || 'normal'];

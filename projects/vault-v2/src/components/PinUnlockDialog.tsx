@@ -199,13 +199,11 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose, isManag
           setStep('reconnect')
           // Don't auto-close - user needs to reconnect device
         } else {
-          console.log('🔓 Normal PIN unlock - showing success briefly')
+          console.log('🔓 Normal PIN unlock - closing immediately to allow passphrase dialog')
           setStep('success')
-          // Auto-close after brief success display
-          setTimeout(() => {
-            console.log('🔒 PIN dialog auto-closing after success')
-            onUnlocked()
-          }, 1000)
+          // Close immediately to allow passphrase dialog to show
+          // The backend will send a passphrase_request event if needed
+          onUnlocked()
         }
       } else {
         throw new Error('PIN verification failed')

@@ -258,45 +258,6 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
               </Flex>
             </Box>
           )}
-
-          {/* Debug button - remove in production */}
-          {process.env.NODE_ENV === 'development' && (
-            <Box mt={4} p={3} borderTop="1px" borderColor="gray.200">
-              <Text fontSize="xs" color="gray.500" mb={2}>Debug Tools</Text>
-              <HStack spacing={2}>
-                <Button
-                  size="xs"
-                  colorScheme="gray"
-                  onClick={async () => {
-                    try {
-                      const state = await invoke<string>('get_device_interaction_state', { deviceId });
-                      console.log(`Current state: ${state}`);
-                      setStatusMessage(`State: ${state}`);
-                    } catch (err) {
-                      console.error('Failed to get state:', err);
-                    }
-                  }}
-                >
-                  Check State
-                </Button>
-                <Button
-                  size="xs"
-                  colorScheme="orange"
-                  onClick={async () => {
-                    try {
-                      await invoke('reset_device_interaction_state', { deviceId });
-                      setStatusMessage('Device state reset to Idle');
-                      console.log('Device state reset to Idle');
-                    } catch (err) {
-                      console.error('Failed to reset state:', err);
-                    }
-                  }}
-                >
-                  Reset State
-                </Button>
-              </HStack>
-            </Box>
-          )}
       </Flex>
     </Box>
   );
