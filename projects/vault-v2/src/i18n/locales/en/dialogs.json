@@ -1,0 +1,324 @@
+{
+  "noDevice": {
+    "title": "No KeepKey Detected",
+    "subtitle": "Please connect your KeepKey device to continue",
+    "troubleshooting": {
+      "title": "Troubleshooting tips:",
+      "tips": {
+        "pluggedIn": "Make sure your KeepKey is plugged in via USB",
+        "differentPort": "Try a different USB port or cable",
+        "reconnect": "Unplug and reconnect your device",
+        "noOtherApps": "Ensure no other apps are using the device"
+      }
+    },
+    "updaterMode": {
+      "title": "Device still not detected?",
+      "subtitle": "Try putting your KeepKey into updater mode:",
+      "steps": {
+        "1": "Disconnect your KeepKey",
+        "2": "Hold down the button on your KeepKey",
+        "3": "While holding the button, reconnect the USB cable",
+        "4": "Release the button when you see the KeepKey logo"
+      },
+      "note": "This will allow the device to be detected and updated if needed."
+    },
+    "buttons": {
+      "close": "Close",
+      "retry": "Retry Connection"
+    }
+  },
+  "firmwareUpdate": {
+    "title": "Firmware Update Available",
+    "criticalUpdate": "Critical Update",
+    "updateAvailable": "Update Available",
+    "criticalRequired": "Critical Firmware Update Required",
+    "newAvailable": "New Firmware Available",
+    "criticalDescription": "Your device has an older bootloader that requires this firmware update for security.",
+    "description": "Update your KeepKey to get the latest features and security improvements.",
+    "currentVersion": "Current Version",
+    "newVersion": "New Version",
+    "estimatedTime": "Estimated Time",
+    "estimatedDuration": "3-5 minutes",
+    "important": "Important:",
+    "warnings": {
+      "doNotDisconnect": "Do not disconnect your device during the update",
+      "reenterPin": "You may need to re-enter your PIN after the update",
+      "fundsRemainSafe": "Your funds and settings will remain safe",
+      "cannotSkip": "This update cannot be skipped due to security requirements"
+    },
+    "buttons": {
+      "updateNow": "Update Now",
+      "skip": "Skip",
+      "remindLater": "Remind Me Later",
+      "cancel": "Cancel",
+      "close": "Close"
+    },
+    "progress": {
+      "downloading": "Downloading firmware...",
+      "installing": "Installing firmware...",
+      "verifying": "Verifying installation...",
+      "complete": "Update complete!"
+    }
+  },
+  "bootloaderUpdate": {
+    "title": "Bootloader Update",
+    "subtitle": "Critical security update for your device",
+    "description": "This update improves device security and stability",
+    "warning": "Warning: Do not disconnect your device during the update",
+    "currentVersion": "Current Bootloader",
+    "newVersion": "New Bootloader",
+    "buttons": {
+      "update": "Update Bootloader",
+      "cancel": "Cancel"
+    }
+  },
+  "enterBootloader": {
+    "title": "Enter Bootloader Mode",
+    "subtitle": "Follow these steps to enter bootloader mode",
+    "steps": {
+      "1": "Disconnect your KeepKey from USB",
+      "2": "Press and hold the button on your KeepKey",
+      "3": "While holding the button, reconnect the USB cable",
+      "4": "Continue holding until you see 'BOOTLOADER' on the screen",
+      "5": "Release the button"
+    },
+    "note": "Your device will restart in bootloader mode for the update",
+    "buttons": {
+      "ready": "I'm Ready",
+      "cancel": "Cancel"
+    }
+  },
+  "deviceInvalidState": {
+    "title": "Device in Invalid State",
+    "subtitle": "Your device needs attention",
+    "states": {
+      "notInitialized": {
+        "title": "Device Not Initialized",
+        "description": "Your KeepKey needs to be set up before use",
+        "action": "Initialize Device"
+      },
+      "needsBackup": {
+        "title": "Backup Required",
+        "description": "Please backup your recovery seed",
+        "action": "Backup Now"
+      },
+      "bootloaderMode": {
+        "title": "Device in Bootloader Mode",
+        "description": "Your device is in update mode",
+        "action": "Exit Bootloader"
+      },
+      "error": {
+        "title": "Device Error",
+        "description": "An error occurred with your device",
+        "action": "Troubleshoot"
+      }
+    },
+    "buttons": {
+      "resolve": "Resolve",
+      "ignore": "Ignore",
+      "help": "Get Help"
+    }
+  },
+  "pin": {
+    "creation": {
+      "title": "Create PIN",
+      "subtitle": "Set up a PIN to protect your device",
+      "description": "Choose a PIN between 4-9 digits",
+      "enterPin": "Enter PIN on your KeepKey",
+      "confirmPin": "Confirm PIN on your KeepKey",
+      "success": "PIN created successfully",
+      "failed": "Failed to create PIN",
+      "buttons": {
+        "create": "Create PIN",
+        "skip": "Skip",
+        "cancel": "Cancel"
+      }
+    },
+    "enable": {
+      "title": "Enable PIN Protection",
+      "subtitle": "Secure your device with a PIN",
+      "description": "A PIN adds an extra layer of security to your device",
+      "benefits": {
+        "title": "Benefits of PIN protection:",
+        "secure": "Prevents unauthorized access",
+        "theft": "Protects against physical theft",
+        "privacy": "Keeps your transactions private"
+      },
+      "buttons": {
+        "enable": "Enable PIN",
+        "notNow": "Not Now",
+        "cancel": "Cancel"
+      }
+    },
+    "setup": {
+      "title": "PIN Setup",
+      "subtitle": "Configure your PIN settings",
+      "options": {
+        "create": "Create New PIN",
+        "change": "Change PIN",
+        "remove": "Remove PIN"
+      },
+      "currentStatus": "Current Status",
+      "enabled": "PIN Enabled",
+      "disabled": "PIN Disabled",
+      "buttons": {
+        "save": "Save Settings",
+        "cancel": "Cancel"
+      }
+    },
+    "unlock": {
+      "title": "Unlock Device",
+      "subtitle": "Enter your PIN to continue",
+      "instruction": "Look at your KeepKey screen and enter the PIN using the grid",
+      "lookAtDevice": "Look at your device screen for the scrambled numbers",
+      "clickPositions": "Click the positions where your PIN digits appear",
+      "numbersMatch": "Numbers shown match your device display",
+      "numbersMatchNote": "Numbers shown match your device display",
+      "useScrambledLayout": "Use the scrambled layout shown on your device",
+      "preparingDevice": "Preparing Device",
+      "deviceReadyForPin": "Your device will display a PIN matrix when ready",
+      "requestPinMatrix": "Request PIN Matrix",
+      "verifyingPin": "Verifying PIN...",
+      "pleaseWait": "Please wait",
+      "deviceUnlocked": "Device Unlocked!",
+      "tryAgain": "Try Again",
+      "fullRetry": "Full Retry",
+      "grid": {
+        "instruction": "Use the numbered grid on your computer to enter the PIN shown on your device",
+        "scrambledNote": "The numbers are scrambled for security - check your device screen"
+      },
+      "incorrect": "Incorrect PIN. Please try again.",
+      "attemptsRemaining": "{{count}} attempts remaining",
+      "buttons": {
+        "unlock": "Unlock",
+        "back": "Back",
+        "clear": "Clear",
+        "cancel": "Cancel",
+        "forgotPin": "Forgot PIN?"
+      }
+    },
+    "change": {
+      "title": "Change PIN",
+      "currentPin": "Enter current PIN",
+      "newPin": "Enter new PIN",
+      "confirmNew": "Confirm new PIN",
+      "success": "PIN changed successfully",
+      "failed": "Failed to change PIN",
+      "buttons": {
+        "change": "Change PIN",
+        "cancel": "Cancel"
+      }
+    },
+    "remove": {
+      "title": "Remove PIN",
+      "warning": "Warning: Removing PIN will make your device less secure",
+      "confirm": "Are you sure you want to remove PIN protection?",
+      "enterCurrent": "Enter current PIN to confirm",
+      "success": "PIN removed successfully",
+      "failed": "Failed to remove PIN",
+      "buttons": {
+        "remove": "Remove PIN",
+        "cancel": "Cancel"
+      }
+    }
+  },
+  "passphrase": {
+    "title": "Enter Your Passphrase",
+    "subtitle": "Enter your passphrase",
+    "description": "Passphrases create hidden wallets. Each passphrase accesses a different wallet.",
+    "afterSubmitting": "After submitting your passphrase, use the button on the KeepKey to approve it.",
+    "useWithCaution": "Use with caution",
+    "warningLoseAccess": "If you forget your passphrase, you will lose access to your funds.",
+    "learnMore": "Learn more",
+    "enter": "Enter passphrase",
+    "confirm": "Confirm passphrase",
+    "confirmOnDevice": "Confirm on Device",
+    "placeholder": "Enter your passphrase",
+    "showPassphrase": "Show passphrase",
+    "hidePassphrase": "Hide passphrase",
+    "onDevice": "Enter on device",
+    "onComputer": "Enter on computer",
+    "warning": "Warning: If you forget your passphrase, you cannot recover your funds!",
+    "mismatch": "Passphrases do not match",
+    "alreadySubmitted": "Passphrase already submitted. Please confirm on your device.",
+    "pleaseEnter": "Please enter a passphrase",
+    "noDeviceId": "No device ID available",
+    "deviceNotReady": "Device not ready for passphrase. Please try the operation again.",
+    "timedOut": "Operation timed out. Please confirm on your device or try again.",
+    "submitting": "Submitting...",
+    "awaitingConfirmation": "Awaiting Confirmation",
+    "alreadySubmittedButton": "Already Submitted",
+    "submitPassphrase": "Submit Passphrase",
+    "buttons": {
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "useEmpty": "Use Empty Passphrase",
+      "submit": "Submit",
+      "submitPassphrase": "Submit Passphrase"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "general": "General",
+      "device": "Device",
+      "security": "Security",
+      "advanced": "Advanced",
+      "about": "About"
+    },
+    "general": {
+      "language": "Language",
+      "currency": "Currency",
+      "theme": "Theme",
+      "notifications": "Notifications"
+    },
+    "device": {
+      "label": "Device Label",
+      "firmware": "Firmware Version",
+      "bootloader": "Bootloader Version",
+      "deviceId": "Device ID",
+      "actions": {
+        "update": "Check for Updates",
+        "wipe": "Wipe Device",
+        "recover": "Recover Device"
+      }
+    },
+    "security": {
+      "pin": "PIN Protection",
+      "passphrase": "Passphrase",
+      "autoLock": "Auto-lock",
+      "autoLockDelay": "Auto-lock after"
+    },
+    "buttons": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "apply": "Apply",
+      "close": "Close"
+    }
+  },
+  "common": {
+    "buttons": {
+      "ok": "OK",
+      "cancel": "Cancel",
+      "close": "Close",
+      "confirm": "Confirm",
+      "continue": "Continue",
+      "back": "Back",
+      "next": "Next",
+      "skip": "Skip",
+      "retry": "Retry",
+      "save": "Save",
+      "delete": "Delete",
+      "yes": "Yes",
+      "no": "No"
+    },
+    "status": {
+      "loading": "Loading...",
+      "processing": "Processing...",
+      "success": "Success",
+      "error": "Error",
+      "warning": "Warning",
+      "info": "Information"
+    }
+  }
+}

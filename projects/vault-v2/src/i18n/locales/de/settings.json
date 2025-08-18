@@ -1,0 +1,160 @@
+{
+  "title": "Einstellungen",
+  "general": {
+    "title": "Allgemeine Einstellungen",
+    "language": {
+      "title": "Spracheinstellungen",
+      "display": "Anzeigesprache",
+      "select": "Sprache auswählen"
+    },
+    "currency": {
+      "title": "Währungseinstellungen",
+      "primary": "Hauptwährung",
+      "select": "Währung auswählen"
+    },
+    "numberFormat": {
+      "title": "Zahlenformat",
+      "select": "Format auswählen"
+    },
+    "theme": {
+      "title": "Design",
+      "dark": "Dunkel",
+      "light": "Hell",
+      "system": "System"
+    },
+    "notifications": {
+      "title": "Benachrichtigungen",
+      "enable": "Benachrichtigungen aktivieren",
+      "sound": "Tonbenachrichtigungen",
+      "desktop": "Desktop-Benachrichtigungen"
+    }
+  },
+  "security": {
+    "title": "Sicherheit und Datenschutz",
+    "autoLock": {
+      "title": "Automatische Sperre",
+      "description": "Automatisch nach Inaktivität sperren",
+      "never": "Nie",
+      "1min": "1 Minute",
+      "5min": "5 Minuten",
+      "15min": "15 Minuten",
+      "30min": "30 Minuten",
+      "1hour": "1 Stunde"
+    },
+    "pin": {
+      "title": "PIN-Code",
+      "change": "PIN ändern",
+      "require": "PIN für Transaktionen erforderlich"
+    },
+    "biometric": {
+      "title": "Biometrie",
+      "enable": "Biometrische Authentifizierung aktivieren"
+    },
+    "privacy": {
+      "title": "Datenschutz",
+      "analytics": "Nutzungsdaten teilen",
+      "crashReports": "Absturzberichte senden"
+    }
+  },
+  "network": {
+    "title": "Netzwerk",
+    "bitcoin": {
+      "title": "Bitcoin-Netzwerk",
+      "mainnet": "Hauptnetz",
+      "testnet": "Testnetz"
+    },
+    "server": {
+      "title": "Server",
+      "auto": "Automatisch",
+      "custom": "Benutzerdefiniert",
+      "url": "Server-URL"
+    },
+    "tor": {
+      "title": "Tor",
+      "enable": "Tor verwenden",
+      "onion": ".onion-Adressen verwenden"
+    }
+  },
+  "backup": {
+    "title": "Sicherung und Wiederherstellung",
+    "seed": {
+      "title": "Wiederherstellungsphrase",
+      "view": "Wiederherstellungsphrase anzeigen",
+      "verify": "Sicherung überprüfen"
+    },
+    "export": {
+      "title": "Exportieren",
+      "wallet": "Wallet exportieren",
+      "transactions": "Transaktionen exportieren"
+    },
+    "import": {
+      "title": "Importieren",
+      "wallet": "Wallet importieren",
+      "transactions": "Transaktionen importieren"
+    }
+  },
+  "device": {
+    "title": "Gerät",
+    "info": {
+      "title": "Geräteinformationen",
+      "model": "Modell",
+      "firmware": "Firmware",
+      "serial": "Seriennummer"
+    },
+    "update": {
+      "title": "Updates",
+      "check": "Nach Updates suchen",
+      "auto": "Automatische Updates"
+    },
+    "reset": {
+      "title": "Zurücksetzen",
+      "factory": "Werkseinstellungen",
+      "warning": "Dies löscht alle Daten vom Gerät"
+    }
+  },
+  "advanced": {
+    "title": "Erweitert",
+    "developer": {
+      "title": "Entwicklermodus",
+      "enable": "Entwicklermodus aktivieren",
+      "console": "Debug-Konsole"
+    },
+    "experimental": {
+      "title": "Experimentelle Funktionen",
+      "warning": "Diese Funktionen können instabil sein"
+    },
+    "logs": {
+      "title": "Geräteprotokolle",
+      "view": "Protokolle anzeigen",
+      "export": "Protokolle exportieren",
+      "clear": "Protokolle löschen",
+      "autoRefresh": "Automatische Aktualisierung",
+      "stopAuto": "Auto Stoppen",
+      "refresh": "Aktualisieren",
+      "loading": "Laden...",
+      "saveLogs": "Protokolle Speichern",
+      "copying": "Kopiere...",
+      "unknown": "Unbekannt"
+    },
+    "api": {
+      "title": "MCP & API Zugang",
+      "enableTitle": "REST & MCP APIs Aktivieren",
+      "enableDescription": "Externen Anwendungen und KI-Assistenten erlauben sich zu verbinden",
+      "enable": "Aktivieren",
+      "disable": "Deaktivieren",
+      "running": "Läuft",
+      "stopped": "Gestoppt",
+      "serviceStatus": "Service Status",
+      "restartRequired": "Neustart erforderlich um Änderungen anzuwenden"
+    }
+  },
+  "about": {
+    "title": "Über",
+    "version": "Version",
+    "license": "Lizenz",
+    "website": "Webseite",
+    "support": "Support",
+    "terms": "Nutzungsbedingungen",
+    "privacy": "Datenschutzrichtlinie"
+  }
+}

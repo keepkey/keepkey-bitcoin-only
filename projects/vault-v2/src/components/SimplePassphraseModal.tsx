@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTypedTranslation } from '../hooks/useTypedTranslation';
 
 interface SimplePassphraseModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
   onSubmit,
   deviceId,
 }) => {
+  const { t } = useTypedTranslation('dialogs');
   const [passphrase, setPassphrase] = useState('');
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,18 +54,18 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
     // Prevent duplicate submissions for the same session
     if (hasSubmittedForSession) {
       console.log('🔐 [SimplePassphraseModal] Preventing duplicate passphrase submission');
-      setError('Passphrase already submitted. Please confirm on your device.');
+      setError(t('passphrase.alreadySubmitted', 'Passphrase already submitted. Please confirm on your device.'));
       return;
     }
 
     // Basic validation
     if (!passphrase) {
-      setError('Please enter a passphrase');
+      setError(t('passphrase.pleaseEnter', 'Please enter a passphrase'));
       return;
     }
 
     if (!deviceId) {
-      setError('No device ID available');
+      setError(t('passphrase.noDeviceId', 'No device ID available'));
       return;
     }
 
@@ -101,10 +103,15 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
       
       // Only allow retry if it's not an "Unexpected message" error
       if (errorMessage.includes('Unexpected message')) {
-        setError('Device not ready for passphrase. Please try the operation again.');
+        setError(t('passphrase.deviceNotReady', 'Device not ready for passphrase. Please try the operation again.'));
         setHasSubmittedForSession(true); // Prevent further attempts
+        
+        // Close the modal after a short delay to let user see the error message
+        setTimeout(() => {
+          onClose();
+        }, 2000);
       } else if (errorMessage.includes('timed out')) {
-        setError('Operation timed out. Please confirm on your device or try again.');
+        setError(t('passphrase.timedOut', 'Operation timed out. Please confirm on your device or try again.'));
         // Allow retry for timeout
         setHasSubmittedForSession(false);
         setAwaitingDeviceConfirmation(false);
@@ -153,7 +160,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
         }}
       >
         <h2 style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: 'bold', color: 'white' }}>
-          {awaitingDeviceConfirmation ? 'Confirm on Device' : 'Enter Your Passphrase'}
+          {awaitingDeviceConfirmation ? t('passphrase.confirmOnDevice', 'Confirm on Device') : t('passphrase.title')}
         </h2>
 
         {/* Instruction */}
@@ -169,8 +176,8 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
         >
           <p style={{ margin: 0, fontSize: '14px', color: '#90CDF4' }}>
             {awaitingDeviceConfirmation 
-              ? '⏳ Please confirm on your KeepKey device...'
-              : 'After submitting your passphrase, use the button on the KeepKey to approve it.'}
+              ? t('passphrase.confirmOnDevice')
+              : t('passphrase.afterSubmitting')}
           </p>
         </div>
 
@@ -195,7 +202,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
             type={showPassphrase ? 'text' : 'password'}
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
-            placeholder="Enter your passphrase"
+            placeholder={t('passphrase.placeholder')}
             autoComplete="off"
             disabled={isSubmitting || awaitingDeviceConfirmation}
             style={{
@@ -228,10 +235,10 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
           }}
         >
           <p style={{ margin: '0 0 8px 0', fontWeight: 'bold', color: '#F6E05E' }}>
-            Use with caution
+            {t('passphrase.useWithCaution')}
           </p>
           <p style={{ margin: 0, fontSize: '14px', color: '#FBD38D' }}>
-            If you forget your passphrase, you will lose access to your funds. Learn more
+            {t('passphrase.warningLoseAccess')} {t('passphrase.learnMore')}
           </p>
         </div>
 
@@ -252,7 +259,7 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
               fontWeight: '500',
             }}
           >
-            Cancel
+            {t('passphrase.buttons.cancel')}
           </button>
           <button
             type="button"
@@ -269,10 +276,10 @@ export const SimplePassphraseModal: React.FC<SimplePassphraseModalProps> = ({
               fontWeight: '500',
             }}
           >
-            {isSubmitting ? 'Submitting...' : 
-             awaitingDeviceConfirmation ? 'Awaiting Device...' : 
-             hasSubmittedForSession ? 'Already Submitted' : 
-             'Submit Passphrase'}
+            {isSubmitting ? t('passphrase.submitting') : 
+             awaitingDeviceConfirmation ? t('passphrase.awaitingConfirmation') : 
+             hasSubmittedForSession ? t('passphrase.alreadySubmittedButton') : 
+             t('passphrase.buttons.submitPassphrase')}
           </button>
         </div>
       </div>

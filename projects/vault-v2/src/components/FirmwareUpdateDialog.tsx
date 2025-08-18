@@ -11,6 +11,7 @@ import {
 import { FaDownload, FaShieldAlt } from 'react-icons/fa'
 import { useState } from 'react'
 import type { FirmwareCheck } from '../types/device'
+import { useTypedTranslation } from '../hooks/useTypedTranslation'
 
 interface FirmwareUpdateDialogProps {
   isOpen: boolean
@@ -43,6 +44,7 @@ export const FirmwareUpdateDialog = ({
   isLoading = false,
   deviceStatus  // Add deviceStatus prop to access bootloader info
 }: FirmwareUpdateDialogProps) => {
+  const { t } = useTypedTranslation('dialogs')
   const [isUpdating, setIsUpdating] = useState(false)
   
   const handleUpdate = () => {
@@ -66,10 +68,10 @@ export const FirmwareUpdateDialog = ({
         <DialogHeader borderBottomWidth="1px" borderColor="gray.700" pb={4}>
           <DialogTitle color="white" display="flex" alignItems="center" gap={2}>
             <Icon as={FaDownload} color="blue.400" />
-            Firmware Update Available
+            {t('firmwareUpdate.title')}
             {(firmwareCheck.needsUpdate || isOOBBootloader) && (
               <Badge colorScheme={isOOBBootloader ? "red" : "orange"} ml={2}>
-                {isOOBBootloader ? "Critical Update" : "Update Available"}
+                {isOOBBootloader ? t('firmwareUpdate.criticalUpdate') : t('firmwareUpdate.updateAvailable')}
               </Badge>
             )}
           </DialogTitle>
@@ -89,12 +91,12 @@ export const FirmwareUpdateDialog = ({
                 <Icon as={FaShieldAlt} color={isOOBBootloader ? "red.400" : "blue.400"} mt={1} />
                 <Box>
                   <Text fontWeight="bold">
-                    {isOOBBootloader ? "Critical Firmware Update Required" : "New Firmware Available"}
+                    {isOOBBootloader ? t('firmwareUpdate.criticalRequired') : t('firmwareUpdate.newAvailable')}
                   </Text>
                   <Text fontSize="sm" mt={1}>
                     {isOOBBootloader 
-                      ? "Your device has an older bootloader that requires this firmware update for security."
-                      : "Update your KeepKey to get the latest features and security improvements."
+                      ? t('firmwareUpdate.criticalDescription')
+                      : t('firmwareUpdate.description')
                     }
                   </Text>
                 </Box>
@@ -104,12 +106,12 @@ export const FirmwareUpdateDialog = ({
             <VStack align="stretch" gap={3}>
               <HStack justify="space-between">
                 <Box>
-                  <Text fontSize="sm" color="gray.400">Current Version</Text>
+                  <Text fontSize="sm" color="gray.400">{t('firmwareUpdate.currentVersion')}</Text>
                   <Text fontSize="lg" fontWeight="semibold">{firmwareCheck.currentVersion}</Text>
                 </Box>
                 <Icon as={FaDownload} color="gray.600" boxSize={6} />
                 <Box>
-                  <Text fontSize="sm" color="gray.400">New Version</Text>
+                  <Text fontSize="sm" color="gray.400">{t('firmwareUpdate.newVersion')}</Text>
                   <Text fontSize="lg" fontWeight="semibold" color="green.400">
                     {firmwareCheck.latestVersion}
                   </Text>
@@ -117,27 +119,27 @@ export const FirmwareUpdateDialog = ({
               </HStack>
               
               <Box>
-                <Text fontSize="sm" color="gray.400">Estimated Time</Text>
-                <Text>3-5 minutes</Text>
+                <Text fontSize="sm" color="gray.400">{t('firmwareUpdate.estimatedTime')}</Text>
+                <Text>{t('firmwareUpdate.estimatedDuration')}</Text>
               </Box>
             </VStack>
             
             <VStack align="stretch" gap={2} pt={2}>
               <Text fontSize="sm" fontWeight="bold" color={isOOBBootloader ? "red.400" : "yellow.400"}>
-                Important:
+                {t('firmwareUpdate.important')}
               </Text>
               <Text fontSize="sm" color="gray.300">
-                • Do not disconnect your device during the update
+                • {t('firmwareUpdate.warnings.doNotDisconnect')}
               </Text>
               <Text fontSize="sm" color="gray.300">
-                • You may need to re-enter your PIN after the update
+                • {t('firmwareUpdate.warnings.reenterPin')}
               </Text>
               <Text fontSize="sm" color="gray.300">
-                • Your funds and settings will remain safe
+                • {t('firmwareUpdate.warnings.fundsRemainSafe')}
               </Text>
               {isOOBBootloader && (
                 <Text fontSize="sm" color="red.300" fontWeight="bold">
-                  • This update cannot be skipped due to security requirements
+                  • {t('firmwareUpdate.warnings.cannotSkip')}
                 </Text>
               )}
             </VStack>

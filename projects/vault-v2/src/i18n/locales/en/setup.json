@@ -1,0 +1,67 @@
+{
+  "welcome": {
+    "title": "Welcome to KeepKey",
+    "subtitle": "Bitcoin-Only Edition",
+    "description": "The secure hardware wallet focused exclusively on Bitcoin",
+    "settingUp": "Setting up your device..."
+  },
+  "setupMethod": {
+    "title": "Choose Setup Method",
+    "subtitle": "Create a new wallet or restore an existing one",
+    "createWallet": {
+      "title": "Create New Wallet",
+      "description": "Generate a new recovery phrase and set up a fresh wallet",
+      "button": "Create New"
+    },
+    "recoverWallet": {
+      "title": "Recover Wallet",
+      "description": "Restore your wallet using an existing recovery phrase",
+      "button": "Recover Wallet"
+    }
+  },
+  "deviceLabel": {
+    "title": "Name Your Device",
+    "subtitle": "Give your KeepKey a custom name",
+    "placeholder": "Enter device name",
+    "description": "This name will help you identify your device",
+    "button": "Set Name"
+  },
+  "pinSetup": {
+    "title": "Set Up PIN Protection",
+    "subtitle": "Protect your device with a PIN",
+    "description": "A PIN adds an extra layer of security to your device",
+    "createPin": "Create PIN",
+    "skipPin": "Skip for Now",
+    "warning": "Your device will be unprotected without a PIN"
+  },
+  "backup": {
+    "title": "Backup Your Wallet",
+    "subtitle": "Write down your recovery phrase",
+    "description": "This phrase is the only way to recover your wallet if your device is lost or damaged",
+    "warning": "Never share your recovery phrase with anyone",
+    "button": "Show Recovery Phrase",
+    "skipButton": "Skip Backup (Not Recommended)"
+  },
+  "complete": {
+    "title": "Setup Complete!",
+    "subtitle": "Your KeepKey is ready to use",
+    "description": "You can now securely store and manage your Bitcoin",
+    "button": "Start Using KeepKey"
+  },
+  "firmwareUpdate": {
+    "title": "Firmware Update",
+    "subtitle": "Update your device firmware",
+    "checking": "Checking for updates...",
+    "available": "Update available",
+    "updating": "Updating firmware...",
+    "complete": "Update complete",
+    "failed": "Update failed"
+  },
+  "bootloaderUpdate": {
+    "title": "Bootloader Update",
+    "subtitle": "Critical security update",
+    "description": "This update improves device security and stability",
+    "warning": "Do not disconnect your device during the update",
+    "button": "Update Bootloader"
+  }
+}

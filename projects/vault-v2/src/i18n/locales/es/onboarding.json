@@ -1,0 +1,21 @@
+{
+  "language": {
+    "title": "Selecciona tu idioma",
+    "description": "Selecciona tu idioma preferido",
+    "fullDescription": "Elige tu idioma preferido para la aplicación KeepKey Desktop"
+  },
+  "welcome": {
+    "title": "Bienvenido a KeepKey",
+    "subtitle": "Tu viaje hacia la gestión segura de criptomonedas comienza aquí"
+  },
+  "steps": {
+    "language": "Idioma",
+    "app-settings": "Configuración de la aplicación",
+    "pin": "Seguridad",
+    "mnemonics": "Recuperación",
+    "complete": "Completar"
+  },
+  "complete": {
+    "startUsing": "Comenzar a usar KeepKey"
+  }
+}

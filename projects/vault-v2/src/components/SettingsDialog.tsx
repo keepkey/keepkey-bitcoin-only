@@ -10,6 +10,9 @@ import {
 import { LuSettings, LuMonitor, LuCpu, LuNetwork, LuFileText } from 'react-icons/lu'
 import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign, FaDownload, FaTrash, FaSyncAlt, FaSearch, FaFilter, FaFolder } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import { LanguageSwitcher } from './LanguageSwitcher'
+import { useSettings } from '../contexts/SettingsContext'
 
 import { KeepKeyDeviceList } from './KeepKeyDeviceList'
 import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
@@ -38,6 +41,8 @@ interface LogEntry {
 }
 
 export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
+  const { t } = useTranslation(['settings', 'common'])
+  const { currency, numberFormat, setCurrency, setNumberFormat } = useSettings()
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [showBootloaderUpdate, setShowBootloaderUpdate] = useState(false)
   const [showFirmwareUpdate, setShowFirmwareUpdate] = useState(false)
@@ -67,6 +72,8 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
   const [autoRefresh, setAutoRefresh] = useState<boolean>(false)
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  
+  // Currency and format settings are now handled by SettingsContext
   
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info'; visible: boolean }>({
@@ -438,11 +445,11 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     // Format logs to look like terminal output
     if (log.direction === 'REQUEST' || log.direction === 'SEND') {
       // Outgoing requests
-      const requestType = log.request_type || log.message_type || 'Unknown'
+      const requestType = log.request_type || log.message_type || t('settings:logs.unknown')
       return `-> ${requestType}`
     } else if (log.direction === 'RESPONSE' || log.direction === 'RECEIVE') {
       // Incoming responses
-      const requestType = log.request_type || log.message_type || 'Unknown'
+      const requestType = log.request_type || log.message_type || t('settings:logs.unknown')
       const success = log.success !== false ? '✅' : '❌'
       
       // Try to extract meaningful info from the response
@@ -450,9 +457,9 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
       if (log.data) {
         // Handle GetFeatures responses
         if (log.data.features && log.data.features.label) {
-          responseInfo = `${log.data.features.label} v${log.data.features.version || 'Unknown'}`
+          responseInfo = `${log.data.features.label} v${log.data.features.version || t('settings:logs.unknown')}`
         } else if (log.data.status && log.data.status.features && log.data.status.features.label) {
-          responseInfo = `${log.data.status.features.label} v${log.data.status.features.version || 'Unknown'}`
+          responseInfo = `${log.data.status.features.label} v${log.data.status.features.version || t('settings:logs.unknown')}`
         } else if (log.data.response && typeof log.data.response === 'string') {
           // For xpub responses, show truncated version
           if (log.data.response.startsWith('xpub') || log.data.response.startsWith('ypub') || log.data.response.startsWith('zpub')) {
@@ -539,6 +546,17 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     }
   }, [logs, autoRefresh])
   
+  // Save settings functions
+  const handleCurrencyChange = (newCurrency: string) => {
+    setCurrency(newCurrency)
+    showToast(t('settings:messages.saved'), 'success')
+  }
+
+  const handleNumberFormatChange = (newFormat: string) => {
+    setNumberFormat(newFormat)
+    showToast(t('settings:messages.saved'), 'success')
+  }
+
   // Show toast notification
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type, visible: true })
@@ -571,7 +589,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
           }}
         >
           <DialogHeader borderBottomWidth="1px" borderColor="gray.700" pb={4}>
-            <DialogTitle color="white">Settings</DialogTitle>
+            <DialogTitle color="white">{t('settings:title')}</DialogTitle>
             <DialogCloseTrigger color="gray.400" _hover={{ color: "white" }}>
               <FaTimes />
             </DialogCloseTrigger>
@@ -589,7 +607,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   _hover={{ color: "white" }}
                 >
                   <LuSettings size={16} />
-                  General
+                  {t('settings:tabs.general')}
                 </Tabs.Trigger>
                 {/*<Tabs.Trigger */}
                 {/*  value="app"*/}
@@ -639,44 +657,77 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
 
               <Tabs.Content value="general" minHeight="400px" overflowY="auto">
                 <VStack align="stretch" gap={4}>
-                  <Text color="white" fontSize="lg" fontWeight="semibold">General Settings</Text>
+                  <Text color="white" fontSize="lg" fontWeight="semibold">{t('settings:general.title')}</Text>
                   
                   {/* Language Settings */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={3}>
                       <HStack gap={2}>
-                        <FaGlobe color="gray.500" />
-                        <Text color="gray.400" fontWeight="medium">Language Settings</Text>
-                        <FaLock color="gray.500" size={12} />
+                        <FaGlobe color="green.400" />
+                        <Text color="white" fontWeight="medium">{t('settings:general.language.label')}</Text>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">Display Language</Text>
-                        <Text color="gray.500" fontSize="sm">English (Locked)</Text>
+                        <Text color="gray.300" fontSize="sm">{t('settings:general.language.label')}</Text>
+                        <LanguageSwitcher />
                       </HStack>
-                      <Text color="gray.500" fontSize="xs">
-                        Language selection will be available in a future update
+                      <Text color="gray.400" fontSize="xs">
+                        {t('settings:general.language.description')}
                       </Text>
                     </VStack>
                   </Box>
 
                   {/* Currency Settings */}
-                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700" opacity={0.6}>
+                  <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={3}>
                       <HStack gap={2}>
-                        <FaDollarSign color="gray.500" />
-                        <Text color="gray.400" fontWeight="medium">Currency & Format Settings</Text>
-                        <FaLock color="gray.500" size={12} />
+                        <FaDollarSign color="green.400" />
+                        <Text color="white" fontWeight="medium">{t('settings:general.currency.label')}</Text>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">Primary Currency</Text>
-                        <Text color="gray.500" fontSize="sm">USD (Locked)</Text>
+                        <Text color="gray.300" fontSize="sm">{t('settings:general.currency.label')}</Text>
+                        <select
+                          value={currency}
+                          onChange={(e) => handleCurrencyChange(e.target.value)}
+                          style={{
+                            backgroundColor: '#2D3748',
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #4A5568',
+                            fontSize: '14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="USD">{t('settings:general.currency.usd')}</option>
+                          <option value="EUR">{t('settings:general.currency.eur')}</option>
+                          <option value="GBP">{t('settings:general.currency.gbp')}</option>
+                          <option value="JPY">{t('settings:general.currency.jpy')}</option>
+                          <option value="CNY">{t('settings:general.currency.cny')}</option>
+                        </select>
                       </HStack>
                       <HStack justify="space-between" align="center">
-                        <Text color="gray.400" fontSize="sm">Number Format</Text>
-                        <Text color="gray.500" fontSize="sm">1,000.00 (Locked)</Text>
+                        <Text color="gray.300" fontSize="sm">Number Format</Text>
+                        <select
+                          value={numberFormat}
+                          onChange={(e) => handleNumberFormatChange(e.target.value)}
+                          style={{
+                            backgroundColor: '#2D3748',
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #4A5568',
+                            fontSize: '14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="1,000.00">1,000.00 (US)</option>
+                          <option value="1.000,00">1.000,00 (EU)</option>
+                          <option value="1 000,00">1 000,00 (FR)</option>
+                          <option value="1,000">1,000 (No decimals)</option>
+                        </select>
                       </HStack>
-                      <Text color="gray.500" fontSize="xs">
-                        Currency and formatting options will be available in a future update
+                      <Text color="gray.400" fontSize="xs">
+                        {t('settings:general.currency.description')}
                       </Text>
                     </VStack>
                   </Box>
@@ -743,7 +794,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     >
                       <HStack gap={1}>
                         <FaSyncAlt />
-                        <Text>{autoRefresh ? 'Stop Auto' : 'Auto Refresh'}</Text>
+                        <Text>{autoRefresh ? t('settings:logs.stopAuto') : t('settings:logs.autoRefresh')}</Text>
                       </HStack>
                     </Button>
                     <Button
@@ -755,7 +806,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     >
                       <HStack gap={1}>
                         <FaSyncAlt />
-                        <Text>{isLoadingLogs ? 'Loading...' : 'Refresh'}</Text>
+                        <Text>{isLoadingLogs ? t('settings:logs.loading') : t('settings:logs.refresh')}</Text>
                       </HStack>
                     </Button>
                     <Button
@@ -771,7 +822,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                         ) : (
                           <FaDownload />
                         )}
-                        <Text>{isDownloading ? 'Copying...' : 'Save Logs'}</Text>
+                        <Text>{isDownloading ? t('settings:logs.copying') : t('settings:logs.saveLogs')}</Text>
                       </HStack>
                     </Button>
                     <Button
@@ -959,9 +1010,9 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   <Box bg="gray.800" p={4} borderRadius="md" border="1px solid" borderColor="gray.700">
                     <VStack align="stretch" gap={3}>
                       <VStack align="start" gap={1}>
-                        <Text color="white" fontWeight="medium" fontSize="lg">Enable REST & MCP APIs</Text>
+                        <Text color="white" fontWeight="medium" fontSize="lg">{t('settings:api.enableTitle')}</Text>
                         <Text color="gray.400" fontSize="sm">
-                          Allow external applications and AI assistants to connect
+                          {t('settings:api.enableDescription')}
                         </Text>
                       </VStack>
                       <HStack justify="space-between" align="center">
@@ -972,7 +1023,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                             fontSize="sm" 
                             fontWeight="medium"
                           >
-                            {apiStatus?.running ? "Running" : "Stopped"}
+                            {apiStatus?.running ? t('settings:api.running') : t('settings:api.stopped')}
                           </Text>
                         </HStack>
                         <Button
@@ -983,7 +1034,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                           disabled={isTogglingApi}
                           minW="80px"
                         >
-                          {apiEnabled ? "Disable" : "Enable"}
+                          {apiEnabled ? t('settings:api.disable') : t('settings:api.enable')}
                         </Button>
                       </HStack>
                     </VStack>
@@ -1115,7 +1166,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     opacity={apiEnabled ? 1 : 0.5}
                   >
                     <VStack align="stretch" gap={3}>
-                      <Text color="white" fontWeight="medium">Service Status</Text>
+                      <Text color="white" fontWeight="medium">{t('settings:api.serviceStatus')}</Text>
                       <HStack justify="space-between" align="center">
                         <Text color="gray.300" fontSize="sm">API Server</Text>
                         <HStack gap={2}>
@@ -1125,7 +1176,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                             fontSize="sm" 
                             fontWeight="medium"
                           >
-                            {apiStatus?.running ? "Running" : "Stopped"}
+                            {apiStatus?.running ? t('settings:api.running') : t('settings:api.stopped')}
                           </Text>
                         </HStack>
                       </HStack>
@@ -1235,7 +1286,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                     <Text fontSize="sm">5. Release the button and try the update again</Text>
                   </VStack>
                   
-                  <Text fontSize="sm" color="gray.400">Device ID: {selectedDeviceId || 'Unknown'}</Text>
+                  <Text fontSize="sm" color="gray.400">Device ID: {selectedDeviceId || t('settings:logs.unknown')}</Text>
                 </VStack>
               </DialogBody>
               <Box borderTopWidth="1px" borderColor="gray.700" pt={4} mt={4}>

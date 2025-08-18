@@ -1,0 +1,57 @@
+{
+  "types": {
+    "send": "Envoyer",
+    "receive": "Recevoir",
+    "swap": "Échanger",
+    "contract": "Contrat"
+  },
+  "status": {
+    "pending": "En attente",
+    "confirming": "En cours de confirmation",
+    "confirmed": "Confirmée",
+    "failed": "Échouée",
+    "cancelled": "Annulée",
+    "replaced": "Remplacée"
+  },
+  "details": {
+    "hash": "Hash de transaction",
+    "from": "De",
+    "to": "À",
+    "amount": "Montant",
+    "fee": "Frais",
+    "total": "Total",
+    "confirmations": "Confirmations",
+    "block": "Bloc",
+    "nonce": "Nonce",
+    "gasUsed": "Gas utilisé",
+    "gasPrice": "Prix du gas",
+    "timestamp": "Horodatage",
+    "memo": "Mémo"
+  },
+  "actions": {
+    "view": "Voir les détails",
+    "copy": "Copier le hash",
+    "explorer": "Voir dans l'explorateur",
+    "speedUp": "Accélérer",
+    "cancel": "Annuler",
+    "retry": "Réessayer"
+  },
+  "messages": {
+    "broadcasting": "Diffusion de la transaction...",
+    "waitingConfirmation": "En attente de confirmation...",
+    "confirmed": "Transaction confirmée",
+    "failed": "La transaction a échoué",
+    "replaced": "Transaction remplacée par une nouvelle"
+  },
+  "fee": {
+    "priority": {
+      "low": "Faible",
+      "medium": "Moyen",
+      "high": "Élevé",
+      "custom": "Personnalisé"
+    },
+    "estimated": "Frais estimés",
+    "total": "Total avec frais",
+    "rate": "Taux de frais"
+  }
+}

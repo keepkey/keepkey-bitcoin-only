@@ -1,0 +1,120 @@
+{
+  "creation": {
+    "title": "Créer un nouveau portefeuille",
+    "subtitle": "Configurer un nouveau portefeuille sur votre KeepKey"
+  },
+  "portfolio": {
+    "title": "Portefeuille",
+    "totalBalance": "Solde total",
+    "availableBalance": "Solde disponible",
+    "balance": "Solde",
+    "loading": "Chargement du portefeuille...",
+    "fetchingKeys": "Récupération des clés de l'appareil...",
+    "syncing": "Synchronisation avec votre KeepKey",
+    "takingLonger": "Cela prend plus de temps que d'habitude...",
+    "readyToStart": "Prêt à commencer?",
+    "connectDevice": "Assurez-vous que votre KeepKey est connecté et déverrouillé",
+    "pressToStart": "Appuyez ici pour commencer! 🚀"
+  },
+  "assets": {
+    "title": "Actifs",
+    "bitcoin": "Bitcoin"
+  },
+  "send": {
+    "title": "Envoyer",
+    "recipient": "Destinataire",
+    "amount": "Montant",
+    "fee": "Frais",
+    "total": "Total",
+    "confirm": "Confirmer l'envoi",
+    "sending": "Envoi en cours...",
+    "success": "Transaction envoyée avec succès",
+    "error": "Erreur lors de l'envoi"
+  },
+  "receive": {
+    "title": "Recevoir",
+    "titleBitcoin": "Recevoir Bitcoin",
+    "subtitle": "Générer une adresse pour recevoir des fonds",
+    "generateReceiveAddress": "Générer une Adresse de Réception",
+    "generateAddressDescription": "Générez une adresse Bitcoin pour recevoir des paiements. Cette adresse sera liée à votre appareil KeepKey.",
+    "selectAsset": "Sélectionner un Actif",
+    "generateAddress": "Générer une Adresse",
+    "generateNew": "Générer une Nouvelle",
+    "generatingAddress": "Génération de l'Adresse...",
+    "generatingAddressHint": "Veuillez confirmer sur votre appareil KeepKey",
+    "address": "Adresse",
+    "bitcoinAddress": "Adresse Bitcoin",
+    "amount": "Montant (optionnel)",
+    "description": "Description (optionnelle)",
+    "copyAddress": "Copier l'Adresse",
+    "addressCopied": "Copié!",
+    "showQR": "Afficher le Code QR",
+    "verifyOnDevice": "Vérifier sur l'Appareil",
+    "verified": "Adresse vérifiée",
+    "addressGenerated": "Adresse de Réception Générée",
+    "useThisAddress": "Utilisez cette adresse pour recevoir des paiements Bitcoin",
+    "failed": "Échec de la génération de l'adresse",
+    "failedNoResponse": "Échec de la génération de l'adresse - aucune réponse de l'appareil",
+    "failedEnsureConnected": "Échec de la génération de l'adresse de réception. Assurez-vous que votre appareil est connecté et déverrouillé.",
+    "noAssetFound": "Actif Bitcoin non trouvé dans le portefeuille. Veuillez synchroniser votre appareil ou vérifier la configuration de votre portefeuille.",
+    "noBitcoinAsset": "Aucun actif Bitcoin trouvé dans le portefeuille",
+    "loadingWallet": "Chargement du Portefeuille...",
+    "backToVault": "Retour au Vault",
+    "goBack": "Retour",
+    "addressType": {
+      "label": "Type d'Adresse",
+      "legacy": "Legacy (P2PKH)",
+      "segwit": "SegWit (P2SH-P2WPKH)",
+      "nativeSegwit": "SegWit Natif (P2WPKH)"
+    },
+    "derivationPath": "Chemin de Dérivation",
+    "scriptType": "Type de Script",
+    "scriptTypeInfo": {
+      "legacy": "Paiement-à-Hash-de-Clé-Publique (P2PKH)",
+      "segwit": "Paiement-à-Hash-de-Script avec Témoin enveloppé (P2SH-P2WPKH)",
+      "nativeSegwit": "Paiement-à-Hash-de-Clé-Publique-Témoin (P2WPKH)"
+    },
+    "addressFormat": "Format d'Adresse",
+    "addressFormatInfo": {
+      "legacy": "Commence par 1",
+      "segwit": "Commence par 3",
+      "nativeSegwit": "Commence par bc1"
+    },
+    "advancedView": "Vue Avancée",
+    "technicalDetails": "Détails Techniques",
+    "accountExtendedPublicKey": "Clé Publique Étendue du Compte",
+    "path": "Chemin",
+    "generatedBy": "Généré Par",
+    "keepKeyDevice": "Appareil KeepKey",
+    "hardwareWallet": "Portefeuille Matériel",
+    "copy": "Copier",
+    "retry": "Réessayer",
+    "timeout": {
+      "message": "Cela prend plus de temps que d'habitude. Votre appareil peut nécessiter votre attention.",
+      "icon": "⏱️"
+    },
+    "error": {
+      "icon": "⚠️"
+    },
+    "success": {
+      "icon": "✅"
+    },
+    "info": {
+      "addressDerivation": "Cette adresse est dérivée de la phrase de récupération de votre portefeuille matériel en utilisant les standards BIP44/49/84. Chaque adresse est unique et ne peut être dépensée que par votre appareil KeepKey.",
+      "icon": "💡"
+    },
+    "security": {
+      "verifyAddress": "Vérifiez toujours votre adresse sur l'appareil avant d'envoyer des fonds!",
+      "icon": "🔒"
+    }
+  },
+  "transactions": {
+    "title": "Transactions",
+    "history": "Historique",
+    "pending": "En attente",
+    "confirmed": "Confirmées",
+    "failed": "Échouées",
+    "noTransactions": "Aucune transaction",
+    "details": "Détails de la transaction"
+  }
+}

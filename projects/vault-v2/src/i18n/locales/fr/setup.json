@@ -1,0 +1,67 @@
+{
+  "welcome": {
+    "title": "Bienvenue sur KeepKey",
+    "subtitle": "Édition Bitcoin Uniquement",
+    "description": "Le portefeuille matériel sécurisé exclusivement dédié au Bitcoin",
+    "settingUp": "Configuration de votre appareil..."
+  },
+  "setupMethod": {
+    "title": "Choisir la Méthode de Configuration",
+    "subtitle": "Créer un nouveau portefeuille ou restaurer un existant",
+    "createWallet": {
+      "title": "Créer un Nouveau Portefeuille",
+      "description": "Générer une nouvelle phrase de récupération et configurer un nouveau portefeuille",
+      "button": "Créer Nouveau"
+    },
+    "recoverWallet": {
+      "title": "Récupérer un Portefeuille",
+      "description": "Restaurer votre portefeuille avec une phrase de récupération existante",
+      "button": "Récupérer Portefeuille"
+    }
+  },
+  "deviceLabel": {
+    "title": "Nommer Votre Appareil",
+    "subtitle": "Donnez un nom personnalisé à votre KeepKey",
+    "placeholder": "Entrer le nom de l'appareil",
+    "description": "Ce nom vous aidera à identifier votre appareil",
+    "button": "Définir le Nom"
+  },
+  "pinSetup": {
+    "title": "Configurer la Protection par PIN",
+    "subtitle": "Protégez votre appareil avec un PIN",
+    "description": "Un PIN ajoute une couche supplémentaire de sécurité à votre appareil",
+    "createPin": "Créer un PIN",
+    "skipPin": "Ignorer pour le Moment",
+    "warning": "Votre appareil sera non protégé sans PIN"
+  },
+  "backup": {
+    "title": "Sauvegarder Votre Portefeuille",
+    "subtitle": "Notez votre phrase de récupération",
+    "description": "Cette phrase est le seul moyen de récupérer votre portefeuille si votre appareil est perdu ou endommagé",
+    "warning": "Ne partagez jamais votre phrase de récupération avec qui que ce soit",
+    "button": "Afficher la Phrase de Récupération",
+    "skipButton": "Ignorer la Sauvegarde (Non Recommandé)"
+  },
+  "complete": {
+    "title": "Configuration Terminée !",
+    "subtitle": "Votre KeepKey est prêt à l'emploi",
+    "description": "Vous pouvez maintenant stocker et gérer votre Bitcoin en toute sécurité",
+    "button": "Commencer à Utiliser KeepKey"
+  },
+  "firmwareUpdate": {
+    "title": "Mise à Jour du Firmware",
+    "subtitle": "Mettre à jour le firmware de votre appareil",
+    "checking": "Recherche de mises à jour...",
+    "available": "Mise à jour disponible",
+    "updating": "Mise à jour du firmware...",
+    "complete": "Mise à jour terminée",
+    "failed": "Échec de la mise à jour"
+  },
+  "bootloaderUpdate": {
+    "title": "Mise à Jour du Chargeur de Démarrage",
+    "subtitle": "Mise à jour de sécurité critique",
+    "description": "Cette mise à jour améliore la sécurité et la stabilité de l'appareil",
+    "warning": "Ne déconnectez pas votre appareil pendant la mise à jour",
+    "button": "Mettre à Jour le Chargeur de Démarrage"
+  }
+}

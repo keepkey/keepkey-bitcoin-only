@@ -1,0 +1,6 @@
+{
+  "status": {
+    "connected": "Conectado",
+    "disconnected": "Desconectado"
+  }
+}

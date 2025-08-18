@@ -1,0 +1,116 @@
+{
+  "title": "Configuración",
+  "subtitle": "Administra tus preferencias y configuración del dispositivo",
+  "tabs": {
+    "general": "General",
+    "security": "Seguridad",
+    "advanced": "Avanzado",
+    "about": "Acerca de",
+    "device": "Dispositivo",
+    "network": "Red",
+    "backup": "Copia de seguridad"
+  },
+  "general": {
+    "title": "Configuración General",
+    "language": {
+      "label": "Idioma de visualización",
+      "description": "Elige tu idioma preferido para la interfaz"
+    },
+    "theme": {
+      "label": "Tema",
+      "description": "Elige entre modo claro y oscuro",
+      "light": "Claro",
+      "dark": "Oscuro",
+      "system": "Sistema"
+    },
+    "currency": {
+      "label": "Moneda principal",
+      "description": "Muestra valores en tu moneda preferida",
+      "usd": "Dólar estadounidense (USD)",
+      "eur": "Euro (EUR)",
+      "gbp": "Libra esterlina (GBP)",
+      "jpy": "Yen japonés (JPY)",
+      "cny": "Yuan chino (CNY)"
+    },
+    "autoRefresh": {
+      "label": "Actualización automática",
+      "description": "Actualizar automáticamente los datos del portafolio",
+      "interval": "Intervalo de actualización (segundos)"
+    },
+    "notifications": {
+      "label": "Notificaciones",
+      "description": "Activar notificaciones del escritorio",
+      "transactions": "Notificaciones de transacciones",
+      "updates": "Notificaciones de actualización",
+      "security": "Alertas de seguridad"
+    }
+  },
+  "security": {
+    "title": "Configuración de Seguridad",
+    "pin": {
+      "label": "Configuración de PIN",
+      "description": "Administra el PIN de tu dispositivo",
+      "change": "Cambiar PIN",
+      "remove": "Eliminar PIN",
+      "set": "Establecer PIN",
+      "current": "PIN actual",
+      "new": "Nuevo PIN",
+      "confirm": "Confirmar PIN"
+    },
+    "passphrase": {
+      "label": "Frase de contraseña",
+      "description": "Capa adicional de seguridad para tu billetera",
+      "enable": "Activar frase de contraseña",
+      "disable": "Desactivar frase de contraseña",
+      "warning": "Advertencia: Las frases de contraseña no se pueden recuperar si se olvidan"
+    },
+    "autoLock": {
+      "label": "Bloqueo automático",
+      "description": "Bloquear automáticamente el dispositivo después de inactividad",
+      "never": "Nunca",
+      "1min": "1 minuto",
+      "5min": "5 minutos",
+      "10min": "10 minutos",
+      "30min": "30 minutos"
+    },
+    "wipeDevice": {
+      "label": "Limpiar dispositivo",
+      "description": "Eliminar todos los datos de tu dispositivo",
+      "button": "Limpiar dispositivo",
+      "warning": "¡Esto eliminará todos los datos en tu dispositivo!"
+    }
+  },
+  "actions": {
+    "save": "Guardar configuración",
+    "reset": "Restablecer valores predeterminados",
+    "cancel": "Cancelar cambios",
+    "apply": "Aplicar cambios"
+  },
+  "logs": {
+    "title": "Registros del Dispositivo",
+    "autoRefresh": "Actualización Automática",
+    "stopAuto": "Detener Auto",
+    "refresh": "Actualizar",
+    "loading": "Cargando...",
+    "saveLogs": "Guardar Registros",
+    "copying": "Copiando...",
+    "unknown": "Desconocido"
+  },
+  "api": {
+    "title": "Acceso MCP y API",
+    "enableTitle": "Habilitar APIs REST y MCP",
+    "enableDescription": "Permitir que aplicaciones externas y asistentes de IA se conecten",
+    "enable": "Habilitar",
+    "disable": "Deshabilitar",
+    "running": "Ejecutándose",
+    "stopped": "Detenido",
+    "serviceStatus": "Estado del Servicio",
+    "restartRequired": "Se requiere reiniciar para aplicar los cambios"
+  },
+  "messages": {
+    "saved": "Configuración guardada exitosamente",
+    "reset": "Configuración restablecida a valores predeterminados",
+    "error": "Error al guardar la configuración",
+    "restartRequired": "Se requiere reiniciar para que los cambios surtan efecto"
+  }
+}

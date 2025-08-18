@@ -1,0 +1,67 @@
+{
+  "welcome": {
+    "title": "Bienvenido a KeepKey",
+    "subtitle": "Edición Solo Bitcoin",
+    "description": "La billetera de hardware segura enfocada exclusivamente en Bitcoin",
+    "settingUp": "Configurando tu dispositivo..."
+  },
+  "setupMethod": {
+    "title": "Elige el Método de Configuración",
+    "subtitle": "Crea una nueva billetera o restaura una existente",
+    "createWallet": {
+      "title": "Crear Nueva Billetera",
+      "description": "Genera una nueva frase de recuperación y configura una billetera nueva",
+      "button": "Crear Nueva"
+    },
+    "recoverWallet": {
+      "title": "Recuperar Billetera",
+      "description": "Restaura tu billetera usando una frase de recuperación existente",
+      "button": "Recuperar Billetera"
+    }
+  },
+  "deviceLabel": {
+    "title": "Nombra Tu Dispositivo",
+    "subtitle": "Dale a tu KeepKey un nombre personalizado",
+    "placeholder": "Ingresa el nombre del dispositivo",
+    "description": "Este nombre te ayudará a identificar tu dispositivo",
+    "button": "Establecer Nombre"
+  },
+  "pinSetup": {
+    "title": "Configurar Protección con PIN",
+    "subtitle": "Protege tu dispositivo con un PIN",
+    "description": "Un PIN añade una capa extra de seguridad a tu dispositivo",
+    "createPin": "Crear PIN",
+    "skipPin": "Omitir por Ahora",
+    "warning": "Tu dispositivo estará desprotegido sin un PIN"
+  },
+  "backup": {
+    "title": "Respalda Tu Billetera",
+    "subtitle": "Anota tu frase de recuperación",
+    "description": "Esta frase es la única forma de recuperar tu billetera si tu dispositivo se pierde o daña",
+    "warning": "Nunca compartas tu frase de recuperación con nadie",
+    "button": "Mostrar Frase de Recuperación",
+    "skipButton": "Omitir Respaldo (No Recomendado)"
+  },
+  "complete": {
+    "title": "¡Configuración Completa!",
+    "subtitle": "Tu KeepKey está listo para usar",
+    "description": "Ahora puedes almacenar y administrar tu Bitcoin de forma segura",
+    "button": "Comenzar a Usar KeepKey"
+  },
+  "firmwareUpdate": {
+    "title": "Actualización de Firmware",
+    "subtitle": "Actualiza el firmware de tu dispositivo",
+    "checking": "Buscando actualizaciones...",
+    "available": "Actualización disponible",
+    "updating": "Actualizando firmware...",
+    "complete": "Actualización completa",
+    "failed": "Actualización fallida"
+  },
+  "bootloaderUpdate": {
+    "title": "Actualización del Cargador de Arranque",
+    "subtitle": "Actualización crítica de seguridad",
+    "description": "Esta actualización mejora la seguridad y estabilidad del dispositivo",
+    "warning": "No desconectes tu dispositivo durante la actualización",
+    "button": "Actualizar Cargador de Arranque"
+  }
+}

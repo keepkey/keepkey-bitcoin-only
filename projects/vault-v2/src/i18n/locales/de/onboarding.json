@@ -1,0 +1,118 @@
+{
+  "welcome": {
+    "title": "Willkommen bei KeepKey Vault",
+    "subtitle": "Lassen Sie uns Ihre sichere Bitcoin-Wallet einrichten",
+    "getStarted": "Loslegen"
+  },
+  "setup": {
+    "title": "Einrichtung",
+    "newWallet": "Neue Wallet erstellen",
+    "importWallet": "Bestehende Wallet importieren",
+    "connectDevice": "KeepKey verbinden"
+  },
+  "device": {
+    "connect": {
+      "title": "Verbinden Sie Ihren KeepKey",
+      "instructions": "Schließen Sie Ihr KeepKey-Gerät über USB an, um fortzufahren",
+      "waiting": "Warte auf Gerät...",
+      "detected": "KeepKey erkannt!",
+      "notDetected": "Gerät nicht erkannt",
+      "troubleshoot": "Fehlerbehebung"
+    },
+    "initialize": {
+      "title": "KeepKey initialisieren",
+      "description": "Ihr Gerät muss vor der Verwendung eingerichtet werden",
+      "start": "Initialisierung starten"
+    },
+    "unlock": {
+      "title": "KeepKey entsperren",
+      "enterPin": "Geben Sie Ihre PIN auf dem Gerät ein",
+      "waiting": "Warte auf PIN..."
+    }
+  },
+  "seed": {
+    "create": {
+      "title": "Wiederherstellungsphrase erstellen",
+      "description": "Ihre Wiederherstellungsphrase ist die Sicherung Ihrer Wallet",
+      "warning": "Schreiben Sie diese Wörter in der richtigen Reihenfolge auf und bewahren Sie sie sicher auf",
+      "generate": "Phrase generieren"
+    },
+    "import": {
+      "title": "Wiederherstellungsphrase importieren",
+      "description": "Geben Sie Ihre bestehende Wiederherstellungsphrase ein",
+      "wordCount": "Anzahl der Wörter",
+      "enterWords": "Wörter eingeben",
+      "word": "Wort",
+      "verify": "Phrase überprüfen"
+    },
+    "backup": {
+      "title": "Sichern Sie Ihre Phrase",
+      "instruction1": "Schreiben Sie diese {{count}} Wörter in der exakten Reihenfolge auf",
+      "instruction2": "Bewahren Sie sie an einem sicheren und geheimen Ort auf",
+      "instruction3": "Teilen Sie Ihre Phrase niemals mit anderen",
+      "written": "Ich habe meine Wiederherstellungsphrase aufgeschrieben"
+    },
+    "verify": {
+      "title": "Überprüfen Sie Ihre Sicherung",
+      "description": "Bestätigen Sie, dass Sie Ihre Phrase korrekt gesichert haben",
+      "enterWord": "Geben Sie Wort #{{position}} ein",
+      "correct": "Korrekt!",
+      "incorrect": "Falsch, bitte erneut versuchen"
+    }
+  },
+  "pin": {
+    "create": {
+      "title": "PIN erstellen",
+      "description": "Ihre PIN schützt den Zugriff auf Ihr Gerät",
+      "enter": "PIN eingeben",
+      "confirm": "PIN bestätigen",
+      "mismatch": "PINs stimmen nicht überein"
+    },
+    "change": {
+      "title": "PIN ändern",
+      "current": "Aktuelle PIN",
+      "new": "Neue PIN",
+      "confirm": "Neue PIN bestätigen"
+    }
+  },
+  "wallet": {
+    "name": {
+      "title": "Benennen Sie Ihre Wallet",
+      "description": "Geben Sie Ihrer Wallet einen Namen zur einfachen Identifizierung",
+      "placeholder": "Meine Bitcoin-Wallet",
+      "continue": "Weiter"
+    },
+    "type": {
+      "title": "Wallet-Typ",
+      "standard": "Standard",
+      "segwit": "SegWit (Empfohlen)",
+      "native": "Native SegWit"
+    }
+  },
+  "complete": {
+    "title": "Einrichtung abgeschlossen!",
+    "message": "Ihr KeepKey ist einsatzbereit",
+    "dashboard": "Zum Dashboard"
+  },
+  "steps": {
+    "welcome": "Willkommen",
+    "connect": "Verbinden",
+    "setup": "Einrichten",
+    "backup": "Sichern",
+    "verify": "Überprüfen",
+    "secure": "Sichern",
+    "complete": "Fertig"
+  },
+  "errors": {
+    "deviceNotFound": "KeepKey-Gerät nicht gefunden",
+    "connectionFailed": "Verbindung zum Gerät fehlgeschlagen",
+    "initializationFailed": "Initialisierung fehlgeschlagen",
+    "invalidSeed": "Ungültige Wiederherstellungsphrase",
+    "pinFailed": "PIN-Erstellung fehlgeschlagen"
+  },
+  "warnings": {
+    "seedBackup": "Stellen Sie sicher, dass Sie Ihre Wiederherstellungsphrase sicher gesichert haben",
+    "noRecovery": "Ohne Ihre Wiederherstellungsphrase können Sie Ihre Wallet nicht wiederherstellen",
+    "keepSecret": "Teilen Sie niemals Ihre Wiederherstellungsphrase oder PIN mit anderen"
+  }
+}

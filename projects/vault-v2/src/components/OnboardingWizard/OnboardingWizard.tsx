@@ -11,6 +11,7 @@ import { useState } from "react";
 import { FaCheckCircle } from "react-icons/fa";
 import { invoke } from "@tauri-apps/api/core";
 import { useDialog } from "../../contexts/DialogContext";
+import { useTranslation } from "react-i18next";
 
 // Import individual steps
 import { Step0Language } from "./steps/Step0Language";
@@ -68,6 +69,14 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
   const [currentStep, setCurrentStep] = useState(0);
   const highlightColor = "green.500";
   const { hide } = useDialog();
+  const { t } = useTranslation(['onboarding', 'common']);
+
+  // Override STEPS with translated values
+  const translatedSteps = STEPS.map(step => ({
+    ...step,
+    label: t(`onboarding:steps.${step.id}`, step.label),
+    description: t(`onboarding:${step.id}.description`, step.description)
+  }));
 
   const handleNext = () => {
     if (currentStep < STEPS.length - 1) {
@@ -143,10 +152,10 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
         >
           <VStack gap={4}>
             <Text fontSize="2xl" fontWeight="bold" color={highlightColor}>
-              KeepKey Desktop Setup
+              {t('onboarding:welcome.title')}
             </Text>
             <Text fontSize="md" color="gray.400">
-              {STEPS[currentStep].description}
+              {translatedSteps[currentStep].description}
             </Text>
           </VStack>
         </Box>
@@ -171,7 +180,7 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
 
         {/* Step indicators */}
         <HStack gap={4} justify="center" p={4}>
-          {STEPS.map((step, index) => (
+          {translatedSteps.map((step, index) => (
             <Flex key={step.id} align="center">
               <Box
                 w={8}
@@ -228,7 +237,7 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
         <Box p={6} borderTopWidth="1px" borderColor="gray.700" bg="gray.850">
           <HStack justify="space-between">
             <Text fontSize="sm" color="gray.400">
-              Step {currentStep + 1} of {STEPS.length}
+              {t('common:labels.step')} {currentStep + 1} {t('common:labels.of')} {STEPS.length}
             </Text>
             <HStack gap={4}>
               <Button
@@ -239,14 +248,14 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
                 color="gray.300"
                 _hover={{ bg: "gray.700" }}
               >
-                Previous
+                {t('common:buttons.back')}
               </Button>
               <Button
                 colorScheme="green"
                 onClick={handleNext}
                 size="lg"
               >
-                {currentStep === STEPS.length - 1 ? "Complete Setup" : "Next"}
+                {currentStep === STEPS.length - 1 ? t('onboarding:complete.startUsing') : t('common:buttons.next')}
               </Button>
             </HStack>
           </HStack>

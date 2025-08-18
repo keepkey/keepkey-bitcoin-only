@@ -1,0 +1,57 @@
+{
+  "types": {
+    "send": "Senden",
+    "receive": "Empfangen",
+    "swap": "Tauschen",
+    "contract": "Vertrag"
+  },
+  "status": {
+    "pending": "Ausstehend",
+    "confirming": "Wird bestätigt",
+    "confirmed": "Bestätigt",
+    "failed": "Fehlgeschlagen",
+    "cancelled": "Abgebrochen",
+    "replaced": "Ersetzt"
+  },
+  "details": {
+    "hash": "Transaktions-Hash",
+    "from": "Von",
+    "to": "An",
+    "amount": "Betrag",
+    "fee": "Gebühr",
+    "total": "Gesamt",
+    "confirmations": "Bestätigungen",
+    "block": "Block",
+    "nonce": "Nonce",
+    "gasUsed": "Gas verwendet",
+    "gasPrice": "Gas-Preis",
+    "timestamp": "Zeitstempel",
+    "memo": "Memo"
+  },
+  "actions": {
+    "view": "Details anzeigen",
+    "copy": "Hash kopieren",
+    "explorer": "Im Explorer anzeigen",
+    "speedUp": "Beschleunigen",
+    "cancel": "Abbrechen",
+    "retry": "Wiederholen"
+  },
+  "messages": {
+    "broadcasting": "Transaktion wird übertragen...",
+    "waitingConfirmation": "Warte auf Bestätigung...",
+    "confirmed": "Transaktion bestätigt",
+    "failed": "Transaktion fehlgeschlagen",
+    "replaced": "Transaktion durch eine neue ersetzt"
+  },
+  "fee": {
+    "priority": {
+      "low": "Niedrig",
+      "medium": "Mittel",
+      "high": "Hoch",
+      "custom": "Benutzerdefiniert"
+    },
+    "estimated": "Geschätzte Gebühren",
+    "total": "Gesamt mit Gebühren",
+    "rate": "Gebührensatz"
+  }
+}

@@ -3822,6 +3822,16 @@ pub async fn send_passphrase(
         }
         Err(e) => {
             log::error!("Failed to send passphrase for device {}: {}", device_id, e);
+            
+            // Clear the passphrase request state for this device on error to prevent stuck state
+            {
+                let mut passphrase_state = super::device::queue::PASSPHRASE_REQUEST_STATE.write().await;
+                if let Some(removed) = passphrase_state.remove(&device_id) {
+                    log::info!("🔓 Cleared passphrase request state for device {} due to error (was request_id: {})", 
+                        device_id, removed.request_id);
+                }
+            }
+            
             Err(format!("Failed to send passphrase: {}", e))
         }
     }
