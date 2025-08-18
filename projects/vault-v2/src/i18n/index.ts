@@ -10,6 +10,7 @@ import enErrors from './locales/en/errors.json';
 import enDevice from './locales/en/device.json';
 import enWallet from './locales/en/wallet.json';
 import enTransaction from './locales/en/transaction.json';
+import enDialogs from './locales/en/dialogs.json';
 
 // Spanish translations
 import esCommon from './locales/es/common.json';
@@ -19,6 +20,7 @@ import esErrors from './locales/es/errors.json';
 import esDevice from './locales/es/device.json';
 import esWallet from './locales/es/wallet.json';
 import esTransaction from './locales/es/transaction.json';
+import esDialogs from './locales/es/dialogs.json';
 
 // French translations
 import frCommon from './locales/fr/common.json';
@@ -28,6 +30,7 @@ import frErrors from './locales/fr/errors.json';
 import frDevice from './locales/fr/device.json';
 import frWallet from './locales/fr/wallet.json';
 import frTransaction from './locales/fr/transaction.json';
+import frDialogs from './locales/fr/dialogs.json';
 
 // German translations
 import deCommon from './locales/de/common.json';
@@ -37,6 +40,7 @@ import deErrors from './locales/de/errors.json';
 import deDevice from './locales/de/device.json';
 import deWallet from './locales/de/wallet.json';
 import deTransaction from './locales/de/transaction.json';
+import deDialogs from './locales/de/dialogs.json';
 
 const resources = {
   en: {
@@ -47,6 +51,7 @@ const resources = {
     device: enDevice,
     wallet: enWallet,
     transaction: enTransaction,
+    dialogs: enDialogs,
   },
   es: {
     common: esCommon,
@@ -56,6 +61,7 @@ const resources = {
     device: esDevice,
     wallet: esWallet,
     transaction: esTransaction,
+    dialogs: esDialogs,
   },
   fr: {
     common: frCommon,
@@ -65,6 +71,7 @@ const resources = {
     device: frDevice,
     wallet: frWallet,
     transaction: frTransaction,
+    dialogs: frDialogs,
   },
   de: {
     common: deCommon,
@@ -74,6 +81,7 @@ const resources = {
     device: deDevice,
     wallet: deWallet,
     transaction: deTransaction,
+    dialogs: deDialogs,
   },
 };
 
@@ -89,7 +97,7 @@ i18n
     lng: savedLanguage, // Set initial language from localStorage
     fallbackLng: 'en',
     defaultNS: 'common',
-    ns: ['common', 'onboarding', 'settings', 'errors', 'device', 'wallet', 'transaction'],
+    ns: ['common', 'onboarding', 'settings', 'errors', 'device', 'wallet', 'transaction', 'dialogs'],
     
     interpolation: {
       escapeValue: false, // React already escapes values

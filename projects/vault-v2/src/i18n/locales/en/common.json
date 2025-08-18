@@ -1,4 +1,7 @@
 {
+  "app": {
+    "name": "KeepKey Desktop"
+  },
   "buttons": {
     "cancel": "Cancel",
     "confirm": "Confirm",

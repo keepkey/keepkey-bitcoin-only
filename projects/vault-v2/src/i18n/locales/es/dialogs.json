@@ -1,0 +1,295 @@
+{
+  "noDevice": {
+    "title": "No se Detectó KeepKey",
+    "subtitle": "Por favor conecta tu dispositivo KeepKey para continuar",
+    "troubleshooting": {
+      "title": "Consejos de solución de problemas:",
+      "tips": {
+        "pluggedIn": "Asegúrate de que tu KeepKey esté conectado vía USB",
+        "differentPort": "Prueba un puerto USB o cable diferente",
+        "reconnect": "Desconecta y vuelve a conectar tu dispositivo",
+        "noOtherApps": "Asegúrate de que ninguna otra aplicación esté usando el dispositivo"
+      }
+    },
+    "updaterMode": {
+      "title": "¿El dispositivo aún no se detecta?",
+      "subtitle": "Intenta poner tu KeepKey en modo de actualización:",
+      "steps": {
+        "1": "Desconecta tu KeepKey",
+        "2": "Mantén presionado el botón en tu KeepKey",
+        "3": "Mientras mantienes presionado el botón, reconecta el cable USB",
+        "4": "Suelta el botón cuando veas el logo de KeepKey"
+      },
+      "note": "Esto permitirá que el dispositivo sea detectado y actualizado si es necesario."
+    },
+    "buttons": {
+      "close": "Cerrar",
+      "retry": "Reintentar Conexión"
+    }
+  },
+  "firmwareUpdate": {
+    "title": "Actualización de Firmware Disponible",
+    "criticalUpdate": "Actualización Crítica",
+    "updateAvailable": "Actualización Disponible",
+    "criticalRequired": "Actualización Crítica de Firmware Requerida",
+    "newAvailable": "Nuevo Firmware Disponible",
+    "criticalDescription": "Tu dispositivo tiene un cargador de arranque antiguo que requiere esta actualización de firmware por seguridad.",
+    "description": "Actualiza tu KeepKey para obtener las últimas características y mejoras de seguridad.",
+    "currentVersion": "Versión Actual",
+    "newVersion": "Nueva Versión",
+    "estimatedTime": "Tiempo Estimado",
+    "estimatedDuration": "3-5 minutos",
+    "important": "Importante:",
+    "warnings": {
+      "doNotDisconnect": "No desconectes tu dispositivo durante la actualización",
+      "reenterPin": "Puede que necesites volver a ingresar tu PIN después de la actualización",
+      "fundsRemainSafe": "Tus fondos y configuraciones permanecerán seguros",
+      "cannotSkip": "Esta actualización no se puede omitir debido a requisitos de seguridad"
+    },
+    "buttons": {
+      "updateNow": "Actualizar Ahora",
+      "skip": "Omitir",
+      "remindLater": "Recordar Más Tarde",
+      "cancel": "Cancelar",
+      "close": "Cerrar"
+    },
+    "progress": {
+      "downloading": "Descargando firmware...",
+      "installing": "Instalando firmware...",
+      "verifying": "Verificando instalación...",
+      "complete": "¡Actualización completa!"
+    }
+  },
+  "bootloaderUpdate": {
+    "title": "Actualización del Cargador de Arranque",
+    "subtitle": "Actualización crítica de seguridad para tu dispositivo",
+    "description": "Esta actualización mejora la seguridad y estabilidad del dispositivo",
+    "warning": "Advertencia: No desconectes tu dispositivo durante la actualización",
+    "currentVersion": "Cargador de Arranque Actual",
+    "newVersion": "Nuevo Cargador de Arranque",
+    "buttons": {
+      "update": "Actualizar Cargador de Arranque",
+      "cancel": "Cancelar"
+    }
+  },
+  "enterBootloader": {
+    "title": "Entrar en Modo Cargador de Arranque",
+    "subtitle": "Sigue estos pasos para entrar en modo cargador de arranque",
+    "steps": {
+      "1": "Desconecta tu KeepKey del USB",
+      "2": "Presiona y mantén el botón en tu KeepKey",
+      "3": "Mientras mantienes presionado el botón, reconecta el cable USB",
+      "4": "Continúa presionando hasta que veas 'BOOTLOADER' en la pantalla",
+      "5": "Suelta el botón"
+    },
+    "note": "Tu dispositivo se reiniciará en modo cargador de arranque para la actualización",
+    "buttons": {
+      "ready": "Estoy Listo",
+      "cancel": "Cancelar"
+    }
+  },
+  "deviceInvalidState": {
+    "title": "Dispositivo en Estado Inválido",
+    "subtitle": "Tu dispositivo necesita atención",
+    "states": {
+      "notInitialized": {
+        "title": "Dispositivo No Inicializado",
+        "description": "Tu KeepKey necesita ser configurado antes de usar",
+        "action": "Inicializar Dispositivo"
+      },
+      "needsBackup": {
+        "title": "Respaldo Requerido",
+        "description": "Por favor respalda tu semilla de recuperación",
+        "action": "Respaldar Ahora"
+      },
+      "bootloaderMode": {
+        "title": "Dispositivo en Modo Cargador de Arranque",
+        "description": "Tu dispositivo está en modo de actualización",
+        "action": "Salir del Cargador de Arranque"
+      },
+      "error": {
+        "title": "Error del Dispositivo",
+        "description": "Ocurrió un error con tu dispositivo",
+        "action": "Solucionar Problemas"
+      }
+    },
+    "buttons": {
+      "resolve": "Resolver",
+      "ignore": "Ignorar",
+      "help": "Obtener Ayuda"
+    }
+  },
+  "pin": {
+    "creation": {
+      "title": "Crear PIN",
+      "subtitle": "Configura un PIN para proteger tu dispositivo",
+      "description": "Elige un PIN entre 4-9 dígitos",
+      "enterPin": "Ingresa el PIN en tu KeepKey",
+      "confirmPin": "Confirma el PIN en tu KeepKey",
+      "success": "PIN creado exitosamente",
+      "failed": "Error al crear PIN",
+      "buttons": {
+        "create": "Crear PIN",
+        "skip": "Omitir",
+        "cancel": "Cancelar"
+      }
+    },
+    "enable": {
+      "title": "Habilitar Protección con PIN",
+      "subtitle": "Asegura tu dispositivo con un PIN",
+      "description": "Un PIN agrega una capa extra de seguridad a tu dispositivo",
+      "benefits": {
+        "title": "Beneficios de la protección con PIN:",
+        "secure": "Previene el acceso no autorizado",
+        "theft": "Protege contra el robo físico",
+        "privacy": "Mantiene tus transacciones privadas"
+      },
+      "buttons": {
+        "enable": "Habilitar PIN",
+        "notNow": "Ahora No",
+        "cancel": "Cancelar"
+      }
+    },
+    "setup": {
+      "title": "Configuración del PIN",
+      "subtitle": "Configura los ajustes de tu PIN",
+      "options": {
+        "create": "Crear Nuevo PIN",
+        "change": "Cambiar PIN",
+        "remove": "Eliminar PIN"
+      },
+      "currentStatus": "Estado Actual",
+      "enabled": "PIN Habilitado",
+      "disabled": "PIN Deshabilitado",
+      "buttons": {
+        "save": "Guardar Configuración",
+        "cancel": "Cancelar"
+      }
+    },
+    "unlock": {
+      "title": "Desbloquear Dispositivo",
+      "subtitle": "Ingresa tu PIN para continuar",
+      "instruction": "Mira la pantalla de tu KeepKey e ingresa el PIN usando la cuadrícula",
+      "lookAtDevice": "Mira la pantalla de tu dispositivo para ver los números mezclados",
+      "clickPositions": "Haz clic en las posiciones donde aparecen los dígitos de tu PIN",
+      "numbersMatch": "Los números mostrados coinciden con la pantalla de tu dispositivo",
+      "useScrambledLayout": "Usa el diseño mezclado que se muestra en tu dispositivo",
+      "grid": {
+        "instruction": "Usa la cuadrícula numerada en tu computadora para ingresar el PIN mostrado en tu dispositivo",
+        "scrambledNote": "Los números están mezclados por seguridad - revisa la pantalla de tu dispositivo"
+      },
+      "incorrect": "PIN incorrecto. Por favor intenta de nuevo.",
+      "attemptsRemaining": "{{count}} intentos restantes",
+      "buttons": {
+        "unlock": "Desbloquear",
+        "cancel": "Cancelar",
+        "forgotPin": "¿Olvidaste tu PIN?"
+      }
+    },
+    "change": {
+      "title": "Cambiar PIN",
+      "currentPin": "Ingresa el PIN actual",
+      "newPin": "Ingresa el nuevo PIN",
+      "confirmNew": "Confirma el nuevo PIN",
+      "success": "PIN cambiado exitosamente",
+      "failed": "Error al cambiar PIN",
+      "buttons": {
+        "change": "Cambiar PIN",
+        "cancel": "Cancelar"
+      }
+    },
+    "remove": {
+      "title": "Eliminar PIN",
+      "warning": "Advertencia: Eliminar el PIN hará tu dispositivo menos seguro",
+      "confirm": "¿Estás seguro de que quieres eliminar la protección con PIN?",
+      "enterCurrent": "Ingresa el PIN actual para confirmar",
+      "success": "PIN eliminado exitosamente",
+      "failed": "Error al eliminar PIN",
+      "buttons": {
+        "remove": "Eliminar PIN",
+        "cancel": "Cancelar"
+      }
+    }
+  },
+  "passphrase": {
+    "title": "Frase de Contraseña",
+    "subtitle": "Ingresa tu frase de contraseña",
+    "description": "Las frases de contraseña crean billeteras ocultas. Cada frase accede a una billetera diferente.",
+    "enter": "Ingresar frase de contraseña",
+    "confirm": "Confirmar frase de contraseña",
+    "placeholder": "Ingresa tu frase de contraseña",
+    "onDevice": "Ingresar en dispositivo",
+    "onComputer": "Ingresar en computadora",
+    "warning": "Advertencia: ¡Si olvidas tu frase de contraseña, no podrás recuperar tus fondos!",
+    "mismatch": "Las frases de contraseña no coinciden",
+    "buttons": {
+      "confirm": "Confirmar",
+      "cancel": "Cancelar",
+      "useEmpty": "Usar Frase Vacía"
+    }
+  },
+  "settings": {
+    "title": "Configuración",
+    "tabs": {
+      "general": "General",
+      "device": "Dispositivo",
+      "security": "Seguridad",
+      "advanced": "Avanzado",
+      "about": "Acerca de"
+    },
+    "general": {
+      "language": "Idioma",
+      "currency": "Moneda",
+      "theme": "Tema",
+      "notifications": "Notificaciones"
+    },
+    "device": {
+      "label": "Etiqueta del Dispositivo",
+      "firmware": "Versión del Firmware",
+      "bootloader": "Versión del Cargador de Arranque",
+      "deviceId": "ID del Dispositivo",
+      "actions": {
+        "update": "Buscar Actualizaciones",
+        "wipe": "Borrar Dispositivo",
+        "recover": "Recuperar Dispositivo"
+      }
+    },
+    "security": {
+      "pin": "Protección con PIN",
+      "passphrase": "Frase de Contraseña",
+      "autoLock": "Bloqueo automático",
+      "autoLockDelay": "Bloquear después de"
+    },
+    "buttons": {
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "apply": "Aplicar",
+      "close": "Cerrar"
+    }
+  },
+  "common": {
+    "buttons": {
+      "ok": "OK",
+      "cancel": "Cancelar",
+      "close": "Cerrar",
+      "confirm": "Confirmar",
+      "continue": "Continuar",
+      "back": "Atrás",
+      "next": "Siguiente",
+      "skip": "Omitir",
+      "retry": "Reintentar",
+      "save": "Guardar",
+      "delete": "Eliminar",
+      "yes": "Sí",
+      "no": "No"
+    },
+    "status": {
+      "loading": "Cargando...",
+      "processing": "Procesando...",
+      "success": "Éxito",
+      "error": "Error",
+      "warning": "Advertencia",
+      "info": "Información"
+    }
+  }
+}

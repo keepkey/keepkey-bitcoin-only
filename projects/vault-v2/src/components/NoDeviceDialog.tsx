@@ -9,6 +9,7 @@ import {
 } from '@chakra-ui/react';
 import { FaUsb } from 'react-icons/fa';
 import { useDialog } from '../contexts/DialogContext';
+import { useTypedTranslation } from '../hooks/useTypedTranslation';
 
 export interface NoDeviceDialogProps {
   onRetry?: () => void;
@@ -16,6 +17,7 @@ export interface NoDeviceDialogProps {
 
 export function NoDeviceDialog({ onRetry }: NoDeviceDialogProps) {
   const { hide } = useDialog();
+  const { t } = useTypedTranslation('dialogs');
   
   const handleRetry = () => {
     if (onRetry) {
@@ -39,7 +41,7 @@ export function NoDeviceDialog({ onRetry }: NoDeviceDialogProps) {
         <HStack justifyContent="center">
           <Icon as={FaUsb} color="orange.500" boxSize={6} />
           <Text fontSize="lg" fontWeight="bold" color="orange.500">
-            No KeepKey Detected
+            {t('noDevice.title')}
           </Text>
         </HStack>
       </Box>
@@ -47,7 +49,7 @@ export function NoDeviceDialog({ onRetry }: NoDeviceDialogProps) {
       <Box p={6} bg="gray.800">
         <VStack align="center" gap={4}>
           <Text fontSize="md" color="gray.200" textAlign="center">
-            Please connect your KeepKey device to continue
+            {t('noDevice.subtitle')}
           </Text>
           
           <Box 
@@ -60,19 +62,19 @@ export function NoDeviceDialog({ onRetry }: NoDeviceDialogProps) {
           >
             <VStack align="start" gap={2}>
               <Text fontSize="sm" color="gray.300" fontWeight="semibold">
-                Troubleshooting tips:
+                {t('noDevice.troubleshooting.title')}
               </Text>
               <Text fontSize="xs" color="gray.400">
-                • Make sure your KeepKey is plugged in via USB
+                • {t('noDevice.troubleshooting.tips.pluggedIn')}
               </Text>
               <Text fontSize="xs" color="gray.400">
-                • Try a different USB port or cable
+                • {t('noDevice.troubleshooting.tips.differentPort')}
               </Text>
               <Text fontSize="xs" color="gray.400">
-                • Unplug and reconnect your device
+                • {t('noDevice.troubleshooting.tips.reconnect')}
               </Text>
               <Text fontSize="xs" color="gray.400">
-                • Ensure no other apps are using the device
+                • {t('noDevice.troubleshooting.tips.noOtherApps')}
               </Text>
             </VStack>
           </Box>
@@ -88,27 +90,27 @@ export function NoDeviceDialog({ onRetry }: NoDeviceDialogProps) {
           >
             <VStack align="start" gap={2}>
               <Text fontSize="sm" color="orange.300" fontWeight="bold">
-                Device still not detected?
+                {t('noDevice.updaterMode.title')}
               </Text>
               <Text fontSize="xs" color="orange.200">
-                Try putting your KeepKey into updater mode:
+                {t('noDevice.updaterMode.subtitle')}
               </Text>
               <VStack align="start" gap={1} pl={2}>
                 <Text fontSize="xs" color="gray.300">
-                  1. Disconnect your KeepKey
+                  1. {t('noDevice.updaterMode.steps.1')}
                 </Text>
                 <Text fontSize="xs" color="gray.300">
-                  2. Hold down the button on your KeepKey
+                  2. {t('noDevice.updaterMode.steps.2')}
                 </Text>
                 <Text fontSize="xs" color="gray.300">
-                  3. While holding the button, reconnect the USB cable
+                  3. {t('noDevice.updaterMode.steps.3')}
                 </Text>
                 <Text fontSize="xs" color="gray.300">
-                  4. Release the button when you see the KeepKey logo
+                  4. {t('noDevice.updaterMode.steps.4')}
                 </Text>
               </VStack>
               <Text fontSize="xs" color="gray.400" fontStyle="italic" mt={1}>
-                This will allow the device to be detected and updated if needed.
+                {t('noDevice.updaterMode.note')}
               </Text>
             </VStack>
           </Box>
@@ -120,14 +122,14 @@ export function NoDeviceDialog({ onRetry }: NoDeviceDialogProps) {
               size="sm"
               onClick={() => hide('no-device-found')}
             >
-              Close
+              {t('noDevice.buttons.close')}
             </Button>
             <Button
               colorScheme="orange"
               size="sm"
               onClick={handleRetry}
             >
-              Retry Connection
+              {t('noDevice.buttons.retry')}
             </Button>
           </HStack>
         </VStack>

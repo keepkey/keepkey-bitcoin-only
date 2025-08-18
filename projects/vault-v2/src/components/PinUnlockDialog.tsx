@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Button, Text, HStack, Icon, VStack, Box, Spinner, SimpleGrid, Heading } from '@chakra-ui/react'
 import { FaCircle, FaExclamationTriangle, FaTimes, FaCheckCircle, FaSync, FaBackspace } from 'react-icons/fa'
+import { useTypedTranslation } from '../hooks/useTypedTranslation'
 
 interface PinUnlockDialogProps {
   isOpen: boolean
@@ -18,6 +19,7 @@ interface PinUnlockDialogProps {
 const PIN_MATRIX_LAYOUT = [7, 8, 9, 4, 5, 6, 1, 2, 3] as const
 
 export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUnlockDialogProps) => {
+  const { t } = useTypedTranslation('dialogs')
   const [pinPositions, setPinPositions] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -271,7 +273,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
         {/* Header */}
         <Box bg="gray.850" p={4} position="relative">
           <Heading fontSize="xl" fontWeight="bold" color="white" textAlign="center">
-            Unlock Device
+            {t('pin.unlock.title')}
           </Heading>
           <Button
             position="absolute"
@@ -323,10 +325,10 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
               <VStack gap={3} w="full">
                 <VStack gap={1}>
                   <Text color="gray.300" fontSize="sm" textAlign="center">
-                    Look at your device screen for the scrambled numbers
+                    {t('pin.unlock.lookAtDevice')}
                   </Text>
                   <Text color="gray.400" fontSize="xs" textAlign="center">
-                    Click the positions where your PIN digits appear
+                    {t('pin.unlock.clickPositions')}
                   </Text>
                 </VStack>
 
@@ -435,7 +437,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
                 </HStack>
 
                 <Text fontSize="xs" color="gray.500" textAlign="center">
-                  Use the scrambled layout shown on your device
+                  {t('pin.unlock.useScrambledLayout')}
                 </Text>
               </VStack>
             )}
