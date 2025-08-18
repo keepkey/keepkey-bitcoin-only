@@ -13,7 +13,8 @@ import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
 import { VaultInterface } from './components/VaultInterface';
 import { useWallet } from './contexts/WalletContext';
-import { DialogProvider, useDialog, usePassphraseDialog } from './contexts/DialogContext'
+import { DialogProvider, useDialog, usePassphraseDialog } from './contexts/DialogContext';
+import { useDeviceInteraction } from './hooks/useDeviceInteraction';
 
 // Define the expected structure of DeviceFeatures from Rust
 interface DeviceFeatures {
@@ -62,6 +63,9 @@ function App() {
         const { hideAll, activeDialog, getQueue, isWizardActive } = useDialog();
         const { fetchedXpubs, portfolio, isSync, reinitialize } = useWallet();
         const passphraseDialog = usePassphraseDialog();
+        
+        // Enable global device interaction handling (PIN, passphrase, button dialogs)
+        useDeviceInteraction();
         
         // Check wallet context state and sync with local state
         useEffect(() => {

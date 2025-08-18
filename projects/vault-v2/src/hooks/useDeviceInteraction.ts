@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useDialog } from '../contexts/DialogContext';
@@ -50,36 +50,49 @@ export function useDeviceInteraction() {
         });
         
         // Open PIN dialog with correlation
-        openDialog('pinDialog', {
-          deviceId: device_id,
-          requestId: request_id,
-          operationType: kind,
-          onSubmit: async (pin: string) => {
-            try {
-              await invoke('pin_submit', { 
-                deviceId: device_id, 
-                requestId: request_id, 
-                pin 
-              });
+        const dialogId = `device-pin-${device_id}-${request_id}`;
+        openDialog({
+          id: dialogId,
+          component: React.lazy(() => import('../components/DevicePinDialog').then(m => ({ default: m.DevicePinDialog }))),
+          props: {
+            isOpen: true,
+            deviceId: device_id,
+            requestId: request_id,
+            operationType: kind,
+            onSubmit: async (pin: string) => {
+              try {
+                await invoke('pin_submit', { 
+                  deviceId: device_id, 
+                  requestId: request_id, 
+                  pin 
+                });
+                activeRequests.current.delete(request_id);
+                closeDialog(dialogId);
+              } catch (error) {
+                console.error('PIN submission failed:', error);
+                // Keep dialog open on error
+                throw error;
+              }
+            },
+            onCancel: async () => {
+              try {
+                await invoke('pin_cancel', { 
+                  deviceId: device_id, 
+                  requestId: request_id 
+                });
+                activeRequests.current.delete(request_id);
+                closeDialog(dialogId);
+              } catch (error) {
+                console.error('PIN cancellation failed:', error);
+              }
+            },
+            onClose: () => {
               activeRequests.current.delete(request_id);
-              closeDialog('pinDialog');
-            } catch (error) {
-              console.error('PIN submission failed:', error);
-              // Keep dialog open on error
+              closeDialog(dialogId);
             }
           },
-          onCancel: async () => {
-            try {
-              await invoke('pin_cancel', { 
-                deviceId: device_id, 
-                requestId: request_id 
-              });
-              activeRequests.current.delete(request_id);
-              closeDialog('pinDialog');
-            } catch (error) {
-              console.error('PIN cancellation failed:', error);
-            }
-          }
+          priority: 'critical',
+          persistent: true,
         });
       });
       unlisteners.push(unlisten);
@@ -209,7 +222,7 @@ export function useDeviceInteraction() {
             
             // Close any open dialogs for this device
             if (request.type === 'pin') {
-              closeDialog('pinDialog');
+              closeDialog(`device-pin-${device_id}-${requestId}`);
             } else if (request.type === 'passphrase') {
               closeDialog('passphraseDialog');
             }
@@ -233,7 +246,7 @@ export function useDeviceInteraction() {
           
           // Close relevant dialog
           if (request?.type === 'pin') {
-            closeDialog('pinDialog');
+            closeDialog(`device-pin-${device_id}-${request_id}`);
           } else if (request?.type === 'passphrase') {
             closeDialog('passphraseDialog');
           }
