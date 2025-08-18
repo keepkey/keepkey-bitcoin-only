@@ -34,66 +34,23 @@ export function useDeviceInteraction() {
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
 
-    // Listen for PIN requests
+    // DISABLED: PIN request handling to prevent duplicate PIN dialogs
+    // The issue is that multiple event systems are trying to show PIN dialogs:
+    // 1. This hook listening to 'device:awaiting_pin'
+    // 2. Other parts of the system also showing PIN dialogs with the same ID
+    // This causes duplicate dialogs to appear
     const setupPinListener = async () => {
       const unlisten = await listen<DeviceEvent>('device:awaiting_pin', (event) => {
         const { device_id, request_id, kind } = event.payload;
         
-        if (!request_id) return;
-        
-        // Store the active request
-        activeRequests.current.set(request_id, {
-          deviceId: device_id,
-          requestId: request_id,
-          type: 'pin',
-          operationType: kind,
+        console.log('📍 device:awaiting_pin event received (not showing dialog to prevent duplicates):', {
+          device_id,
+          request_id,
+          kind
         });
         
-        // Open PIN dialog with correlation
-        const dialogId = `device-pin-${device_id}-${request_id}`;
-        show({
-          id: dialogId,
-          component: React.lazy(() => import('../components/DevicePinDialog').then(m => ({ default: m.DevicePinDialog }))),
-          props: {
-            isOpen: true,
-            deviceId: device_id,
-            requestId: request_id,
-            operationType: kind,
-            onSubmit: async (pin: string) => {
-              try {
-                await invoke('pin_submit', { 
-                  deviceId: device_id, 
-                  requestId: request_id, 
-                  pin 
-                });
-                activeRequests.current.delete(request_id);
-                hide(dialogId);
-              } catch (error) {
-                console.error('PIN submission failed:', error);
-                // Keep dialog open on error
-                throw error;
-              }
-            },
-            onCancel: async () => {
-              try {
-                await invoke('pin_cancel', { 
-                  deviceId: device_id, 
-                  requestId: request_id 
-                });
-                activeRequests.current.delete(request_id);
-                hide(dialogId);
-              } catch (error) {
-                console.error('PIN cancellation failed:', error);
-              }
-            },
-            onClose: () => {
-              activeRequests.current.delete(request_id);
-              hide(dialogId);
-            }
-          },
-          priority: 'critical',
-          persistent: true,
-        });
+        // Don't show a dialog here - let the existing PIN system handle it
+        // The PIN dialog will be shown through other event handlers
       });
       unlisteners.push(unlisten);
     };

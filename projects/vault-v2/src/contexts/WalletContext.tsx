@@ -842,13 +842,21 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         }
       });
       
-      // Handle PIN request triggered events
+      // Handle PIN request triggered events - this is the ONLY place that shows PIN dialogs
+      // to prevent duplicates. All other PIN event handlers have been disabled.
       unlistenPinRequest = listen('device:pin-request-triggered', async (event: any) => {
         const tag = TAG + " | device:pin-request-triggered | ";
         console.log(tag, '🔒 PIN request triggered event received:', event.payload);
         
         if (event.payload?.deviceId) {
           const deviceId = event.payload.deviceId;
+          
+          // Check if PIN dialog is already showing for this device
+          if (pinUnlockDialog.isShowing(deviceId)) {
+            console.log(tag, '⚠️ PIN dialog already showing for device, not creating duplicate');
+            return;
+          }
+          
           console.log(tag, '🔒 Showing PIN dialog for device:', deviceId);
           
           // Show PIN unlock dialog

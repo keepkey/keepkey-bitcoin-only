@@ -32,6 +32,9 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
   const setupWizardActive = useRef(false)
   const setupWizardDeviceId = useRef<string | null>(null)
   const [persistentDeviceId, setPersistentDeviceId] = useState<string | null>(null)
+  
+  // Track if we've already triggered PIN for a device to prevent duplicates
+  const pinTriggeredForDevice = useRef<Set<string>>(new Set())
   const [setupInProgress, setSetupInProgress] = useState(false) // Track if setup is in progress
   const justCompletedBootloaderUpdate = useRef(false) // Track if we just did a bootloader update
   const firmwareUpdateInProgress = useRef(false) // Track if firmware update is happening
@@ -418,63 +421,64 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
           deviceInvalidStateDialog.hide(status.deviceId)
         }
         
-        // Verify device is actually ready for PIN operations before showing dialog
+        // Verify device is actually ready for PIN operations before proceeding
         try {
           const isPinReady = await invoke('check_device_pin_ready', { deviceId: status.deviceId })
           
           if (isPinReady) {
-            // Show PIN unlock dialog
-            console.log('🔒 DeviceUpdateManager: Device confirmed ready for PIN, showing unlock dialog')
+            console.log('🔒 DeviceUpdateManager: Device confirmed ready for PIN, deferring UI to DialogContext handler')
             setDeviceStatus(status)
             setConnectedDeviceId(status.deviceId)
             setShowEnterBootloaderMode(false)
             setShowBootloaderUpdate(false)
             setShowFirmwareUpdate(false)
             setShowWalletCreation(false)
-            setShowPinUnlock(true)
+            // DO NOT render inline PinUnlockDialog here; WalletContext shows centralized PIN dialog
           } else {
             console.log('🔒 DeviceUpdateManager: Device not ready for PIN unlock, waiting...')
             // Device may not be ready yet, wait for next status update
           }
         } catch (error) {
           console.error('🔒 DeviceUpdateManager: Failed to check PIN readiness:', error)
-          // Fallback to showing the dialog anyway
+          // Fallback: still update status but DO NOT open a second PIN dialog here
           setDeviceStatus(status)
           setConnectedDeviceId(status.deviceId)
           setShowEnterBootloaderMode(false)
           setShowBootloaderUpdate(false)
           setShowFirmwareUpdate(false)
           setShowWalletCreation(false)
-          setShowPinUnlock(true)
         }
       })
 
-      // Listen for PIN request triggered events (from trigger_pin_request)
-      const pinRequestTriggeredUnsubscribe = listen<{
-        deviceId: string
-        requestType: string
-        needsPinEntry: boolean
-      }>('device:pin-request-triggered', async (event) => {
-        console.log('🔒 DeviceUpdateManager: PIN request triggered event received:', event.payload)
-        const { deviceId } = event.payload
-        
-        // Get current device status
-        try {
-          const currentStatus = await invoke('get_device_status', { deviceId })
-          
-          // Show PIN unlock dialog
-          console.log('🔒 DeviceUpdateManager: Showing PIN unlock dialog after PIN request triggered')
-          setDeviceStatus(currentStatus)
-          setConnectedDeviceId(deviceId)
-          setShowEnterBootloaderMode(false)
-          setShowBootloaderUpdate(false)
-          setShowFirmwareUpdate(false)
-          setShowWalletCreation(false)
-          setShowPinUnlock(true)
-        } catch (error) {
-          console.error('🔒 DeviceUpdateManager: Failed to get device status after PIN trigger:', error)
-        }
-      })
+      // NOTE: PIN request handling has been moved to WalletContext to avoid duplicate dialogs
+      // WalletContext already listens for 'device:pin-request-triggered' and shows the PIN dialog
+      // Keeping this commented out to prevent race conditions and duplicate PIN dialogs
+      
+      // const pinRequestTriggeredUnsubscribe = listen<{
+      //   deviceId: string
+      //   requestType: string
+      //   needsPinEntry: boolean
+      // }>('device:pin-request-triggered', async (event) => {
+      //   console.log('🔒 DeviceUpdateManager: PIN request triggered event received:', event.payload)
+      //   const { deviceId } = event.payload
+      //   
+      //   // Get current device status
+      //   try {
+      //     const currentStatus = await invoke('get_device_status', { deviceId })
+      //     
+      //     // Show PIN unlock dialog
+      //     console.log('🔒 DeviceUpdateManager: Showing PIN unlock dialog after PIN request triggered')
+      //     setDeviceStatus(currentStatus)
+      //     setConnectedDeviceId(deviceId)
+      //     setShowEnterBootloaderMode(false)
+      //     setShowBootloaderUpdate(false)
+      //     setShowFirmwareUpdate(false)
+      //     setShowWalletCreation(false)
+      //     setShowPinUnlock(true)
+      //   } catch (error) {
+      //     console.error('🔒 DeviceUpdateManager: Failed to get device status after PIN trigger:', error)
+      //   }
+      // })
 
       // Listen for passphrase unlock needed events
       const passphraseUnlockUnsubscribe = listen<{
@@ -502,14 +506,20 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         setShowWalletCreation(false)
         setShowPinUnlock(false)
         
-        // Trigger a device operation that requires authentication to prompt for passphrase/PIN
-        try {
-          console.log('🔐 DeviceUpdateManager: Triggering PIN request to unlock device...')
-          // This will trigger the authentication flow (passphrase first, then PIN if needed)
-          await invoke('trigger_pin_request', { deviceId: status.deviceId })
-        } catch (error) {
-          console.log('🔐 DeviceUpdateManager: PIN request triggered (expected authentication prompt)', error)
-          // This error is expected - the operation will prompt for authentication
+        // Trigger PIN request ONCE per device to start the authentication flow
+        // Check if we've already triggered for this device
+        if (!pinTriggeredForDevice.current.has(status.deviceId)) {
+          pinTriggeredForDevice.current.add(status.deviceId)
+          
+          try {
+            console.log('🔐 DeviceUpdateManager: Triggering authentication flow for passphrase-protected device (first time)')
+            await invoke('trigger_pin_request', { deviceId: status.deviceId })
+          } catch (error) {
+            // This is expected - the device will go into PIN/passphrase flow
+            console.log('🔐 DeviceUpdateManager: Authentication flow triggered (expected error):', error)
+          }
+        } else {
+          console.log('🔐 DeviceUpdateManager: Already triggered PIN for this device, skipping duplicate trigger')
         }
       })
 
@@ -517,6 +527,12 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       const disconnectedUnsubscribe = listen<string>('device:disconnected', (event) => {
         const disconnectedDeviceId = event.payload;
         console.log('Device disconnected:', disconnectedDeviceId)
+        
+        // Clear PIN trigger tracking for disconnected device
+        if (disconnectedDeviceId) {
+          pinTriggeredForDevice.current.delete(disconnectedDeviceId)
+          console.log('🔐 Cleared PIN trigger tracking for disconnected device:', disconnectedDeviceId)
+        }
         
         // Check if recovery is in progress - if so, ignore disconnection events
         if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) {
@@ -563,7 +579,8 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         ;(await accessErrorUnsubscribe)()
         ;(await invalidStateUnsubscribe)()
         ;(await pinUnlockUnsubscribe)()
-        ;(await pinRequestTriggeredUnsubscribe)()
+        // pinRequestTriggeredUnsubscribe is commented out to prevent duplicate PIN dialogs
+        // ;(await pinRequestTriggeredUnsubscribe)()
         ;(await passphraseUnlockUnsubscribe)()
         ;(await disconnectedUnsubscribe)()
         if (timeoutId) clearTimeout(timeoutId)
@@ -795,14 +812,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         />
       )}
 
-      {showPinUnlock && deviceStatus?.deviceId && (
-        <PinUnlockDialog
-          isOpen={showPinUnlock}
-          deviceId={deviceStatus.deviceId}
-          onUnlocked={handlePinUnlocked}
-          onClose={handlePinUnlockClose}
-        />
-      )}
+      {/* PinUnlockDialog is centrally managed by DialogContext via WalletContext events */}
     </>
   )
 } 

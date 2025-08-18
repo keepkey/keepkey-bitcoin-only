@@ -103,22 +103,32 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
         const exists = prevState.queue.some(d => d.id === config.id);
         if (exists) {
           console.warn(`🎯 [DialogContext] Dialog with id "${config.id}" already exists in queue`);
+          // For passphrase dialogs, ensure they become active after PIN closes
+          if (config.id.includes('passphrase') && !prevState.active) {
+            // PIN just closed, make passphrase active
+            return {
+              ...prevState,
+              active: prevState.queue.find(d => d.id === config.id)
+            };
+          }
           return prevState;
         }
         
         // If this is a critical dialog or PIN dialog, remove lower priority dialogs
         let newQueue = [...prevState.queue];
         if (config.priority === 'critical' || isPinDialog) {
-          // Remove non-critical dialogs except for PIN dialogs
+          // Remove non-critical dialogs except for PIN and passphrase dialogs
           newQueue = newQueue.filter(d => {
             const dialogPriority = PRIORITY_ORDER[d.priority || 'normal'];
             const configPriority = PRIORITY_ORDER[config.priority || 'normal'];
             const isDialogPin = d.id.includes('pin-unlock');
+            const isDialogPassphrase = d.id.includes('passphrase');
             
             // Keep dialog if:
             // 1. It's a PIN dialog (PIN dialogs are always kept)
-            // 2. It has equal or higher priority than the new dialog
-            return isDialogPin || dialogPriority >= configPriority;
+            // 2. It's a passphrase dialog (passphrase follows PIN)
+            // 3. It has equal or higher priority than the new dialog
+            return isDialogPin || isDialogPassphrase || dialogPriority >= configPriority;
           });
           
           // Call onClose for removed dialogs
@@ -171,6 +181,13 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       const dialog = prevState.queue.find(d => d.id === id);
       const newQueue = prevState.queue.filter(d => d.id !== id);
       const wasActive = prevState.active?.id === id;
+      
+      // CRITICAL: Check if there are passphrase dialogs waiting
+      const passphraseInQueue = newQueue.find(d => d.id.includes('passphrase'));
+      if (passphraseInQueue) {
+        console.log(`🎯 [DialogContext] Found passphrase dialog in queue after PIN hide:`, passphraseInQueue.id);
+      }
+      
       const newActive = processQueue(newQueue);
       
       console.log(`🎯 [DialogContext] Dialog found:`, dialog?.id);
@@ -663,11 +680,9 @@ export function usePassphraseDialog() {
       console.log(`🔐 [PassphraseDialog] Device ID:`, props.deviceId);
       console.log(`🔐 [PassphraseDialog] Dialog ID:`, dialogId);
       
-      // Check if dialog is already showing
-      if (isShowing(dialogId)) {
-        console.log(`🔐 [PassphraseDialog] ⚠️ Dialog already showing for device:`, props.deviceId);
-        return;
-      }
+      // Don't check if already showing - we want to ensure it's in the queue
+      // especially after PIN dialog closes
+      console.log(`🔐 [PassphraseDialog] Ensuring passphrase dialog is in queue...`);
       
       console.log(`🔐 [PassphraseDialog] Calling show() with config...`);
       show({
