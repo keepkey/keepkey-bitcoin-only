@@ -34,7 +34,7 @@ interface WalletContextType {
   refreshPortfolio: () => Promise<void>;
   selectAsset: (asset: Asset | null) => void;
   sendAsset: (toAddress: string, amount: string) => Promise<boolean>;
-  getReceiveAddress: (addressType?: 'p2pkh' | 'p2sh-p2wpkh' | 'p2wpkh') => Promise<string | null>;
+  getReceiveAddress: (addressType?: 'p2pkh' | 'p2sh-p2wpkh' | 'p2wpkh', customPath?: string) => Promise<string | null>;
   requestXpubFromDevice: (deviceId: string, path: string) => Promise<string>;
   getQueueStatus: (deviceId: string) => Promise<QueueStatus>;
   signTransaction: (
@@ -379,7 +379,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
   };
 
-  const getReceiveAddress = async (addressType: 'p2pkh' | 'p2sh-p2wpkh' | 'p2wpkh' = 'p2wpkh'): Promise<string | null> => {
+  const getReceiveAddress = async (addressType: 'p2pkh' | 'p2sh-p2wpkh' | 'p2wpkh' = 'p2wpkh', customPath?: string): Promise<string | null> => {
     const tag = TAG + " | getReceiveAddress | ";
     
     // Ensure BTC asset is selected
@@ -412,22 +412,26 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         throw new Error('Invalid device_id resolved from device object: ' + JSON.stringify(connectedDevices[0]));
       }
 
-      // Determine the receive path based on address type
+      // Use custom path if provided, otherwise determine based on address type
       let receivePath: string;
-      switch (addressType) {
-        case 'p2pkh':
-          receivePath = "m/44'/0'/0'/0/0"; // Legacy path
-          break;
-        case 'p2sh-p2wpkh':
-          receivePath = "m/49'/0'/0'/0/0"; // SegWit wrapped path
-          break;
-        case 'p2wpkh':
-        default:
-          receivePath = "m/84'/0'/0'/0/0"; // Native SegWit path
-          break;
+      if (customPath) {
+        receivePath = customPath;
+        console.log(tag, `📍 Using custom derivation path: ${receivePath}`);
+      } else {
+        switch (addressType) {
+          case 'p2pkh':
+            receivePath = "m/44'/0'/0'/0/0"; // Legacy path
+            break;
+          case 'p2sh-p2wpkh':
+            receivePath = "m/49'/0'/0'/0/0"; // SegWit wrapped path
+            break;
+          case 'p2wpkh':
+          default:
+            receivePath = "m/84'/0'/0'/0/0"; // Native SegWit path
+            break;
+        }
+        console.log(tag, `📍 Using default derivation path: ${receivePath}`);
       }
-      
-      console.log(tag, `📍 Using derivation path: ${receivePath}`);
 
       // (1) Generate a unique request ID first
       const requestId = `addr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

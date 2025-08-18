@@ -8,11 +8,12 @@ import {
   Button, 
   IconButton,
   Flex,
-  Spinner, // Only if used in JSX
+  Spinner,
   Code,
-  Badge
+  Badge,
+  Input
 } from '@chakra-ui/react';
-import { FaArrowLeft, FaCopy, FaCheck, FaEye, FaChevronDown, FaChevronUp } from 'react-icons/fa';
+import { FaArrowLeft, FaCopy, FaCheck, FaEye, FaChevronDown, FaChevronUp, FaEdit, FaSave, FaTimes, FaSync } from 'react-icons/fa';
 import { SiBitcoin } from 'react-icons/si'; // Only if used in JSX
 import QRCode from 'react-qr-code';
 import { useWallet } from '../contexts/WalletContext';
@@ -64,6 +65,15 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   const [derivationPath, setDerivationPath] = useState<string>(getDerivationPathFromSettings());
   const [isTimeout, setIsTimeout] = useState(false);
   const [loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
+  
+  // New states for address index and custom path editing
+  const [currentAddressIndex, setCurrentAddressIndex] = useState<number>(0);
+  const [newAddressCount, setNewAddressCount] = useState<number>(0);
+  const [isEditingPath, setIsEditingPath] = useState<boolean>(false);
+  const [customPath, setCustomPath] = useState<string>(getDerivationPathFromSettings());
+  const [pathWarning, setPathWarning] = useState<string | null>(null);
+  const [addressIndex, setAddressIndex] = useState<number>(0);
+  const [maxUsedIndex, setMaxUsedIndex] = useState<number>(0);
 
   // Component lifecycle debugging
   useEffect(() => {
@@ -89,11 +99,41 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
   // Update address type and path when settings change
   useEffect(() => {
     setAddressType(getAddressTypeFromSettings());
-    setDerivationPath(getDerivationPathFromSettings());
-  }, [bitcoinAddressType]);
+    const basePath = getDerivationPathFromSettings();
+    // Update path with current address index
+    const pathParts = basePath.split('/');
+    pathParts[pathParts.length - 1] = addressIndex.toString();
+    const newPath = pathParts.join('/');
+    setDerivationPath(newPath);
+    setCustomPath(newPath);
+  }, [bitcoinAddressType, addressIndex]);
+
+  // Helper function to validate and parse custom path
+  const validateCustomPath = (path: string): { valid: boolean; index?: number; warning?: string } => {
+    const pathParts = path.split('/');
+    if (pathParts.length !== 6) {
+      return { valid: false, warning: 'Invalid path format' };
+    }
+    
+    const index = parseInt(pathParts[5]);
+    if (isNaN(index) || index < 0) {
+      return { valid: false, warning: 'Invalid address index' };
+    }
+    
+    // Check if index is too far from current max used index
+    if (index > maxUsedIndex + 10) {
+      return { 
+        valid: true, 
+        index, 
+        warning: 'Warning: Address is more than 10 indices ahead. Funds sent here may not show in balances!' 
+      };
+    }
+    
+    return { valid: true, index };
+  };
 
   // Generate receive address
-  const generateAddress = () => {
+  const generateAddress = (useCustomIndex?: number) => {
     if (!btcAsset) {
       setError(t('receive.noAssetFound'));
       return;
@@ -105,9 +145,19 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
     setLoadingStartTime(Date.now());
     selectAsset(btcAsset);
     
-    // Use address type and derivation path from settings
+    // Use custom index if provided, otherwise use current addressIndex
+    const indexToUse = useCustomIndex !== undefined ? useCustomIndex : addressIndex;
+    
+    // Use address type and update derivation path with index
     setAddressType(getAddressTypeFromSettings());
-    setDerivationPath(getDerivationPathFromSettings());
+    const basePath = getDerivationPathFromSettings();
+    const pathParts = basePath.split('/');
+    pathParts[pathParts.length - 1] = indexToUse.toString();
+    const newPath = pathParts.join('/');
+    setDerivationPath(newPath);
+    
+    // Update current index
+    setCurrentAddressIndex(indexToUse);
     
     setShouldGenerate(true); // Triggers useEffect below
   };
@@ -118,7 +168,10 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
         try {
           console.log('🎯 Starting address generation...');
           console.log('🔐 Using Bitcoin address type:', bitcoinAddressType);
-          const addr = await getReceiveAddress(bitcoinAddressType);
+          console.log('📍 Using derivation path:', derivationPath);
+          
+          // Pass the custom derivation path to getReceiveAddress
+          const addr = await getReceiveAddress(bitcoinAddressType, derivationPath);
           console.log('📬 Received address from getReceiveAddress:', addr);
           if (addr) {
             setAddress(addr);
@@ -139,7 +192,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
         }
       })();
     }
-  }, [shouldGenerate, btcAsset, getReceiveAddress]);
+  }, [shouldGenerate, btcAsset, getReceiveAddress, derivationPath]);
 
   // Copy address to clipboard
   const onCopy = () => {
@@ -147,6 +200,70 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
       navigator.clipboard.writeText(address);
       setHasCopied(true);
       setTimeout(() => setHasCopied(false), 2000);
+    }
+  };
+  
+  // Handle getting a new address
+  const handleGetNewAddress = () => {
+    if (newAddressCount >= 3) {
+      setError('Maximum of 3 new addresses per session reached');
+      return;
+    }
+    
+    const newIndex = addressIndex + 1;
+    setAddressIndex(newIndex);
+    setNewAddressCount(prev => prev + 1);
+    setAddress(''); // Clear current address
+    generateAddress(newIndex);
+  };
+  
+  // Handle custom path editing
+  const handleSaveCustomPath = () => {
+    const validation = validateCustomPath(customPath);
+    if (!validation.valid) {
+      setError(validation.warning || 'Invalid path');
+      return;
+    }
+    
+    if (validation.warning) {
+      setPathWarning(validation.warning);
+    } else {
+      setPathWarning(null);
+    }
+    
+    if (validation.index !== undefined) {
+      setAddressIndex(validation.index);
+      setCurrentAddressIndex(validation.index);
+      setAddress(''); // Clear current address
+      generateAddress(validation.index);
+    }
+    
+    setIsEditingPath(false);
+  };
+  
+  // Handle custom path input change
+  const handlePathInputChange = (value: string) => {
+    // Only allow editing of numbers, not slashes
+    const pathParts = value.split('/');
+    const currentParts = customPath.split('/');
+    
+    // Ensure we have the same number of parts
+    if (pathParts.length !== currentParts.length) {
+      return;
+    }
+    
+    // Only update if the structure is maintained (slashes in same positions)
+    let valid = true;
+    for (let i = 0; i < pathParts.length - 1; i++) {
+      // Check all parts except the last one remain unchanged
+      if (i < pathParts.length - 2 && pathParts[i] !== currentParts[i]) {
+        valid = false;
+        break;
+      }
+    }
+    
+    if (valid) {
+      setCustomPath(value);
     }
   };
 
@@ -235,7 +352,19 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                 {t('receive.titleBitcoin')}
               </Heading>
             </Flex>
-            <Box w="40px" /> {/* Spacer for centering */}
+            {/* Edit path button in top right */}
+            {address && (
+              <IconButton
+                aria-label="Edit path"
+                onClick={() => setIsEditingPath(!isEditingPath)}
+                size="sm"
+                variant="ghost"
+                color="gray.400"
+                _hover={{ color: "white", bg: "gray.700" }}
+              >
+                {isEditingPath ? <FaTimes /> : <FaEdit />}
+              </IconButton>
+            )}
           </HStack>
 
           {/* Main Content */}
@@ -393,13 +522,18 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                         variant="outline"
                         colorScheme="gray"
                         size="lg"
-                        onClick={() => {
-                          setAddress('');
-                          setError(null);
-                        }}
+                        onClick={handleGetNewAddress}
                         flex="1"
+                        disabled={newAddressCount >= 3}
                       >
-                        {t('receive.generateNew')}
+                        <HStack gap={2}>
+                          <FaSync />
+                          <Text>
+                            {newAddressCount >= 3 
+                              ? 'Max reached'
+                              : `New Address (${3 - newAddressCount} left)`}
+                          </Text>
+                        </HStack>
                       </Button>
                     </HStack>
 
@@ -451,19 +585,88 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
 
                         <Box w="100%" h="1px" bg="gray.700" />
 
-                        {/* Derivation Path */}
+                        {/* Derivation Path with editing */}
                         <VStack align="stretch" gap={1}>
-                          <Text color="gray.400" fontSize="xs">{t('receive.derivationPath')}:</Text>
-                          <Code
-                            bg="gray.800"
-                            color="blue.300"
-                            p={2}
-                            borderRadius="md"
-                            fontSize="xs"
-                          >
-                            {derivationPath}
-                          </Code>
+                          <HStack justify="space-between">
+                            <Text color="gray.400" fontSize="xs">{t('receive.derivationPath')}:</Text>
+                            {isEditingPath && (
+                              <HStack gap={1}>
+                                <IconButton
+                                  size="xs"
+                                  aria-label="Save"
+                                  onClick={handleSaveCustomPath}
+                                  colorScheme="green"
+                                  variant="ghost"
+                                >
+                                  <FaSave />
+                                </IconButton>
+                                <IconButton
+                                  size="xs"
+                                  aria-label="Cancel"
+                                  onClick={() => {
+                                    setIsEditingPath(false);
+                                    setCustomPath(derivationPath);
+                                    setPathWarning(null);
+                                  }}
+                                  colorScheme="red"
+                                  variant="ghost"
+                                >
+                                  <FaTimes />
+                                </IconButton>
+                              </HStack>
+                            )}
+                          </HStack>
+                          {isEditingPath ? (
+                            <Box>
+                              <Input
+                                value={customPath}
+                                onChange={(e) => handlePathInputChange(e.target.value)}
+                                bg="gray.800"
+                                color="blue.300"
+                                borderColor={pathWarning ? "red.600" : "gray.600"}
+                                fontSize="xs"
+                                fontFamily="mono"
+                                size="sm"
+                                px={2}
+                                py={1}
+                                _hover={{
+                                  borderColor: pathWarning ? "red.500" : "gray.500"
+                                }}
+                                _focus={{
+                                  borderColor: pathWarning ? "red.400" : "blue.400",
+                                  boxShadow: "none"
+                                }}
+                              />
+                              {pathWarning && (
+                                <Text color="red.400" fontSize="xs" mt={1}>
+                                  ⚠️ {pathWarning}
+                                </Text>
+                              )}
+                            </Box>
+                          ) : (
+                            <Code
+                              bg="gray.800"
+                              color="blue.300"
+                              p={2}
+                              borderRadius="md"
+                              fontSize="xs"
+                              border={pathWarning ? '1px solid' : 'none'}
+                              borderColor={pathWarning ? 'red.600' : undefined}
+                            >
+                              {derivationPath}
+                            </Code>
+                          )}
                         </VStack>
+
+                        <Box w="100%" h="1px" bg="gray.700" />
+
+                        {/* Current Address Index */}
+                        <HStack justify="space-between">
+                          <Text color="gray.400" fontSize="xs">Current Index:</Text>
+                          <Badge colorScheme="purple" fontSize="xs">
+                            {currentAddressIndex}
+                          </Badge>
+                        </HStack>
 
                         <Box w="100%" h="1px" bg="gray.700" />
 
