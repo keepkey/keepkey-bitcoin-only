@@ -8,7 +8,7 @@ import {
   DialogCloseTrigger
 } from './ui/dialog'
 import { LuSettings, LuMonitor, LuCpu, LuNetwork, LuFileText } from 'react-icons/lu'
-import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign, FaDownload, FaTrash, FaSyncAlt, FaSearch, FaFilter, FaFolder } from 'react-icons/fa'
+import { FaCog, FaLink, FaCopy, FaCheck, FaTimes, FaUsb, FaLock, FaGlobe, FaDollarSign, FaDownload, FaTrash, FaSyncAlt, FaSearch, FaFilter, FaFolder, FaBitcoin } from 'react-icons/fa'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LanguageSwitcher } from './LanguageSwitcher'
@@ -18,6 +18,7 @@ import { KeepKeyDeviceList } from './KeepKeyDeviceList'
 import { BootloaderUpdateDialog } from './BootloaderUpdateDialog'
 import { FirmwareUpdateDialog } from './FirmwareUpdateDialog'
 import SeedVerificationWizard from './SeedVerificationWizard/SeedVerificationWizard'
+import { BitcoinSettings } from './BitcoinSettings'
 import type { DeviceStatus } from '../types/device'
 import { invoke } from '@tauri-apps/api/core'
 import holdAndConnectSvg from '../assets/svg/hold-and-connect.svg'
@@ -621,6 +622,17 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                 {/*  App*/}
                 {/*</Tabs.Trigger>*/}
                 <Tabs.Trigger 
+                  value="bitcoin"
+                  flex="1"
+                  gap={2}
+                  color="gray.400"
+                  _selected={{ bg: "gray.700", color: "white" }}
+                  _hover={{ color: "white" }}
+                >
+                  <FaBitcoin size={16} />
+                  Bitcoin
+                </Tabs.Trigger>
+                <Tabs.Trigger 
                   value="keepkey"
                   flex="1"
                   gap={2}
@@ -765,6 +777,10 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   {/* Future app settings can go here */}
                   <Text color="gray.400" fontSize="sm">More app settings coming soon...</Text>
                 </VStack>
+              </Tabs.Content>
+
+              <Tabs.Content value="bitcoin" minHeight="400px" overflowY="auto">
+                <BitcoinSettings />
               </Tabs.Content>
 
               <Tabs.Content value="keepkey" minHeight="400px" overflowY="auto">

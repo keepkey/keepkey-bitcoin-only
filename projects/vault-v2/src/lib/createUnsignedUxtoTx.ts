@@ -4,6 +4,7 @@ import { bip32ToAddressNList } from '@pioneer-platform/pioneer-coins';
 import coinSelect from 'coinselect';
 import coinSelectSplit from 'coinselect/split';
 import { PioneerAPI } from './api';
+import type { BitcoinAddressType } from '../contexts/SettingsContext';
 
 export async function createUnsignedUxtoTx(
   caip: string,
@@ -14,6 +15,7 @@ export async function createUnsignedUxtoTx(
   pioneer: any,
   keepKeySdk: any,
   isMax: boolean, // Added isMax parameter
+  addressType?: BitcoinAddressType, // New parameter for address type preference
 ): Promise<any> {
   let tag = ' | createUnsignedUxtoTx | ';
 
@@ -174,17 +176,16 @@ export async function createUnsignedUxtoTx(
     
     if (fee === undefined) throw Error('Failed to calculate transaction fee');
     
-    // CRITICAL FIX: Always use native segwit (p2wpkh) for change addresses
-    // This ensures we use the most modern and fee-efficient address type
-    console.log('🔐 Setting up change address with native segwit (p2wpkh)...');
+    // Use the address type preference, defaulting to native segwit if not provided
+    const changeScriptType = addressType || 'p2wpkh';
+    console.log(`🔐 Setting up change address with ${changeScriptType}...`);
     
-    // Always use p2wpkh for change regardless of input types
-    const changeScriptType = 'p2wpkh';
+    // Find the xpub that matches the desired script type
+    const changeXpub = relevantPubkeys.find(pk => pk.scriptType === changeScriptType)?.pubkey 
+      || relevantPubkeys.find(pk => pk.scriptType === 'p2wpkh')?.pubkey // Fall back to native segwit
+      || relevantPubkeys[0].pubkey; // Last resort: use first available
     
-    // Find the p2wpkh xpub (zpub), or fall back to the first available
-    const changeXpub = relevantPubkeys.find(pk => pk.scriptType === 'p2wpkh')?.pubkey || relevantPubkeys[0].pubkey;
-    
-    console.log(`🔐 Using script type for change: ${changeScriptType} (native segwit)`);
+    console.log(`🔐 Using script type for change: ${changeScriptType}`);
     console.log(`🔐 Change xpub selected:`, changeXpub?.substring(0, 10) + '...');
     
     // Now get change address with the CORRECT script type
@@ -194,10 +195,22 @@ export async function createUnsignedUxtoTx(
     });
     changeAddressIndex = changeAddressIndex.data.changeIndex;
     
-    // Always use native segwit path for change address (BIP84)
-    // m/84'/0'/0'/1/x for mainnet native segwit change addresses
-    const path = `m/84'/0'/0'/1/${changeAddressIndex}`;
+    // Determine BIP path based on script type
+    let bipPath: string;
+    switch (changeScriptType) {
+      case 'p2pkh':
+        bipPath = `m/44'/0'/0'/1/${changeAddressIndex}`; // BIP44 for legacy
+        break;
+      case 'p2sh-p2wpkh':
+        bipPath = `m/49'/0'/0'/1/${changeAddressIndex}`; // BIP49 for wrapped segwit
+        break;
+      case 'p2wpkh':
+      default:
+        bipPath = `m/84'/0'/0'/1/${changeAddressIndex}`; // BIP84 for native segwit
+        break;
+    }
     
+    const path = bipPath;
     console.log(`🔐 Change address path: ${path} (index: ${changeAddressIndex})`);
     
     const changeAddress = {
