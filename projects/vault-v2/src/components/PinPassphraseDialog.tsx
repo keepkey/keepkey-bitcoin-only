@@ -126,16 +126,29 @@ export const PinPassphraseDialog = ({
         console.log('📱 Device status:', status);
         
         // Check if PIN is cached (device is already unlocked for PIN)
-        // The status object has features nested inside
+        // The backend returns the status in this format: { features: { pin_cached: boolean, ... } }
         if (status && status.features && status.features.pin_cached === true) {
           console.log('🔐 PIN is cached, device only needs passphrase');
-          // Skip directly to passphrase step
-          setStep('passphrase-entry');
-          setIsLoading(false);
-          return;
+          // If we have a requestId, that means we were called in response to a passphrase_request event
+          // So we should show the passphrase entry dialog
+          if (requestId) {
+            console.log('🔐 Have requestId, showing passphrase entry for request:', requestId);
+            setStep('passphrase-entry');
+            setIsLoading(false);
+            return;
+          } else {
+            // No requestId means this was opened manually or for some other reason
+            // In this case, just close since PIN is already cached
+            console.log('🔐 PIN cached and no requestId - closing dialog');
+            setTimeout(() => {
+              if (onComplete) onComplete();
+              onClose();
+            }, 100);
+            return;
+          }
         }
       } catch (err) {
-        console.log('⚠️ Could not check device status, continuing with PIN flow:', err);
+        console.log('⚠️ Could not check device status, checking PIN flow status:', err);
       }
       
       // Check if device is already in PIN flow
@@ -163,10 +176,19 @@ export const PinPassphraseDialog = ({
           setStep('trigger');
           setDeviceReadyStatus('Please trigger PIN manually');
         }
-      } catch (err) {
-        console.log('⚠️ PIN trigger failed, showing trigger button:', err);
-        setStep('trigger');
-        setDeviceReadyStatus('Please trigger PIN manually');
+      } catch (err: any) {
+        const errorStr = String(err).toLowerCase();
+        
+        // If the error indicates the device is awaiting passphrase, go directly to passphrase
+        if (errorStr.includes('awaiting passphrase') || errorStr.includes('passphrase')) {
+          console.log('🔐 Device is awaiting passphrase, skipping PIN step');
+          setStep('passphrase-entry');
+          setDeviceReadyStatus('Device ready for passphrase');
+        } else {
+          console.log('⚠️ PIN trigger failed, showing trigger button:', err);
+          setStep('trigger');
+          setDeviceReadyStatus('Please trigger PIN manually');
+        }
       }
       
     } catch (err: any) {
@@ -377,12 +399,19 @@ export const PinPassphraseDialog = ({
     setPassphraseError(null);
 
     try {
-      console.log('🔐 [PinPassphraseDialog] Sending passphrase for device:', deviceId);
+      console.log('🔐 [PinPassphraseDialog] Sending passphrase for device:', deviceId, 'request:', requestId);
       // Use the correct backend command for sending passphrase
-      await invoke('send_passphrase', {
+      // Include the requestId if available so backend knows which request this is for
+      const params: any = {
         deviceId,
         passphrase: passphrase || '', // Empty string for no passphrase
-      });
+      };
+      
+      if (requestId) {
+        params.requestId = requestId;
+      }
+      
+      await invoke('send_passphrase', params);
 
       // Mark as submitted for this session
       setHasSubmittedPassphraseForSession(true);
@@ -439,10 +468,16 @@ export const PinPassphraseDialog = ({
     
     try {
       // Use the correct backend command for sending empty passphrase
-      await invoke('send_passphrase', {
+      const params: any = {
         deviceId,
         passphrase: '', // Empty passphrase
-      });
+      };
+      
+      if (requestId) {
+        params.requestId = requestId;
+      }
+      
+      await invoke('send_passphrase', params);
       
       console.log('🔐 [PinPassphraseDialog] Empty passphrase sent successfully');
       setStep('success');
@@ -831,7 +866,7 @@ export const PinPassphraseDialog = ({
               color="gray.300"
               _hover={{ bg: "gray.700" }}
             >
-              Cancel
+              {t('common.buttons.cancel')}
             </Button>
             
             {step === 'pin-entry' && (
@@ -840,7 +875,7 @@ export const PinPassphraseDialog = ({
                 onClick={handleSubmitPin}
                 isDisabled={pinPositions.length === 0}
               >
-                Submit PIN
+                {t('passphrase.buttons.submit')}
               </Button>
             )}
             
@@ -851,14 +886,14 @@ export const PinPassphraseDialog = ({
                   onClick={handleSkipPassphrase}
                   isDisabled={hasSubmittedPassphraseForSession}
                 >
-                  Skip Passphrase
+                  {t('common.buttons.skip')}
                 </Button>
                 <Button
                   colorScheme="blue"
                   onClick={handleSubmitPassphrase}
                   isDisabled={hasSubmittedPassphraseForSession}
                 >
-                  Submit Passphrase
+                  {t('passphrase.buttons.submit')}
                 </Button>
               </>
             )}

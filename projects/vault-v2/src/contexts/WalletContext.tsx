@@ -819,6 +819,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     let unlistenConnect: Promise<() => void>;
     let unlistenDisconnect: Promise<() => void>;
     let unlistenPinRequest: Promise<() => void>;
+    let unlistenPassphraseRequest: Promise<() => void>;
     
     (async () => {
       // Handle device connections
@@ -889,12 +890,42 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           });
         }
       });
+      
+      // Handle passphrase requests from backend when operations need passphrase
+      unlistenPassphraseRequest = listen('passphrase_request', async (event: any) => {
+        const tag = TAG + " | passphrase_request | ";
+        console.log(tag, '🔐 Passphrase request event received:', event.payload);
+        
+        if (event.payload?.deviceId) {
+          const deviceId = event.payload.deviceId;
+          const requestId = event.payload.requestId;
+          
+          // Check if auth dialog is already showing for this device
+          if (authDialog.isShowing(deviceId)) {
+            console.log(tag, '⚠️ Auth dialog already showing for device, not creating duplicate');
+            return;
+          }
+          
+          console.log(tag, '🔐 Device needs passphrase, showing unified auth dialog');
+          
+          // Show unified auth dialog starting at passphrase step (PIN is already cached)
+          authDialog.show({
+            deviceId,
+            requestId,
+            operationType: 'unlock',
+            onComplete: () => {
+              console.log(tag, '🔐 Passphrase entered successfully');
+            }
+          });
+        }
+      });
     })();
 
     return () => {
       unlistenConnect?.then(fn => fn());
       unlistenDisconnect?.then(fn => fn());
       unlistenPinRequest?.then(fn => fn());
+      unlistenPassphraseRequest?.then(fn => fn());
     };
   }, [authDialog]);
 

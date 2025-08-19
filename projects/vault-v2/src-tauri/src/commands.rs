@@ -4132,48 +4132,102 @@ pub async fn send_passphrase(
     // Create PassphraseAck message
     let passphrase_ack = keepkey_rust::messages::PassphraseAck { passphrase };
     
-    // Send the passphrase response
-    match queue_handle.send_raw(passphrase_ack.into(), true).await {
-        Ok(response) => {
-            log::info!("✅ Passphrase sent, got response: {:?}", response.message_type());
-            
-            // Clear the passphrase request state for this device now that we've sent the passphrase
-            {
-                let mut passphrase_state = device::PASSPHRASE_REQUEST_STATE.write().await;
-                if let Some(removed) = passphrase_state.remove(&device_id) {
-                    log::info!("🔓 Cleared passphrase request state for device {} (was request_id: {})", 
-                        device_id, removed.request_id);
+    // If we have a pending operation, we need to re-send the original request after the passphrase
+    if let Some(pending) = pending_op {
+        log::info!("🔄 Re-sending original operation after passphrase for request_id: {}", pending.request_id);
+        
+        // First send the passphrase acknowledgment
+        match queue_handle.send_raw(passphrase_ack.into(), true).await {
+            Ok(passphrase_response) => {
+                log::info!("✅ Passphrase acknowledged, response: {:?}", passphrase_response.message_type());
+                
+                // Check if the passphrase was accepted
+                match passphrase_response {
+                    keepkey_rust::messages::Message::Failure(failure) => {
+                        let error_msg = failure.message.unwrap_or_default();
+                        log::error!("❌ Passphrase rejected: {}", error_msg);
+                        return Err(format!("Passphrase rejected: {}", error_msg));
+                    }
+                    _ => {
+                        // Passphrase accepted, now re-send the original operation
+                        let request_id_str = pending.request_id.clone();
+                        let operation = pending.operation;
+                        log::info!("🔄 Sending original operation: {:?}", operation.message_type());
+                        
+                        match queue_handle.send_raw(operation, true).await {
+                            Ok(response) => {
+                                log::info!("✅ Original operation completed, got response: {:?}", response.message_type());
+                                
+                                // Clear the passphrase request state
+                                {
+                                    let mut passphrase_state = device::PASSPHRASE_REQUEST_STATE.write().await;
+                                    if let Some(removed) = passphrase_state.remove(&device_id) {
+                                        log::info!("🔓 Cleared passphrase request state for device {} (was request_id: {})", 
+                                            device_id, removed.request_id);
+                                    }
+                                }
+                                
+                                // Reconstruct pending operation for the handler
+                                let pending_for_handler = device::pending_operations::PendingOperation {
+                                    device_id: device_id.clone(),
+                                    request_id: request_id_str.clone(),
+                                    operation: response.clone(),  // Pass the response as the operation for the handler
+                                    timestamp: std::time::Instant::now(),
+                                };
+                                
+                                handle_passphrase_response_with_pending(
+                                    response, 
+                                    device_id.clone(), 
+                                    request_id_str,
+                                    pending_for_handler,
+                                    last_responses.inner().clone(),
+                                    app.clone()
+                                )
+                            }
+                            Err(e) => {
+                                log::error!("Failed to re-send original operation: {}", e);
+                                Err(format!("Failed to complete operation after passphrase: {}", e))
+                            }
+                        }
+                    }
                 }
             }
-            
-            // Handle the response and emit success event if we have a pending operation
-            if let Some(pending) = pending_op {
-                handle_passphrase_response_with_pending(
-                    response, 
-                    device_id.clone(), 
-                    pending.request_id,
-                    last_responses.inner().clone(),
-                    app.clone()
-                )
-            } else {
-                // The device should now continue with the original operation
-                // In most cases, we'll get the PublicKey/Address response directly
-                handle_passphrase_response(response, device_id.clone(), app.clone())
+            Err(e) => {
+                log::error!("Failed to send passphrase acknowledgment: {}", e);
+                Err(format!("Failed to send passphrase: {}", e))
             }
         }
-        Err(e) => {
-            log::error!("Failed to send passphrase for device {}: {}", device_id, e);
-            
-            // Clear the passphrase request state for this device on error to prevent stuck state
-            {
-                let mut passphrase_state = super::device::queue::PASSPHRASE_REQUEST_STATE.write().await;
-                if let Some(removed) = passphrase_state.remove(&device_id) {
-                    log::info!("🔓 Cleared passphrase request state for device {} due to error (was request_id: {})", 
-                        device_id, removed.request_id);
+    } else {
+        // No pending operation, just send the passphrase
+        match queue_handle.send_raw(passphrase_ack.into(), true).await {
+            Ok(response) => {
+                log::info!("✅ Passphrase sent, got response: {:?}", response.message_type());
+                
+                // Clear the passphrase request state for this device now that we've sent the passphrase
+                {
+                    let mut passphrase_state = device::PASSPHRASE_REQUEST_STATE.write().await;
+                    if let Some(removed) = passphrase_state.remove(&device_id) {
+                        log::info!("🔓 Cleared passphrase request state for device {} (was request_id: {})", 
+                            device_id, removed.request_id);
+                    }
                 }
+                
+                handle_passphrase_response(response, device_id.clone(), app.clone())
             }
-            
-            Err(format!("Failed to send passphrase: {}", e))
+            Err(e) => {
+                log::error!("Failed to send passphrase for device {}: {}", device_id, e);
+                
+                // Clear the passphrase request state for this device on error to prevent stuck state
+                {
+                    let mut passphrase_state = super::device::queue::PASSPHRASE_REQUEST_STATE.write().await;
+                    if let Some(removed) = passphrase_state.remove(&device_id) {
+                        log::info!("🔓 Cleared passphrase request state for device {} due to error (was request_id: {})", 
+                            device_id, removed.request_id);
+                    }
+                }
+                
+                Err(format!("Failed to send passphrase: {}", e))
+            }
         }
     }
 }
@@ -4183,6 +4237,7 @@ fn handle_passphrase_response_with_pending(
     response: keepkey_rust::messages::Message,
     device_id: String,
     request_id: String,
+    pending: device::pending_operations::PendingOperation,
     last_responses: Arc<tokio::sync::Mutex<std::collections::HashMap<String, DeviceResponse>>>,
     app: tauri::AppHandle,
 ) -> Result<bool, String> {
@@ -4195,10 +4250,27 @@ fn handle_passphrase_response_with_pending(
             let xpub = public_key.xpub.unwrap_or_default();
             if !xpub.is_empty() {
                 // Store the response
+                // Extract the path from the pending operation if it was a GetPublicKey
+                let path = if let keepkey_rust::messages::Message::GetPublicKey(get_pk) = &pending.operation {
+                    // Convert address_n back to BIP32 path string
+                    let path_parts: Vec<String> = get_pk.address_n.iter()
+                        .map(|n| {
+                            if n & 0x80000000 != 0 {
+                                format!("{}'", n & 0x7FFFFFFF)
+                            } else {
+                                n.to_string()
+                            }
+                        })
+                        .collect();
+                    format!("m/{}", path_parts.join("/"))
+                } else {
+                    String::new()
+                };
+                
                 let device_response = DeviceResponse::Xpub {
                     request_id: request_id.clone(),
                     device_id: device_id.clone(),
-                    path: String::new(), // TODO: Get from pending operation
+                    path,
                     xpub: xpub.clone(),
                     script_type: None,
                     success: true,

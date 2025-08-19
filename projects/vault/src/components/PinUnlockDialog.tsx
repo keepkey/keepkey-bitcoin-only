@@ -319,7 +319,7 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose }: PinUn
               <VStack gap={3} w="full">
                 <VStack gap={1}>
                   <Text color="gray.300" fontSize="sm" textAlign="center">
-                    Look at your device screen for the scrambled numbers
+                      Look at your device screen for the scrambled numbers
                   </Text>
                   <Text color="gray.400" fontSize="xs" textAlign="center">
                     Click the positions where your PIN digits appear
