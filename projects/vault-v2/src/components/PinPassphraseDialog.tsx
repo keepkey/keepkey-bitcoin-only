@@ -379,20 +379,10 @@ export const PinPassphraseDialog = ({
     try {
       console.log('🔐 [PinPassphraseDialog] Sending passphrase for device:', deviceId);
       // Use the correct backend command for sending passphrase
-      // If we have a requestId from the backend event, use the new command
-      if (requestId) {
-        await invoke('passphrase_submit', {
-          deviceId,
-          requestId,
-          passphrase: passphrase || '', // Empty string for no passphrase
-        });
-      } else {
-        // Fallback to the old command
-        await invoke('send_passphrase_ack', {
-          deviceId,
-          passphrase: passphrase || '', // Empty string for no passphrase
-        });
-      }
+      await invoke('send_passphrase', {
+        deviceId,
+        passphrase: passphrase || '', // Empty string for no passphrase
+      });
 
       // Mark as submitted for this session
       setHasSubmittedPassphraseForSession(true);
@@ -449,19 +439,10 @@ export const PinPassphraseDialog = ({
     
     try {
       // Use the correct backend command for sending empty passphrase
-      if (requestId) {
-        await invoke('passphrase_submit', {
-          deviceId,
-          requestId,
-          passphrase: '', // Empty passphrase
-        });
-      } else {
-        // Fallback to the old command
-        await invoke('send_passphrase_ack', {
-          deviceId,
-          passphrase: '', // Empty passphrase
-        });
-      }
+      await invoke('send_passphrase', {
+        deviceId,
+        passphrase: '', // Empty passphrase
+      });
       
       console.log('🔐 [PinPassphraseDialog] Empty passphrase sent successfully');
       setStep('success');
