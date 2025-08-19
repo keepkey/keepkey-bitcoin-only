@@ -12,7 +12,7 @@ import { listen } from '@tauri-apps/api/event';
 // Import organized types and services
 import { Asset, Portfolio, QueueStatus } from '../types';
 import { PortfolioAPI, DeviceQueueAPI, PioneerAPI } from '../lib';
-import { usePinUnlockDialog, usePassphraseDialog } from './DialogContext';
+import { usePinPassphraseDialog } from './DialogContext';
 
 const TAG = " | WalletContext | ";
 
@@ -87,10 +87,10 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [fetchedXpubs, setFetchedXpubs] = useState<Array<{path: string, xpub: string, caip: string}>>([]);
   
   // PIN unlock dialog hook
-  const pinUnlockDialog = usePinUnlockDialog();
+  // Using unified PIN+Passphrase dialog instead of separate dialogs
+  const authDialog = usePinPassphraseDialog();
   
-  // Passphrase dialog hook
-  const passphraseDialog = usePassphraseDialog();
+  // Note: Passphrase is now handled by the unified authDialog
 
   const refreshPortfolio = useCallback(async () => {
     const tag = TAG + " | refreshPortfolio | ";
@@ -698,11 +698,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
               if (connectedDevices && connectedDevices.length > 0) {
                 const deviceId = getCanonicalDeviceId(connectedDevices[0]);
                 
-                // Show PIN unlock dialog
-                pinUnlockDialog.show({
+                // Show unified auth dialog (PIN + Passphrase if needed)
+                authDialog.show({
                   deviceId,
-                  onUnlocked: () => {
-                    console.log(tag, '🔓 Device unlocked, user should retry the address request');
+                  operationType: 'address',
+                  onComplete: () => {
+                    console.log(tag, '🔓 Device authenticated, user should retry the address request');
                   }
                 });
               }
@@ -870,19 +871,20 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         if (event.payload?.deviceId) {
           const deviceId = event.payload.deviceId;
           
-          // Check if PIN dialog is already showing for this device
-          if (pinUnlockDialog.isShowing(deviceId)) {
-            console.log(tag, '⚠️ PIN dialog already showing for device, not creating duplicate');
+          // Check if auth dialog is already showing for this device
+          if (authDialog.isShowing(deviceId)) {
+            console.log(tag, '⚠️ Auth dialog already showing for device, not creating duplicate');
             return;
           }
           
-          console.log(tag, '🔒 Showing PIN dialog for device:', deviceId);
+          console.log(tag, '🔒 Showing unified auth dialog for device:', deviceId);
           
-          // Show PIN unlock dialog
-          pinUnlockDialog.show({
+          // Show unified auth dialog (PIN + Passphrase if needed)
+          authDialog.show({
             deviceId,
-            onUnlocked: () => {
-              console.log(tag, '🔓 Device unlocked successfully');
+            operationType: 'unlock',
+            onComplete: () => {
+              console.log(tag, '🔓 Device authenticated successfully');
             }
           });
         }
@@ -894,7 +896,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       unlistenDisconnect?.then(fn => fn());
       unlistenPinRequest?.then(fn => fn());
     };
-  }, [pinUnlockDialog]);
+  }, [authDialog]);
 
   // Watch fetchedXpubs and refresh portfolio when all expected xpubs are present
   useEffect(() => {

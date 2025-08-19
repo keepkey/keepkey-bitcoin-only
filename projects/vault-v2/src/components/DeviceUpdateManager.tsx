@@ -8,7 +8,7 @@ import type { DeviceStatus, DeviceFeatures } from '../types/device'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { useWallet } from '../contexts/WalletContext'
-import { useDeviceInvalidStateDialog } from '../contexts/DialogContext'
+import { useDeviceInvalidStateDialog, usePinPassphraseDialog } from '../contexts/DialogContext'
 import { useOnboardingGate } from '../contexts/OnboardingGateContext'
 
 interface DeviceUpdateManagerProps {
@@ -45,6 +45,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
   
   // Get device invalid state dialog hook
   const deviceInvalidStateDialog = useDeviceInvalidStateDialog()
+  const authDialog = usePinPassphraseDialog()
   
   // Get onboarding gate state
   const { allowDeviceInteractions, onboardingInProgress } = useOnboardingGate()
@@ -484,7 +485,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       //   }
       // })
 
-      // Listen for passphrase unlock needed events
+      // Listen for passphrase unlock needed events from backend
       const passphraseUnlockUnsubscribe = listen<{
         deviceId: string
         features: DeviceFeatures
@@ -492,38 +493,45 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         needsPassphraseUnlock: boolean
       }>('device:passphrase-unlock-needed', async (event) => {
         console.log('🔐 DeviceUpdateManager: Passphrase unlock needed event received:', event.payload)
-        const { status } = event.payload
+        const deviceId = event.payload.deviceId
         
-        // CRITICAL: Hide any invalid state dialogs first - passphrase has priority (comes first in KeepKey flow)
-        if (deviceInvalidStateDialog.isShowing(status.deviceId)) {
+        // CRITICAL: Hide any invalid state dialogs first - passphrase has priority
+        if (deviceInvalidStateDialog.isShowing(deviceId)) {
           console.log('🔐 Hiding invalid state dialog to show passphrase dialog')
-          deviceInvalidStateDialog.hide(status.deviceId)
+          deviceInvalidStateDialog.hide(deviceId)
         }
         
+        // Get the status from the event
+        const { status } = event.payload
+        console.log('🔐 DeviceUpdateManager: Device status when passphrase requested:', status)
+        
         // Show passphrase unlock - this should trigger the passphrase request flow
-        console.log('🔐 DeviceUpdateManager: Passphrase protection enabled, need to unlock first')
+        console.log('🔐 DeviceUpdateManager: Device needs passphrase')
         setDeviceStatus(status)
-        setConnectedDeviceId(status.deviceId)
+        setConnectedDeviceId(deviceId)
         setShowEnterBootloaderMode(false)
         setShowBootloaderUpdate(false)
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
         setShowPinUnlock(false)
         
-        // Trigger PIN request ONCE per device to start the authentication flow
-        // Check if we've already triggered for this device
-        if (!pinTriggeredForDevice.current.has(status.deviceId)) {
-          pinTriggeredForDevice.current.add(status.deviceId)
-          
-          try {
-            console.log('🔐 DeviceUpdateManager: Triggering authentication flow for passphrase-protected device (first time)')
-            await invoke('trigger_pin_request', { deviceId: status.deviceId })
-          } catch (error) {
-            // This is expected - the device will go into PIN/passphrase flow
-            console.log('🔐 DeviceUpdateManager: Authentication flow triggered (expected error):', error)
-          }
+        // Show the unified auth dialog for PIN and/or passphrase
+        // The dialog will handle checking if PIN is needed first
+        if (!authDialog.isShowing(deviceId)) {
+          console.log('🔐 DeviceUpdateManager: Showing unified auth dialog for device:', deviceId)
+          authDialog.show({
+            deviceId: deviceId,
+            operationType: 'unlock',
+            onComplete: () => {
+              console.log('🔐 DeviceUpdateManager: Device authenticated successfully')
+              // Device is now unlocked, refresh the portfolio
+              if (refreshPortfolio) {
+                refreshPortfolio()
+              }
+            }
+          })
         } else {
-          console.log('🔐 DeviceUpdateManager: Already triggered PIN for this device, skipping duplicate trigger')
+          console.log('🔐 DeviceUpdateManager: Auth dialog already showing for device:', deviceId)
         }
       })
 

@@ -13,7 +13,7 @@ import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
 import { VaultInterface } from './components/VaultInterface';
 import { useWallet } from './contexts/WalletContext';
-import { DialogProvider, useDialog, usePassphraseDialog } from './contexts/DialogContext';
+import { DialogProvider, useDialog } from './contexts/DialogContext';
 import { useDeviceInteraction } from './hooks/useDeviceInteraction';
 import { OnboardingGateProvider, useOnboardingGate } from './contexts/OnboardingGateContext';
 
@@ -63,7 +63,7 @@ function App() {
         const { shouldShowOnboarding, loading: onboardingLoading, clearCache } = useOnboardingState();
         const { hideAll, activeDialog, getQueue, isWizardActive } = useDialog();
         const { fetchedXpubs, portfolio, isSync, reinitialize } = useWallet();
-        const passphraseDialog = usePassphraseDialog();
+        // Passphrase is now handled by unified auth dialog in useDeviceInteraction hook
         
         // Get onboarding gate state
         const { 
@@ -258,16 +258,8 @@ function App() {
                                 break;
                                 
                             case 'passphrase_request':
-                                console.log('🔄 Replaying passphrase_request');
-                                passphraseDialog.show({
-                                    deviceId: queuedEvent.payload.deviceId,
-                                    onSubmit: () => {
-                                        console.log('🔄 Replayed passphrase submitted successfully');
-                                    },
-                                    onDialogClose: () => {
-                                        console.log('🔄 Replayed passphrase dialog closed');
-                                    }
-                                });
+                                console.log('🔄 Replaying passphrase_request - will be handled by unified auth dialog');
+                                // Passphrase is now handled by unified auth dialog
                                 break;
                                 
                             case 'device:awaiting_passphrase':
@@ -300,7 +292,7 @@ function App() {
                     }, 500);
                 }
             }
-        }, [allowDeviceInteractions, hasQueuedEvents, replayQueuedEvents, passphraseDialog]);
+        }, [allowDeviceInteractions, hasQueuedEvents, replayQueuedEvents]);
 
         // Show "No Device" dialog after 30 seconds if no device is connected
         useEffect(() => {
@@ -345,7 +337,7 @@ function App() {
             let unlistenFeaturesUpdated: (() => void) | undefined;
             let unlistenAccessError: (() => void) | undefined;
             let unlistenDeviceDisconnected: (() => void) | undefined;
-            let unlistenPassphraseRequest: (() => void) | undefined;
+            // Passphrase requests are now handled by useDeviceInteraction hook
             let unlistenPassphraseSuccess: (() => void) | undefined;
             let unlistenNoDeviceFound: (() => void) | undefined;
 
@@ -462,54 +454,11 @@ function App() {
                         setDeviceUpdateComplete(false);
                     });
 
-                    // Listen for passphrase request events from device
-                    console.log('🔐 [App] Setting up passphrase_request event listener...');
-
-                    unlistenPassphraseRequest = await listen('passphrase_request', (event) => {
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                        const payload = event.payload as any;
-                        console.log('🔐 [App] ==================== PASSPHRASE REQUEST RECEIVED ====================');
-                        console.log('🔐 [App] Event payload:', payload);
-                        console.log('🔐 [App] Event type:', event.event);
-                        console.log('🔐 [App] Current app state:', {
-                            loadingStatus,
-                            deviceConnected,
-                            deviceUpdateComplete,
-                            activeDialog: activeDialog?.id,
-                            queue: getQueue().map(d => d.id),
-                            allowDeviceInteractions
-                        });
-                        
-                        if (!allowDeviceInteractions) {
-                            console.log('🚪 OnboardingGate: Queueing passphrase_request event - onboarding in progress');
-                            queueDeviceEvent({
-                                id: `passphrase-request-${Date.now()}`,
-                                type: 'passphrase_request',
-                                payload,
-                                timestamp: Date.now(),
-                                deviceId: payload.deviceId
-                            });
-                            return;
-                        }
-                        
-                        // Show passphrase dialog
-                        console.log('🔐 [App] Calling passphraseDialog.show()...');
-                        try {
-                            passphraseDialog.show({
-                                deviceId: payload.deviceId,
-                                onSubmit: () => {
-                                    console.log('🔐 [App] Passphrase submitted successfully');
-                                },
-                                onDialogClose: () => {
-                                    console.log('🔐 [App] Passphrase dialog closed');
-                                }
-                            });
-                            console.log('🔐 [App] passphraseDialog.show() completed successfully');
-                        } catch (error) {
-                            console.error('🔐 [App] Error calling passphraseDialog.show():', error);
-                        }
-                        console.log('🔐 [App] ==================== PASSPHRASE REQUEST HANDLER COMPLETE ====================');
-                    });
+                    // REMOVED: Duplicate passphrase_request listener
+                    // Passphrase requests are now handled by:
+                    // 1. useDeviceInteraction hook for device:awaiting_passphrase events
+                    // 2. Unified PinPassphraseDialog that handles both PIN and passphrase in sequence
+                    console.log('🔐 [App] Passphrase handling delegated to useDeviceInteraction and unified auth dialog');
 
                     // Listen for passphrase success event to close the modal
                     unlistenPassphraseSuccess = await listen('passphrase:success', async (event) => {
@@ -519,9 +468,10 @@ function App() {
                         
                         // Close the passphrase dialog for this device
                         if (payload.deviceId) {
-                            passphraseDialog.hide(payload.deviceId);
+                            // Passphrase dialog is now part of unified auth dialog
+                            console.log('🔐 [App] Passphrase success - handled by unified auth dialog');
                         } else {
-                            passphraseDialog.hide();
+                            console.log('🔐 [App] Passphrase success - handled by unified auth dialog');
                         }
                         
                         // Auto-recovery: If app seems stuck after passphrase, reinitialize after delay
@@ -601,7 +551,7 @@ function App() {
                 if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
                 if (unlistenAccessError) unlistenAccessError();
                 if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
-                if (unlistenPassphraseRequest) unlistenPassphraseRequest();
+                // Passphrase listener removed - handled by useDeviceInteraction
                 if (unlistenPassphraseSuccess) unlistenPassphraseSuccess();
                 if (unlistenNoDeviceFound) unlistenNoDeviceFound();
             };

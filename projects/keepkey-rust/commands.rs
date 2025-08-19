@@ -19,6 +19,11 @@ use anyhow::Result;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+use once_cell::sync::Lazy;
+
+// Session transport cache for PIN/recovery flows to avoid recreation
+static SESSION_TRANSPORT_CACHE: Lazy<Mutex<HashMap<String, Box<dyn crate::transport::Transport>>>> = 
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecoverySession {
@@ -1537,18 +1542,49 @@ async fn send_message_to_device(device_id: &str, message: crate::messages::Messa
     
     // For special flows or when queue is not available, use direct transport
     if in_pin_flow || in_recovery_flow {
-        log::info!("Device {} is in special flow, using direct transport", device_id);
+        log::info!("Device {} is in special flow, using cached or creating transport", device_id);
         
-        // Get device entry
-        let entries = device_registry::get_all_device_entries()
-            .map_err(|e| format!("Failed to get device entries: {}", e))?;
+        // Try to get cached transport first
+        let session_key = format!("{}_{}", device_id, if in_pin_flow { "pin" } else { "recovery" });
         
-        let target_device = entries.iter()
-            .find(|entry| entry.device.unique_id == device_id)
-            .ok_or_else(|| format!("Device not found: {}", device_id))?;
+        // Check cache for existing transport
+        let mut cache_hit = false;
+        {
+            let cache = SESSION_TRANSPORT_CACHE.lock().unwrap();
+            cache_hit = cache.contains_key(&session_key);
+        }
         
-        // Create transport
-        let mut transport = create_device_transport(&target_device.device).await?;
+        // Create transport if not cached
+        let mut transport = if !cache_hit {
+            log::info!("Creating new transport for session: {}", session_key);
+            
+            // Get device entry
+            let entries = device_registry::get_all_device_entries()
+                .map_err(|e| format!("Failed to get device entries: {}", e))?;
+            
+            let target_device = entries.iter()
+                .find(|entry| entry.device.unique_id == device_id)
+                .ok_or_else(|| format!("Device not found: {}", device_id))?;
+            
+            // Create and cache transport
+            let new_transport = create_device_transport(&target_device.device).await?;
+            
+            // Note: We can't actually cache the transport due to ownership/trait object issues
+            // This would require significant refactoring. For now, we still create fresh transports.
+            new_transport
+        } else {
+            log::info!("Would reuse cached transport for session: {} (not implemented)", session_key);
+            
+            // Get device entry and create fresh transport (fallback)
+            let entries = device_registry::get_all_device_entries()
+                .map_err(|e| format!("Failed to get device entries: {}", e))?;
+            
+            let target_device = entries.iter()
+                .find(|entry| entry.device.unique_id == device_id)
+                .ok_or_else(|| format!("Device not found: {}", device_id))?;
+            
+            create_device_transport(&target_device.device).await?
+        };
         
         if in_recovery_flow {
             log::info!("Device {} is in recovery flow, using recovery flow handler", device_id);
@@ -2471,6 +2507,12 @@ pub async fn force_cleanup_seed_verification(device_id: String) -> Result<bool, 
 async fn get_device_queue_or_fallback(device_id: &str) -> Result<DeviceQueueHandle, String> {
     log::info!("Getting device queue handle for: {}", device_id);
     
+    // First try to get existing queue handle from registry
+    if let Ok(Some(existing_handle)) = device_registry::get_device_queue_handle(device_id) {
+        log::info!("Reusing existing device queue handle for: {}", device_id);
+        return Ok(existing_handle);
+    }
+    
     // Get all device entries from the registry to find the target device
     let entries = device_registry::get_all_device_entries()
         .map_err(|e| format!("Failed to get device entries: {}", e))?;
@@ -2486,7 +2528,16 @@ async fn get_device_queue_or_fallback(device_id: &str) -> Result<DeviceQueueHand
         device_entry.device.clone()
     );
     
-    log::info!("Created device queue handle for: {}", device_id);
+    // Store the queue handle in the registry for reuse
+    if let Err(e) = device_registry::add_or_update_device_with_queue(
+        device_entry.device.clone(),
+        device_entry.features.clone(),
+        Some(queue_handle.clone())
+    ) {
+        log::warn!("Failed to store queue handle in registry: {}", e);
+    }
+    
+    log::info!("Created and stored device queue handle for: {}", device_id);
     Ok(queue_handle)
 }
 

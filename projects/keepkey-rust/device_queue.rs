@@ -285,12 +285,9 @@ impl DeviceWorker {
         
         self.metrics.record_operation(queue_wait, device_rtt, total_time);
     
-    // Always drop transport after each command to avoid exclusive handle issues,
-    // it will be recreated lazily on the next command.
-    if self.transport.is_some() {
-        info!("🔌 Releasing transport handle for device {} after operation", self.device_id);
-    }
-    self.transport = None;
+    // Keep transport alive across commands for performance.
+    // It will be recreated on demand by ensure_transport() only after errors
+    // or explicitly during disruptive operations (e.g., firmware/bootloader updates)
     
     Ok(())
     }

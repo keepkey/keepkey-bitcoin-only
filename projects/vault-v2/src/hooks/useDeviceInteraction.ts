@@ -81,14 +81,19 @@ export function useDeviceInteraction() {
       unlisteners.push(unlisten);
     };
 
-    // Listen for passphrase requests
+    // DISABLED: Passphrase handling is now done through unified auth dialog in DeviceUpdateManager
+    // This prevents duplicate passphrase dialogs from appearing
     const setupPassphraseListener = async () => {
       const unlisten = await listen<DeviceEvent>('device:awaiting_passphrase', (event) => {
         const { device_id, request_id, cache_allowed } = event.payload;
         
-        if (!request_id) return;
+        console.log('📍 device:awaiting_passphrase event received (handled by DeviceUpdateManager):', {
+          device_id,
+          request_id,
+          cache_allowed
+        });
         
-        // Check onboarding gate before showing passphrase dialog
+        // Check onboarding gate and queue if needed
         if (!allowDeviceInteractions) {
           console.log('🚪 useDeviceInteraction: Queueing device:awaiting_passphrase - onboarding in progress');
           queueDeviceEvent({
@@ -101,56 +106,8 @@ export function useDeviceInteraction() {
           return;
         }
         
-        // Store the active request
-        activeRequests.current.set(request_id, {
-          deviceId: device_id,
-          requestId: request_id,
-          type: 'passphrase',
-        });
-        
-        // Open passphrase dialog with correlation
-        const passphraseDialogId = `passphrase-${device_id}-${request_id}`;
-        show({
-          id: passphraseDialogId,
-          component: React.lazy(() => import('../components/SimplePassphraseModal')),
-          props: {
-            isOpen: true,
-            deviceId: device_id,
-            requestId: request_id,
-            cacheAllowed: cache_allowed,
-            onSubmit: async (passphrase: string) => {
-              try {
-                await invoke('passphrase_submit', { 
-                  deviceId: device_id, 
-                  requestId: request_id, 
-                  passphrase 
-                });
-                activeRequests.current.delete(request_id);
-                hide(passphraseDialogId);
-              } catch (error) {
-                console.error('Passphrase submission failed:', error);
-              }
-            },
-            onCancel: async () => {
-              try {
-                await invoke('passphrase_cancel', { 
-                  deviceId: device_id, 
-                  requestId: request_id 
-                });
-                activeRequests.current.delete(request_id);
-                hide(passphraseDialogId);
-              } catch (error) {
-                console.error('Passphrase cancellation failed:', error);
-              }
-            },
-            onClose: () => {
-              activeRequests.current.delete(request_id);
-              hide(passphraseDialogId);
-            }
-          },
-          priority: 'high',
-          persistent: true,
-        });
+        // Don't show a dialog here - DeviceUpdateManager will handle it with the unified auth dialog
+        // This prevents duplicate passphrase dialogs from appearing
       });
       unlisteners.push(unlisten);
     };
