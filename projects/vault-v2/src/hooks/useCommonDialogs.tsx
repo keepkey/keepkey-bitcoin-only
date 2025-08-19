@@ -1,7 +1,6 @@
 import { useDialog } from '../contexts/DialogContext';
 import { useCallback } from 'react';
 import React from 'react';
-import { OnboardingWizard } from '../components/OnboardingWizard/OnboardingWizard';
 import { SetupWizard } from '../components/SetupWizard';
 import { NoDeviceDialog } from '../components/NoDeviceDialog';
 
@@ -20,7 +19,7 @@ export function useCommonDialogs() {
   const showOnboarding = useCallback((props?: any) => {
     show({
       id: 'onboarding',
-      component: OnboardingWizard, // Direct component instead of lazy loading for testing
+      component: React.lazy(dialogComponents.onboarding), // Use lazy loading to avoid circular dependencies
       props,
       priority: 'high',
       persistent: true,

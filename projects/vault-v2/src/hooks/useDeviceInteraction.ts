@@ -2,6 +2,7 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useDialog } from '../contexts/DialogContext';
+import { useOnboardingGate } from '../contexts/OnboardingGateContext';
 
 interface DeviceEvent {
   type: string;
@@ -30,6 +31,7 @@ export function useDeviceInteraction() {
   });
   
   const { show, hide } = useDialog();
+  const { allowDeviceInteractions, queueDeviceEvent } = useOnboardingGate();
 
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
@@ -85,6 +87,19 @@ export function useDeviceInteraction() {
         const { device_id, request_id, cache_allowed } = event.payload;
         
         if (!request_id) return;
+        
+        // Check onboarding gate before showing passphrase dialog
+        if (!allowDeviceInteractions) {
+          console.log('🚪 useDeviceInteraction: Queueing device:awaiting_passphrase - onboarding in progress');
+          queueDeviceEvent({
+            id: `awaiting-passphrase-${device_id}-${request_id}`,
+            type: 'device:awaiting_passphrase',
+            payload: event.payload,
+            timestamp: Date.now(),
+            deviceId: device_id
+          });
+          return;
+        }
         
         // Store the active request
         activeRequests.current.set(request_id, {
@@ -237,7 +252,7 @@ export function useDeviceInteraction() {
     return () => {
       unlisteners.forEach(unlisten => unlisten());
     };
-  }, [show, hide, reconnectDialogState.deviceId, reconnectDialogState.isOpen]);
+  }, [show, hide, reconnectDialogState.deviceId, reconnectDialogState.isOpen, allowDeviceInteractions, queueDeviceEvent]);
 
   const closeReconnectDialog = useCallback(() => {
     setReconnectDialogState({

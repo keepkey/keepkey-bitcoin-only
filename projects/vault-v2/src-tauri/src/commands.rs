@@ -1767,7 +1767,27 @@ pub async fn test_status_emission(app: tauri::AppHandle) -> Result<String, Strin
 /// Signal that the frontend is ready to receive events
 #[tauri::command]
 pub async fn frontend_ready(app: AppHandle) -> Result<(), String> {
-    println!("🎯 Frontend ready signal received - enabling event emission");
+    println!("🎯 Frontend ready signal received - checking onboarding status");
+    
+    // Check if user is onboarded before enabling device operations
+    let onboarding_complete = match is_onboarded().await {
+        Ok(onboarded) => onboarded,
+        Err(e) => {
+            println!("⚠️ Failed to check onboarding status: {}", e);
+            false // Default to not onboarded if we can't check
+        }
+    };
+    
+    if !onboarding_complete {
+        println!("🚪 OnboardingGate: User not onboarded - blocking device operations");
+        println!("🚪 OnboardingGate: Frontend ready signal acknowledged but device scanning blocked");
+        // Still mark frontend as ready for UI events, but don't start device operations
+        let mut state = FRONTEND_READY_STATE.write().await;
+        state.is_ready = true;
+        return Ok(());
+    }
+    
+    println!("🎯 Frontend ready signal received - user is onboarded, enabling event emission and device operations");
     
     let mut state = FRONTEND_READY_STATE.write().await;
     state.is_ready = true;
@@ -1788,6 +1808,51 @@ pub async fn frontend_ready(app: AppHandle) -> Result<(), String> {
         println!("✅ No queued events to flush");
     }
     
+    Ok(())
+}
+
+/// Start device operations after onboarding is complete
+#[tauri::command]
+pub async fn start_device_operations(app: AppHandle) -> Result<(), String> {
+    println!("🚪 OnboardingGate: Starting device operations after onboarding completion");
+    
+    // Verify onboarding is actually complete
+    let onboarding_complete = match is_onboarded().await {
+        Ok(onboarded) => onboarded,
+        Err(e) => {
+            println!("⚠️ Failed to verify onboarding status: {}", e);
+            return Err(format!("Failed to verify onboarding status: {}", e));
+        }
+    };
+    
+    if !onboarding_complete {
+        return Err("Cannot start device operations - onboarding not complete".to_string());
+    }
+    
+    // Emit scanning status
+    if let Err(e) = app.emit("status:update", serde_json::json!({
+        "status": "Scanning for devices..."
+    })) {
+        println!("⚠️ Failed to emit scanning status: {}", e);
+    }
+    
+    // The event controller will now detect and process devices since onboarding is complete
+    // Just emit a trigger to force immediate check rather than waiting for next interval
+    let devices = keepkey_rust::features::list_connected_devices();
+    let device_count = devices.len();
+    println!("🔍 Found {} device(s) ready for processing after onboarding completion", device_count);
+    
+    if device_count == 0 {
+        if let Err(e) = app.emit("status:update", serde_json::json!({
+            "status": "No devices found. Please connect your KeepKey."
+        })) {
+            println!("⚠️ Failed to emit no devices status: {}", e);
+        }
+    }
+    
+    // The event controller will handle the rest of the device processing automatically
+    
+    println!("✅ Device operations started successfully");
     Ok(())
 }
 

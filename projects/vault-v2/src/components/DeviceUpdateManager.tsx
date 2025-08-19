@@ -9,6 +9,7 @@ import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { useWallet } from '../contexts/WalletContext'
 import { useDeviceInvalidStateDialog } from '../contexts/DialogContext'
+import { useOnboardingGate } from '../contexts/OnboardingGateContext'
 
 interface DeviceUpdateManagerProps {
   // Optional callback when all updates/setup is complete
@@ -44,6 +45,9 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
   
   // Get device invalid state dialog hook
   const deviceInvalidStateDialog = useDeviceInvalidStateDialog()
+  
+  // Get onboarding gate state
+  const { allowDeviceInteractions, onboardingInProgress } = useOnboardingGate()
 
   // Function to try getting device status via command when events fail
   const tryGetDeviceStatus = async (deviceId: string, attempt = 1) => {
@@ -718,6 +722,12 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
   const handlePinUnlockClose = () => {
     setShowPinUnlock(false)
     // Don't call onComplete - user cancelled PIN entry
+  }
+
+  // Don't render anything during onboarding - this prevents device dialogs from interrupting
+  if (onboardingInProgress) {
+    console.log('🚪 DeviceUpdateManager: Onboarding in progress - not rendering device dialogs')
+    return null
   }
 
   // If setup wizard is active, we should still render it even without deviceStatus

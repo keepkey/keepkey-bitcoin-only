@@ -15,6 +15,7 @@ import { VaultInterface } from './components/VaultInterface';
 import { useWallet } from './contexts/WalletContext';
 import { DialogProvider, useDialog, usePassphraseDialog } from './contexts/DialogContext';
 import { useDeviceInteraction } from './hooks/useDeviceInteraction';
+import { OnboardingGateProvider, useOnboardingGate } from './contexts/OnboardingGateContext';
 
 // Define the expected structure of DeviceFeatures from Rust
 interface DeviceFeatures {
@@ -46,7 +47,7 @@ interface DeviceInfoState {
 }
 
 function App() {
-    // AppContent is an inner component with access to DialogContext
+    // AppContent is an inner component with access to DialogContext and OnboardingGate
     const AppContent = () => {
         // We're tracking application state from backend events
         const [loadingStatus, setLoadingStatus] = useState<string>('Starting...');
@@ -64,7 +65,17 @@ function App() {
         const { fetchedXpubs, portfolio, isSync, reinitialize } = useWallet();
         const passphraseDialog = usePassphraseDialog();
         
+        // Get onboarding gate state
+        const { 
+            allowDeviceInteractions, 
+            onboardingInProgress, 
+            queueDeviceEvent, 
+            replayQueuedEvents,
+            hasQueuedEvents 
+        } = useOnboardingGate();
+        
         // Enable global device interaction handling (PIN, passphrase, button dialogs)
+        // But only if onboarding gate allows it
         useDeviceInteraction();
         
         // Check wallet context state and sync with local state
@@ -222,6 +233,74 @@ function App() {
             }
         }, [shouldShowOnboarding, onboardingLoading, showOnboarding, clearCache]);
 
+        // Replay queued device events when device interactions become allowed
+        useEffect(() => {
+            if (allowDeviceInteractions && hasQueuedEvents) {
+                console.log('🚪 OnboardingGate: Device interactions now allowed, replaying queued events');
+                const queuedEvents = replayQueuedEvents();
+                
+                // Process queued events
+                queuedEvents.forEach(async (queuedEvent) => {
+                    console.log('🔄 Replaying queued event:', queuedEvent.type, queuedEvent.id);
+                    
+                    try {
+                        switch (queuedEvent.type) {
+                            case 'device:ready':
+                                if (queuedEvent.payload.device && queuedEvent.payload.features) {
+                                    console.log('🔄 Replaying device:ready - setting device state');
+                                    setDeviceConnected(true);
+                                    setDeviceInfo({ features: queuedEvent.payload.features, error: null });
+                                    setDeviceUpdateComplete(true);
+                                    setLoadingStatus('Device ready');
+                                    console.log(`🔄 Device ready replayed: ${queuedEvent.payload.features.label || 'Unlabeled'} v${queuedEvent.payload.features.version}`);
+                                }
+                                break;
+                                
+                            case 'passphrase_request':
+                                console.log('🔄 Replaying passphrase_request');
+                                passphraseDialog.show({
+                                    deviceId: queuedEvent.payload.deviceId,
+                                    onSubmit: () => {
+                                        console.log('🔄 Replayed passphrase submitted successfully');
+                                    },
+                                    onDialogClose: () => {
+                                        console.log('🔄 Replayed passphrase dialog closed');
+                                    }
+                                });
+                                break;
+                                
+                            case 'device:awaiting_passphrase':
+                                console.log('🔄 Replaying device:awaiting_passphrase - will be handled by useDeviceInteraction hook');
+                                // This will be re-processed by useDeviceInteraction hook since allowDeviceInteractions is now true
+                                break;
+                                
+                            default:
+                                console.log('🔄 Unknown queued event type:', queuedEvent.type);
+                        }
+                    } catch (error) {
+                        console.error('🔄 Error replaying queued event:', queuedEvent.type, error);
+                    }
+                });
+                
+                // Signal backend that frontend is ready and start device operations
+                if (queuedEvents.length > 0) {
+                    setTimeout(async () => {
+                        try {
+                            console.log('🔄 Signaling backend ready after replaying events...');
+                            await invoke('frontend_ready');
+                            console.log('🔄 Backend ready signal sent after replay');
+                            
+                            console.log('🔄 Starting device operations after replay...');
+                            await invoke('start_device_operations');
+                            console.log('🔄 Device operations started after replay');
+                        } catch (error) {
+                            console.log('🔄 Failed to start operations after replay:', error);
+                        }
+                    }, 500);
+                }
+            }
+        }, [allowDeviceInteractions, hasQueuedEvents, replayQueuedEvents, passphraseDialog]);
+
         // Show "No Device" dialog after 30 seconds if no device is connected
         useEffect(() => {
             let timeoutId: NodeJS.Timeout;
@@ -284,12 +363,17 @@ function App() {
                     console.log('🔐 [App] ***** APP IS RUNNING - CONSOLE LOGS WORKING *****');
                     
                     // Signal backend that frontend is ready to receive events FIRST
-                    try {
-                        console.log('🎯 Signaling backend that frontend is ready...');
-                        await invoke('frontend_ready');
-                        console.log('✅ Frontend ready signal sent successfully');
-                    } catch (error) {
-                        console.log('DeviceUpdateManager: frontend_ready command failed:', error);
+                    // But only if onboarding allows device interactions
+                    if (allowDeviceInteractions) {
+                        try {
+                            console.log('🎯 Signaling backend that frontend is ready...');
+                            await invoke('frontend_ready');
+                            console.log('✅ Frontend ready signal sent successfully');
+                        } catch (error) {
+                            console.log('DeviceUpdateManager: frontend_ready command failed:', error);
+                        }
+                    } else {
+                        console.log('🚪 OnboardingGate: Blocking frontend_ready signal - onboarding in progress');
                     }
                     
                     // Listen for status updates from backend
@@ -320,6 +404,18 @@ function App() {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const payload = event.payload as any;
                         console.log('📱 [App] Device ready event received:', payload);
+                        
+                        if (!allowDeviceInteractions) {
+                            console.log('🚪 OnboardingGate: Queueing device:ready event - onboarding in progress');
+                            queueDeviceEvent({
+                                id: `device-ready-${Date.now()}`,
+                                type: 'device:ready',
+                                payload,
+                                timestamp: Date.now(),
+                                deviceId: payload.device?.id || payload.features?.device_id
+                            });
+                            return;
+                        }
                         
                         if (payload.device && payload.features) {
                             console.log('📱 [App] Setting deviceConnected to true from device:ready event');
@@ -379,8 +475,21 @@ function App() {
                             deviceConnected,
                             deviceUpdateComplete,
                             activeDialog: activeDialog?.id,
-                            queue: getQueue().map(d => d.id)
+                            queue: getQueue().map(d => d.id),
+                            allowDeviceInteractions
                         });
+                        
+                        if (!allowDeviceInteractions) {
+                            console.log('🚪 OnboardingGate: Queueing passphrase_request event - onboarding in progress');
+                            queueDeviceEvent({
+                                id: `passphrase-request-${Date.now()}`,
+                                type: 'passphrase_request',
+                                payload,
+                                timestamp: Date.now(),
+                                deviceId: payload.deviceId
+                            });
+                            return;
+                        }
                         
                         // Show passphrase dialog
                         console.log('🔐 [App] Calling passphraseDialog.show()...');
@@ -495,7 +604,7 @@ function App() {
                 if (unlistenPassphraseSuccess) unlistenPassphraseSuccess();
                 if (unlistenNoDeviceFound) unlistenNoDeviceFound();
             };
-        }, []);
+        }, [allowDeviceInteractions]);
 
         const mcpUrl = "http://127.0.0.1:1646/mcp";
 
@@ -677,9 +786,11 @@ function App() {
     };
 
     return (
-        <DialogProvider>
-            <AppContent />
-        </DialogProvider>
+        <OnboardingGateProvider>
+            <DialogProvider>
+                <AppContent />
+            </DialogProvider>
+        </OnboardingGateProvider>
     );
 }
 
