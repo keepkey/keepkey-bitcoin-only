@@ -213,9 +213,10 @@ function App() {
                 return;
             }
 
-            console.log(`App.tsx: Should show onboarding: ${shouldShowOnboarding}`);
+            console.log(`App.tsx: Should show onboarding: ${shouldShowOnboarding}, onboardingActive: ${onboardingActive}`);
             
-            if (shouldShowOnboarding) {
+            // Only show onboarding if needed AND not already active (prevent loops)
+            if (shouldShowOnboarding && !onboardingActive) {
                 console.log("App.tsx: Showing onboarding wizard");
                 setOnboardingActive(true);
                 // Add a small delay to ensure the dialog system is ready
@@ -223,15 +224,15 @@ function App() {
                     showOnboarding({
                         onComplete: () => {
                             console.log("App.tsx: Onboarding completed callback");
+                            setOnboardingActive(false); // Mark as inactive first
                             clearCache(); // Clear the cache after completion
-                            setOnboardingActive(false);
                         }
                     });
                 }, 1000);
             } else {
-                console.log("App.tsx: Onboarding not needed, user is already onboarded");
+                console.log("App.tsx: Onboarding not needed or already active");
             }
-        }, [shouldShowOnboarding, onboardingLoading, showOnboarding, clearCache]);
+        }, [shouldShowOnboarding, onboardingLoading, onboardingActive, showOnboarding]);
 
         // Replay queued device events when device interactions become allowed
         useEffect(() => {

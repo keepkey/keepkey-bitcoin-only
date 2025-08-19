@@ -87,8 +87,16 @@ export function useOnboardingState() {
 
   // Clear cache when onboarding is completed
   const clearCache = () => {
+    console.log('🧹 useOnboardingState: Clearing cache and updating state to completed');
     onboardingCache = {};
     loadPromise = null;
+    
+    // Immediately update state to reflect completion to prevent loops
+    setState({
+      isFirstTime: false,
+      isOnboarded: true,
+      loading: false,
+    });
   };
 
   const shouldShowOnboarding = state.isFirstTime === true || state.isOnboarded === false;
