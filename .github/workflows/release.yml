@@ -295,7 +295,9 @@ jobs:
           echo "✅ Certificate imported successfully"
 
       - name: Build Tauri app
+        id: build-tauri
         uses: tauri-apps/tauri-action@v0
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Conditionally set Tauri signing credentials
@@ -312,24 +314,82 @@ jobs:
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
-        if: always()  # Upload even if build fails for debugging
+        if: steps.build-tauri.outcome == 'success' || steps.build-tauri.outcome == 'failure'
         with:
-          name: ${{ matrix.name }}-artifacts
+          name: ${{ matrix.name }}-artifacts-${{ github.run_number }}
           path: |
             projects/vault-v2/src-tauri/target/release/bundle/
           retention-days: 7
+          if-no-files-found: warn
+
+      - name: Manual upload to release (if Tauri action fails)
+        if: startsWith(github.ref, 'refs/tags/') && steps.build-tauri.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "Checking for built artifacts to upload..."
+          
+          # Function to upload a file to the release
+          upload_asset() {
+            local file="$1"
+            local filename=$(basename "$file")
+            echo "Uploading $filename..."
+            
+            curl -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$file" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-release.outputs.release_id }}/assets?name=$filename" \
+              || echo "Failed to upload $filename"
+          }
+          
+          # Find and upload files based on platform
+          case "${{ matrix.name }}" in
+            "macOS-universal")
+              for file in projects/vault-v2/src-tauri/target/release/bundle/dmg/*.dmg; do
+                [ -f "$file" ] && upload_asset "$file"
+              done
+              for file in projects/vault-v2/src-tauri/target/release/bundle/macos/*.app.tar.gz; do
+                [ -f "$file" ] && upload_asset "$file"
+              done
+              ;;
+            "Windows-x64")
+              for file in projects/vault-v2/src-tauri/target/release/bundle/nsis/*.exe; do
+                [ -f "$file" ] && upload_asset "$file"
+              done
+              for file in projects/vault-v2/src-tauri/target/release/bundle/msi/*.msi; do
+                [ -f "$file" ] && upload_asset "$file"
+              done
+              ;;
+            "Linux-AppImage")
+              for file in projects/vault-v2/src-tauri/target/release/bundle/appimage/*.AppImage; do
+                [ -f "$file" ] && upload_asset "$file"
+              done
+              for file in projects/vault-v2/src-tauri/target/release/bundle/deb/*.deb; do
+                [ -f "$file" ] && upload_asset "$file"
+              done
+              ;;
+          esac
+          
+          echo "✅ Artifact upload attempt completed"
 
       - name: Build summary
         shell: bash
         run: |
           echo "## 📦 Build Summary - ${{ matrix.name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Platform**: ${{ matrix.platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Status**: ${{ steps.build-tauri.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Tauri Signing**: ${{ steps.check-signing.outputs.has_tauri_signing == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
             echo "- **Apple Code Signing**: ${{ steps.check-signing.outputs.has_apple_codesigning == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
             echo "- **Apple Notarization**: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && '✅ Enabled' || '⚠️ Disabled' }}" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.build-tauri.outcome }}" == "success" ]]; then
+            echo "✅ **Build completed successfully.** Artifacts have been uploaded to the release." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Build failed.** Check the logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
           if [[ "${{ steps.check-signing.outputs.has_tauri_signing }}" == "false" ]]; then
             echo "⚠️ **Warning**: This build is not signed and should only be used for development/testing purposes." >> $GITHUB_STEP_SUMMARY
           fi
@@ -391,11 +451,17 @@ jobs:
       - name: Check build results
         run: |
           echo "## 📋 Build Results Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **macOS**: ${{ needs.build-tauri.result == 'success' && '✅ Success' || '❌ Failed - Manual upload needed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Windows**: ${{ needs.build-tauri.result == 'success' && '✅ Success' || '❌ Failed - Manual upload needed' }}" >> $GITHUB_STEP_SUMMARY  
-          echo "- **Linux**: ${{ needs.build-tauri.result == 'success' && '✅ Success' || '❌ Failed - Manual upload needed' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "ℹ️ **Note**: Release will be published with available builds. Manual upload may be needed for failed platforms." >> $GITHUB_STEP_SUMMARY
+          echo "### Individual Build Status:" >> $GITHUB_STEP_SUMMARY
+          echo "Check the individual build jobs for platform-specific results." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.build-tauri.result }}" == "success" ]]; then
+            echo "✅ **All builds completed.** Release will be published with all available artifacts." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Some builds may have failed.** Release will be published with successfully built artifacts only." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️ **Note**: Each platform builds independently. Failed platforms can be manually added to the release later." >> $GITHUB_STEP_SUMMARY
+          fi
           
       - name: Publish release
         id: publish-release
