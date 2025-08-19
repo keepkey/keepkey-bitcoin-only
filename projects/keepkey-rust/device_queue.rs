@@ -22,7 +22,7 @@ enum TransportType {
 }
 
 // Default timeouts and limits
-const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
+const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(120); // Increased to 2 minutes for user confirmation
 const QUEUE_CHANNEL_SIZE: usize = 100;
 const CACHE_MAX_ENTRIES: usize = 256;
 const CACHE_TTL: Duration = Duration::from_secs(30);

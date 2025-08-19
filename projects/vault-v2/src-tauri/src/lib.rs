@@ -408,6 +408,7 @@ pub fn run() {
             commands::pin_cancel,
             commands::get_device_interaction_state,
             commands::reset_device_interaction_state,
+            commands::reset_device_queue,
             // PIN management commands
             commands::enable_pin_protection,
             commands::disable_pin_protection,

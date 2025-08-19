@@ -203,7 +203,6 @@ pub struct InitializationCheck {
 
 /// Unified device queue command - all device operations go through this
 #[tauri::command]
-#[allow(dead_code)]
 pub async fn reset_device_queue(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,

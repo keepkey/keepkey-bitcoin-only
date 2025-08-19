@@ -1,118 +1,139 @@
 {
+  "language": {
+    "title": "Wählen Sie Ihre Sprache",
+    "description": "Wählen Sie Ihre bevorzugte Sprache",
+    "fullDescription": "Wählen Sie Ihre bevorzugte Sprache für die KeepKey Desktop-Anwendung",
+    "changeAnytime": "Sie können dies jederzeit in den Einstellungen ändern",
+    "appliedImmediately": "Die Sprache wird sofort angewendet"
+  },
   "welcome": {
-    "title": "Willkommen bei KeepKey Vault",
-    "subtitle": "Lassen Sie uns Ihre sichere Bitcoin-Wallet einrichten",
-    "getStarted": "Loslegen"
+    "title": "Willkommen bei KeepKey",
+    "subtitle": "Ihr Weg zur sicheren Kryptowährungsverwaltung beginnt hier",
+    "description": "KeepKey ist Ihr Tor zur sicheren Kryptowährungsverwaltung",
+    "getStarted": "Loslegen",
+    "learnMore": "Mehr erfahren",
+    "features": {
+      "secure": "Sicherheit auf Bankniveau",
+      "simple": "Einfach zu bedienen",
+      "private": "Ihre Schlüssel, Ihre Kryptos"
+    }
   },
   "setup": {
-    "title": "Einrichtung",
-    "newWallet": "Neue Wallet erstellen",
-    "importWallet": "Bestehende Wallet importieren",
-    "connectDevice": "KeepKey verbinden"
-  },
-  "device": {
-    "connect": {
-      "title": "Verbinden Sie Ihren KeepKey",
-      "instructions": "Schließen Sie Ihr KeepKey-Gerät über USB an, um fortzufahren",
-      "waiting": "Warte auf Gerät...",
-      "detected": "KeepKey erkannt!",
-      "notDetected": "Gerät nicht erkannt",
-      "troubleshoot": "Fehlerbehebung"
-    },
-    "initialize": {
-      "title": "KeepKey initialisieren",
-      "description": "Ihr Gerät muss vor der Verwendung eingerichtet werden",
-      "start": "Initialisierung starten"
-    },
-    "unlock": {
-      "title": "KeepKey entsperren",
-      "enterPin": "Geben Sie Ihre PIN auf dem Gerät ein",
-      "waiting": "Warte auf PIN..."
+    "title": "Richten Sie Ihr Gerät ein",
+    "subtitle": "Lassen Sie uns Ihren KeepKey vorbereiten",
+    "connectDevice": "Bitte verbinden Sie Ihr KeepKey-Gerät",
+    "detectingDevice": "Gerät wird erkannt...",
+    "deviceFound": "Gerät gefunden!",
+    "deviceNotFound": "Gerät nicht gefunden",
+    "troubleshooting": "Probleme? Schauen Sie sich unseren Fehlerbehebungsguide an",
+    "skipSetup": "Einrichtung überspringen",
+    "requirements": {
+      "title": "Bevor wir beginnen",
+      "device": "KeepKey-Gerät",
+      "cable": "USB-Kabel",
+      "time": "5-10 Minuten"
     }
   },
-  "seed": {
-    "create": {
-      "title": "Wiederherstellungsphrase erstellen",
-      "description": "Ihre Wiederherstellungsphrase ist die Sicherung Ihrer Wallet",
-      "warning": "Schreiben Sie diese Wörter in der richtigen Reihenfolge auf und bewahren Sie sie sicher auf",
-      "generate": "Phrase generieren"
+  "app-settings": {
+    "title": "App-Einstellungen",
+    "subtitle": "Konfigurieren Sie Ihre Anwendungseinstellungen",
+    "description": "Konfigurieren Sie Ihre Anwendungseinstellungen",
+    "fullDescription": "Passen Sie an, wie KeepKey Desktop für Sie funktioniert",
+    "theme": {
+      "title": "Theme",
+      "label": "Theme auswählen",
+      "light": "Hell",
+      "dark": "Dunkel",
+      "system": "Systemstandard",
+      "description": "Das dunkle Theme bietet bessere Sichtbarkeit und reduziert Augenbelastung bei längerer Nutzung",
+      "active": "Dunkles Theme aktiv"
     },
-    "import": {
-      "title": "Wiederherstellungsphrase importieren",
-      "description": "Geben Sie Ihre bestehende Wiederherstellungsphrase ein",
-      "wordCount": "Anzahl der Wörter",
-      "enterWords": "Wörter eingeben",
-      "word": "Wort",
-      "verify": "Phrase überprüfen"
+    "analytics": {
+      "title": "Anonyme Analysen",
+      "description": "Helfen Sie uns zu verbessern, indem Sie anonyme Nutzungsdaten teilen",
+      "enable": "Analysen aktivieren",
+      "disable": "Nein danke"
     },
-    "backup": {
-      "title": "Sichern Sie Ihre Phrase",
-      "instruction1": "Schreiben Sie diese {{count}} Wörter in der exakten Reihenfolge auf",
-      "instruction2": "Bewahren Sie sie an einem sicheren und geheimen Ort auf",
-      "instruction3": "Teilen Sie Ihre Phrase niemals mit anderen",
-      "written": "Ich habe meine Wiederherstellungsphrase aufgeschrieben"
+    "notifications": {
+      "title": "Benachrichtigungen",
+      "description": "Bleiben Sie über wichtige Sicherheitsupdates und Gerätestatusänderungen informiert",
+      "fullDescription": "Erhalten Sie Benachrichtigungen über wichtige Updates und Transaktionen",
+      "enable": "Benachrichtigungen aktivieren",
+      "enabled": "Benachrichtigungen aktiviert",
+      "disable": "Benachrichtigungen deaktivieren"
     },
-    "verify": {
-      "title": "Überprüfen Sie Ihre Sicherung",
-      "description": "Bestätigen Sie, dass Sie Ihre Phrase korrekt gesichert haben",
-      "enterWord": "Geben Sie Wort #{{position}} ein",
-      "correct": "Korrekt!",
-      "incorrect": "Falsch, bitte erneut versuchen"
-    }
+    "defaultSettings": "Standardeinstellungen sind für Sicherheit und Benutzerfreundlichkeit optimiert"
   },
   "pin": {
-    "create": {
-      "title": "PIN erstellen",
-      "description": "Ihre PIN schützt den Zugriff auf Ihr Gerät",
-      "enter": "PIN eingeben",
-      "confirm": "PIN bestätigen",
-      "mismatch": "PINs stimmen nicht überein"
+    "title": "Sicherheit",
+    "subtitle": "Sicherheitseinrichtung",
+    "description": "Richten Sie Ihre PIN und Sicherheitseinstellungen ein",
+    "fullDescription": "Lernen Sie PIN-Schutz und Sicherheitsbest-Practices für Ihr KeepKey-Gerät",
+    "protectDevice": "Schützen Sie Ihr Gerät mit einer PIN",
+    "pinProtection": {
+      "title": "PIN-Schutz",
+      "description": "Ihre PIN schützt Ihr Gerät vor unbefugtem Zugriff. Wählen Sie eine PIN, die für Sie leicht zu merken, aber für andere schwer zu erraten ist",
+      "recommendation": "4-9 Ziffern empfohlen"
     },
-    "change": {
-      "title": "PIN ändern",
-      "current": "Aktuelle PIN",
-      "new": "Neue PIN",
-      "confirm": "Neue PIN bestätigen"
-    }
+    "recoveryPhrase": {
+      "title": "Wiederherstellungsphrase",
+      "description": "Ihre Wiederherstellungsphrase ist die Master-Sicherung Ihrer Wallet. Halten Sie sie sicher und teilen Sie sie niemals mit anderen",
+      "instruction": "Schreiben Sie sie sicher auf"
+    },
+    "setupInfo": "💡 Sie werden Ihre PIN direkt auf Ihrem KeepKey-Gerät einrichten, wenn Sie es verbinden"
   },
-  "wallet": {
-    "name": {
-      "title": "Benennen Sie Ihre Wallet",
-      "description": "Geben Sie Ihrer Wallet einen Namen zur einfachen Identifizierung",
-      "placeholder": "Meine Bitcoin-Wallet",
-      "continue": "Weiter"
+  "mnemonics": {
+    "title": "Wiederherstellung",
+    "subtitle": "Wiederherstellungsphrasen", 
+    "description": "Wiederherstellungsphrasen verstehen",
+    "fullDescription": "Wiederherstellungsphrasen und Backup-Best-Practices verstehen",
+    "securityWarning": {
+      "title": "Sicherheitswarnung",
+      "description": "Teilen Sie Ihre Wiederherstellungsphrase niemals mit jemandem. KeepKey-Mitarbeiter werden niemals danach fragen",
+      "strongWarning": "Jeder mit Ihrer Wiederherstellungsphrase kann Ihre Gelder stehlen!"
     },
-    "type": {
-      "title": "Wallet-Typ",
-      "standard": "Standard",
-      "segwit": "SegWit (Empfohlen)",
-      "native": "Native SegWit"
-    }
+    "whatIs": {
+      "title": "Was ist eine Wiederherstellungsphrase?",
+      "point1": "• Eine 12-Wort-Sicherung Ihrer gesamten Wallet",
+      "point2": "• Der einzige Weg, Gelder zu erholen, wenn das Gerät verloren ist",
+      "point3": "• Muss aufgeschrieben und sicher aufbewahrt werden",
+      "point4": "• Wird von Ihrem KeepKey während der Einrichtung generiert"
+    },
+    "preparation": "📝 Halten Sie Stift und Papier bereit, wenn Sie Ihr KeepKey-Gerät initialisieren"
   },
   "complete": {
     "title": "Einrichtung abgeschlossen!",
-    "message": "Ihr KeepKey ist einsatzbereit",
-    "dashboard": "Zum Dashboard"
+    "subtitle": "Sie sind bereit, KeepKey zu nutzen",
+    "description": "Sie sind startklar!",
+    "fullDescription": "Ihr KeepKey ist bereit für sichere Kryptowährungsverwaltung",
+    "message": "Ihre Einstellungen wurden gespeichert und Sie können jetzt Ihr KeepKey-Gerät verbinden",
+    "startUsing": "KeepKey nutzen",
+    "viewTutorial": "Tutorial ansehen",
+    "nextSteps": {
+      "title": "Nächste Schritte",
+      "step1": "1. Verbinden Sie Ihr KeepKey-Gerät über USB",
+      "step2": "2. Folgen Sie den Geräte-Einrichtungsanweisungen", 
+      "step3": "3. Beginnen Sie mit der sicheren Verwaltung Ihrer Krypto-Assets"
+    },
+    "help": "💡 Brauchen Sie Hilfe? Besuchen Sie unser Support-Center oder schauen Sie sich die integrierten Tutorials an",
+    "tips": {
+      "title": "Schnelle Tipps",
+      "backup": "Sichern Sie immer Ihre Wiederherstellungsphrase",
+      "update": "Halten Sie Ihre Firmware aktuell",
+      "verify": "Überprüfen Sie Adressen immer am Gerät"
+    }
   },
   "steps": {
-    "welcome": "Willkommen",
-    "connect": "Verbinden",
-    "setup": "Einrichten",
-    "backup": "Sichern",
-    "verify": "Überprüfen",
-    "secure": "Sichern",
-    "complete": "Fertig"
+    "language": "Sprache",
+    "app-settings": "App-Einstellungen",
+    "pin": "Sicherheit",
+    "mnemonics": "Wiederherstellung",
+    "complete": "Abschließen"
   },
-  "errors": {
-    "deviceNotFound": "KeepKey-Gerät nicht gefunden",
-    "connectionFailed": "Verbindung zum Gerät fehlgeschlagen",
-    "initializationFailed": "Initialisierung fehlgeschlagen",
-    "invalidSeed": "Ungültige Wiederherstellungsphrase",
-    "pinFailed": "PIN-Erstellung fehlgeschlagen"
-  },
-  "warnings": {
-    "seedBackup": "Stellen Sie sicher, dass Sie Ihre Wiederherstellungsphrase sicher gesichert haben",
-    "noRecovery": "Ohne Ihre Wiederherstellungsphrase können Sie Ihre Wallet nicht wiederherstellen",
-    "keepSecret": "Teilen Sie niemals Ihre Wiederherstellungsphrase oder PIN mit anderen"
+  "skip": {
+    "title": "Einrichtung überspringen?",
+    "description": "Sie können die Einrichtung jederzeit später in den Einstellungen abschließen",
+    "confirm": "Einrichtung überspringen",
+    "cancel": "Einrichtung fortsetzen"
   }
 }

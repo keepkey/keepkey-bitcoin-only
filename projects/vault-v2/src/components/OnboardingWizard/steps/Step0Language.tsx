@@ -10,6 +10,7 @@ import {
 import { FaGlobe } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 
 // Step components no longer need props - navigation handled by main wizard
 
@@ -28,6 +29,7 @@ const LANGUAGES = [
 
 export function Step0Language() {
   const [selectedLanguage, setSelectedLanguage] = useState("en");
+  const { t } = useTranslation(['onboarding']);
 
   useEffect(() => {
     // Load saved language preference
@@ -73,14 +75,14 @@ export function Step0Language() {
               <FaGlobe />
             </Icon>
             <Text fontSize="xl" fontWeight="bold" color="white">
-              Select Your Language
+              {t('onboarding:language.title')}
             </Text>
           </HStack>
         </Card.Header>
         <Card.Body>
           <VStack gap={6}>
             <Text color="gray.400" textAlign="center">
-              Choose your preferred language for the KeepKey Desktop application.
+              {t('onboarding:language.fullDescription')}
             </Text>
             
             <Box width="full" maxWidth="md">
@@ -111,7 +113,7 @@ export function Step0Language() {
             
             <Box textAlign="center" mt={4}>
               <Text color="green.400" fontSize="sm">
-                ✓ Language will be applied immediately
+                ✓ {t('onboarding:language.appliedImmediately')}
               </Text>
             </Box>
           </VStack>

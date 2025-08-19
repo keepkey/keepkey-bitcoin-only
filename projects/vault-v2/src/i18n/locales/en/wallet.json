@@ -200,6 +200,7 @@
     "broadcastSuccess": "Transaction broadcast successfully! ✅",
     "transactionComplete": "Transaction Complete",
     "transactionSigned": "Transaction signed successfully!",
+    "transactionSignedMessage": "Your transaction has been successfully signed",
     "failed": "Transaction failed",
     "failedToBuild": "Failed to build transaction",
     "failedToSign": "Failed to sign transaction",
@@ -271,6 +272,9 @@
       "success": "Transaction Broadcast Successful",
       "successMessage": "Your transaction has been submitted to the Bitcoin network",
       "txid": "Transaction ID",
+      "copyTxid": "Copy TXID",
+      "viewOnMempool": "View on Mempool",
+      "sendAnother": "Send Another Transaction",
       "viewOnExplorer": "View on Explorer",
       "confirmations": "Confirmations will begin appearing shortly"
     },

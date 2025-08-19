@@ -1,118 +1,139 @@
 {
+  "language": {
+    "title": "Sélectionnez votre langue",
+    "description": "Sélectionnez votre langue préférée",
+    "fullDescription": "Choisissez votre langue préférée pour l'application KeepKey Desktop",
+    "changeAnytime": "Vous pouvez changer ceci à tout moment dans les paramètres",
+    "appliedImmediately": "La langue sera appliquée immédiatement"
+  },
   "welcome": {
-    "title": "Bienvenue sur KeepKey Vault",
-    "subtitle": "Configurons votre portefeuille Bitcoin sécurisé",
-    "getStarted": "Commencer"
+    "title": "Bienvenue sur KeepKey",
+    "subtitle": "Votre parcours vers la gestion sécurisée de cryptomonnaies commence ici",
+    "description": "KeepKey est votre passerelle vers la gestion sécurisée de cryptomonnaies",
+    "getStarted": "Commencer",
+    "learnMore": "En savoir plus",
+    "features": {
+      "secure": "Sécurité de niveau bancaire",
+      "simple": "Simple à utiliser",
+      "private": "Vos clés, vos cryptos"
+    }
   },
   "setup": {
-    "title": "Configuration",
-    "newWallet": "Créer un nouveau portefeuille",
-    "importWallet": "Importer un portefeuille existant",
-    "connectDevice": "Connecter KeepKey"
-  },
-  "device": {
-    "connect": {
-      "title": "Connectez votre KeepKey",
-      "instructions": "Branchez votre appareil KeepKey via USB pour continuer",
-      "waiting": "En attente de l'appareil...",
-      "detected": "KeepKey détecté!",
-      "notDetected": "Appareil non détecté",
-      "troubleshoot": "Dépannage"
-    },
-    "initialize": {
-      "title": "Initialiser KeepKey",
-      "description": "Votre appareil doit être configuré avant utilisation",
-      "start": "Commencer l'initialisation"
-    },
-    "unlock": {
-      "title": "Déverrouiller KeepKey",
-      "enterPin": "Entrez votre code PIN sur l'appareil",
-      "waiting": "En attente du PIN..."
+    "title": "Configurez votre appareil",
+    "subtitle": "Préparons votre KeepKey",
+    "connectDevice": "Veuillez connecter votre appareil KeepKey",
+    "detectingDevice": "Détection de l'appareil...",
+    "deviceFound": "Appareil trouvé!",
+    "deviceNotFound": "Appareil non trouvé",
+    "troubleshooting": "Des problèmes? Consultez notre guide de dépannage",
+    "skipSetup": "Ignorer la configuration",
+    "requirements": {
+      "title": "Avant de commencer",
+      "device": "Appareil KeepKey",
+      "cable": "Câble USB",
+      "time": "5-10 minutes"
     }
   },
-  "seed": {
-    "create": {
-      "title": "Créer une phrase de récupération",
-      "description": "Votre phrase de récupération est la sauvegarde de votre portefeuille",
-      "warning": "Écrivez ces mots dans l'ordre et conservez-les en sécurité",
-      "generate": "Générer la phrase"
+  "app-settings": {
+    "title": "Paramètres de l'application",
+    "subtitle": "Configurez les préférences de votre application",
+    "description": "Configurez les préférences de votre application",
+    "fullDescription": "Personnalisez le fonctionnement de KeepKey Desktop pour vous",
+    "theme": {
+      "title": "Thème",
+      "label": "Choisir le thème",
+      "light": "Clair",
+      "dark": "Sombre",
+      "system": "Par défaut du système",
+      "description": "Le thème sombre offre une meilleure visibilité et réduit la fatigue oculaire lors d'une utilisation prolongée",
+      "active": "Thème sombre actif"
     },
-    "import": {
-      "title": "Importer une phrase de récupération",
-      "description": "Entrez votre phrase de récupération existante",
-      "wordCount": "Nombre de mots",
-      "enterWords": "Entrez les mots",
-      "word": "Mot",
-      "verify": "Vérifier la phrase"
+    "analytics": {
+      "title": "Analyses anonymes",
+      "description": "Aidez-nous à nous améliorer en partageant des données d'utilisation anonymes",
+      "enable": "Activer les analyses",
+      "disable": "Non merci"
     },
-    "backup": {
-      "title": "Sauvegarder votre phrase",
-      "instruction1": "Écrivez ces {{count}} mots dans l'ordre exact",
-      "instruction2": "Conservez-les dans un endroit sûr et secret",
-      "instruction3": "Ne partagez jamais votre phrase avec quiconque",
-      "written": "J'ai écrit ma phrase de récupération"
+    "notifications": {
+      "title": "Notifications",
+      "description": "Restez informé des mises à jour de sécurité importantes et des changements d'état de l'appareil",
+      "fullDescription": "Soyez notifié des mises à jour et transactions importantes",
+      "enable": "Activer les notifications",
+      "enabled": "Notifications activées",
+      "disable": "Désactiver les notifications"
     },
-    "verify": {
-      "title": "Vérifier votre sauvegarde",
-      "description": "Confirmez que vous avez correctement sauvegardé votre phrase",
-      "enterWord": "Entrez le mot #{{position}}",
-      "correct": "Correct!",
-      "incorrect": "Incorrect, veuillez réessayer"
-    }
+    "defaultSettings": "Les paramètres par défaut sont optimisés pour la sécurité et l'utilisabilité"
   },
   "pin": {
-    "create": {
-      "title": "Créer un code PIN",
-      "description": "Votre PIN protège l'accès à votre appareil",
-      "enter": "Entrer le PIN",
-      "confirm": "Confirmer le PIN",
-      "mismatch": "Les PINs ne correspondent pas"
+    "title": "Sécurité",
+    "subtitle": "Configuration de la sécurité",
+    "description": "Configurez votre PIN et paramètres de sécurité",
+    "fullDescription": "Apprenez la protection PIN et les meilleures pratiques de sécurité pour votre appareil KeepKey",
+    "protectDevice": "Protégez votre appareil avec un PIN",
+    "pinProtection": {
+      "title": "Protection PIN",
+      "description": "Votre PIN protège votre appareil contre l'accès non autorisé. Choisissez un PIN facile à retenir pour vous mais difficile à deviner pour les autres",
+      "recommendation": "4-9 chiffres recommandés"
     },
-    "change": {
-      "title": "Changer le code PIN",
-      "current": "PIN actuel",
-      "new": "Nouveau PIN",
-      "confirm": "Confirmer le nouveau PIN"
-    }
+    "recoveryPhrase": {
+      "title": "Phrase de récupération",
+      "description": "Votre phrase de récupération est la sauvegarde maîtresse de votre portefeuille. Gardez-la en sécurité et ne la partagez jamais avec personne",
+      "instruction": "Écrivez-la de manière sécurisée"
+    },
+    "setupInfo": "💡 Vous configurerez votre PIN directement sur votre appareil KeepKey lorsque vous le connecterez"
   },
-  "wallet": {
-    "name": {
-      "title": "Nommer votre portefeuille",
-      "description": "Donnez un nom à votre portefeuille pour l'identifier facilement",
-      "placeholder": "Mon portefeuille Bitcoin",
-      "continue": "Continuer"
+  "mnemonics": {
+    "title": "Récupération",
+    "subtitle": "Phrases de récupération", 
+    "description": "Comprendre les phrases de récupération",
+    "fullDescription": "Comprendre les phrases de récupération et les meilleures pratiques de sauvegarde",
+    "securityWarning": {
+      "title": "Avertissement de sécurité",
+      "description": "Ne partagez jamais votre phrase de récupération avec quiconque. Le personnel KeepKey ne vous la demandera jamais",
+      "strongWarning": "Quiconque possède votre phrase de récupération peut voler vos fonds!"
     },
-    "type": {
-      "title": "Type de portefeuille",
-      "standard": "Standard",
-      "segwit": "SegWit (Recommandé)",
-      "native": "Native SegWit"
-    }
+    "whatIs": {
+      "title": "Qu'est-ce qu'une phrase de récupération?",
+      "point1": "• Une sauvegarde de 12 mots de tout votre portefeuille",
+      "point2": "• Le seul moyen de récupérer les fonds si l'appareil est perdu",
+      "point3": "• Doit être écrite et stockée en sécurité",
+      "point4": "• Générée par votre KeepKey pendant la configuration"
+    },
+    "preparation": "📝 Ayez stylo et papier prêts lorsque vous initialisez votre appareil KeepKey"
   },
   "complete": {
     "title": "Configuration terminée!",
-    "message": "Votre KeepKey est prêt à l'emploi",
-    "dashboard": "Aller au tableau de bord"
+    "subtitle": "Vous êtes prêt à commencer à utiliser KeepKey",
+    "description": "Vous êtes prêt!",
+    "fullDescription": "Votre KeepKey est prêt pour la gestion sécurisée de cryptomonnaies",
+    "message": "Vos préférences ont été sauvegardées et vous pouvez maintenant connecter votre appareil KeepKey",
+    "startUsing": "Commencer à utiliser KeepKey",
+    "viewTutorial": "Voir le tutoriel",
+    "nextSteps": {
+      "title": "Prochaines étapes",
+      "step1": "1. Connectez votre appareil KeepKey via USB",
+      "step2": "2. Suivez les instructions de configuration de l'appareil", 
+      "step3": "3. Commencez à gérer vos cryptoactifs en toute sécurité"
+    },
+    "help": "💡 Besoin d'aide? Visitez notre centre d'assistance ou consultez les tutoriels intégrés",
+    "tips": {
+      "title": "Conseils rapides",
+      "backup": "Sauvegardez toujours votre phrase de récupération",
+      "update": "Gardez votre firmware à jour",
+      "verify": "Vérifiez toujours les adresses sur l'appareil"
+    }
   },
   "steps": {
-    "welcome": "Bienvenue",
-    "connect": "Connecter",
-    "setup": "Configuration",
-    "backup": "Sauvegarde",
-    "verify": "Vérifier",
-    "secure": "Sécuriser",
-    "complete": "Terminé"
+    "language": "Langue",
+    "app-settings": "Paramètres de l'application",
+    "pin": "Sécurité",
+    "mnemonics": "Récupération",
+    "complete": "Terminer"
   },
-  "errors": {
-    "deviceNotFound": "Appareil KeepKey non trouvé",
-    "connectionFailed": "Échec de la connexion à l'appareil",
-    "initializationFailed": "Échec de l'initialisation",
-    "invalidSeed": "Phrase de récupération invalide",
-    "pinFailed": "Échec de la création du PIN"
-  },
-  "warnings": {
-    "seedBackup": "Assurez-vous d'avoir sauvegardé votre phrase de récupération en toute sécurité",
-    "noRecovery": "Sans votre phrase de récupération, vous ne pourrez pas récupérer votre portefeuille",
-    "keepSecret": "Ne partagez jamais votre phrase de récupération ou PIN avec quiconque"
+  "skip": {
+    "title": "Ignorer la configuration?",
+    "description": "Vous pouvez toujours terminer la configuration plus tard depuis les paramètres",
+    "confirm": "Ignorer la configuration",
+    "cancel": "Continuer la configuration"
   }
 }
