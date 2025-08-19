@@ -108,7 +108,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
             // PIN just closed, make passphrase active
             return {
               ...prevState,
-              active: prevState.queue.find(d => d.id === config.id)
+              active: prevState.queue.find(d => d.id === config.id) || null
             };
           }
           return prevState;
@@ -135,7 +135,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           prevState.queue.forEach(dialog => {
             if (!newQueue.some(d => d.id === dialog.id) && dialog.onClose) {
               console.log(`🎯 [DialogContext] Closing lower priority dialog:`, dialog.id);
-              dialog.onClose();
+              dialog.onClose?.();
             }
           });
         }
@@ -205,14 +205,14 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       if (dialog?.onClose) {
         // Use setTimeout to ensure state update happens first
         setTimeout(() => {
-          dialog.onClose();
+          dialog.onClose?.();
         }, 0);
       }
       
       // If active dialog changed, call onOpen for new active
       if (wasActive && newActive && newActive.onOpen) {
         setTimeout(() => {
-          newActive.onOpen();
+          newActive.onOpen?.();
         }, 0);
       }
       
@@ -226,7 +226,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       // Call onClose for all dialogs
       prevState.queue.forEach(dialog => {
         if (dialog.onClose) {
-          dialog.onClose();
+          dialog.onClose?.();
         }
       });
       
@@ -249,7 +249,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       // Call onClose for all other dialogs
       prevState.queue.forEach(dialog => {
         if (dialog.id !== id && dialog.onClose) {
-          dialog.onClose();
+          dialog.onClose?.();
         }
       });
       

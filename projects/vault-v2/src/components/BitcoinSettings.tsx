@@ -42,7 +42,7 @@ export const BitcoinSettings: React.FC = () => {
   };
 
   return (
-    <VStack spacing={6} align="stretch">
+    <VStack gap={6} align="stretch">
       <Box>
         <HStack mb={4}>
           <Icon as={FaBitcoin} color="orange.500" boxSize={5} />
@@ -55,7 +55,7 @@ export const BitcoinSettings: React.FC = () => {
           Choose your preferred Bitcoin address type. This affects both change addresses and receive addresses.
         </Text>
 
-        <VStack spacing={3} align="stretch">
+        <VStack gap={3} align="stretch">
           {(Object.keys(addressTypeInfo) as BitcoinAddressType[]).map((type) => {
             const info = addressTypeInfo[type];
             const isSelected = bitcoinAddressType === type;
@@ -75,7 +75,7 @@ export const BitcoinSettings: React.FC = () => {
                 position="relative"
               >
                 <Flex align="center" mb={2}>
-                  <HStack spacing={3}>
+                  <HStack gap={3}>
                     <Box
                       width={5}
                       height={5}

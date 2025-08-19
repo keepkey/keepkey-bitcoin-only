@@ -97,7 +97,7 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
       }}
       size="xl"
       placement="center"
-      motionPreset="slideInBottom"
+      motionPreset="slide-in-bottom"
     >
       <DialogContent
         bg="gray.800"
@@ -124,7 +124,7 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
         </DialogHeader>
 
         <DialogBody>
-          <VStack spacing={6} align="stretch">
+          <VStack gap={6} align="stretch">
             {step === 'instructions' && (
               <>
                 <Box 
@@ -134,9 +134,9 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
                   borderWidth="1px" 
                   borderColor="blue.700"
                 >
-                  <HStack spacing={3} align="flex-start">
+                  <HStack gap={3} align="flex-start">
                     <Icon as={FaShieldAlt} color="blue.400" boxSize={5} mt={1} />
-                    <VStack align="start" spacing={2} flex={1}>
+                    <VStack align="start" gap={2} flex={1}>
                       <Text color="blue.100" fontWeight="semibold">
                         About to Enable PIN Protection
                       </Text>
@@ -148,14 +148,14 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
                   </HStack>
                 </Box>
 
-                <VStack spacing={4} align="stretch">
+                <VStack gap={4} align="stretch">
                   <Text color="gray.300" fontWeight="semibold">
                     How KeepKey PIN Security Works:
                   </Text>
                   
-                  <HStack spacing={3} align="flex-start">
+                  <HStack gap={3} align="flex-start">
                     <Icon as={FaLock} color="green.400" boxSize={5} mt={1} />
-                    <VStack align="start" spacing={1} flex={1}>
+                    <VStack align="start" gap={1} flex={1}>
                       <Text color="gray.200" fontSize="sm" fontWeight="medium">
                         Zero-Knowledge Security
                       </Text>
@@ -165,9 +165,9 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
                     </VStack>
                   </HStack>
 
-                  <HStack spacing={3} align="flex-start">
+                  <HStack gap={3} align="flex-start">
                     <Icon as={FaEye} color="green.400" boxSize={5} mt={1} />
-                    <VStack align="start" spacing={1} flex={1}>
+                    <VStack align="start" gap={1} flex={1}>
                       <Text color="gray.200" fontSize="sm" fontWeight="medium">
                         Anti-Keylogging Protection
                       </Text>
@@ -177,9 +177,9 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
                     </VStack>
                   </HStack>
 
-                  <HStack spacing={3} align="flex-start">
+                  <HStack gap={3} align="flex-start">
                     <Icon as={FaBolt} color="green.400" boxSize={5} mt={1} />
-                    <VStack align="start" spacing={1} flex={1}>
+                    <VStack align="start" gap={1} flex={1}>
                       <Text color="gray.200" fontSize="sm" fontWeight="medium">
                         Side-Channel Protection
                       </Text>
@@ -216,10 +216,10 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
             )}
 
             {(step === 'setting' || step === 'confirming') && (
-              <VStack spacing={6} py={8}>
-                <Spinner size="xl" color="blue.400" thickness="4px" />
+              <VStack gap={6} py={8}>
+                <Spinner size="xl" color="blue.400" />
                 
-                <VStack spacing={2}>
+                <VStack gap={2}>
                   <Text color="gray.200" fontSize="lg" fontWeight="medium" textAlign="center">
                     {step === 'setting' 
                       ? 'Look at your KeepKey device'
@@ -240,7 +240,7 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
                   borderColor="gray.600"
                   w="full"
                 >
-                  <VStack spacing={2}>
+                  <VStack gap={2}>
                     <Text color="gray.300" fontSize="sm" fontWeight="medium">
                       On Your KeepKey:
                     </Text>
@@ -255,7 +255,7 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
             )}
 
             {step === 'success' && (
-              <VStack spacing={4} py={8}>
+              <VStack gap={4} py={8}>
                 <Box 
                   p={3}
                   borderRadius="full"
@@ -274,7 +274,7 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
             )}
 
             {step === 'error' && (
-              <VStack spacing={4} py={8}>
+              <VStack gap={4} py={8}>
                 <Box 
                   p={3}
                   borderRadius="full"
@@ -297,7 +297,7 @@ export const EnablePinDialog: React.FC<EnablePinDialogProps> = ({
         </DialogBody>
 
         <DialogFooter>
-          <HStack spacing={3}>
+          <HStack gap={3}>
             {step === 'instructions' && (
               <>
                 <Button

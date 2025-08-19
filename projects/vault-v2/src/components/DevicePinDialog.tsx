@@ -134,13 +134,13 @@ export const DevicePinDialog = ({
         </DialogHeader>
 
         <DialogBody>
-          <VStack spacing={6} py={4}>
+          <VStack gap={6} py={4}>
             <Text fontSize="md" color="gray.600" textAlign="center">
               {getOperationDescription()}
             </Text>
 
             {/* PIN Display */}
-            <HStack spacing={2}>
+            <HStack gap={2}>
               {[...Array(9)].map((_, i) => (
                 <Box
                   key={i}
@@ -188,7 +188,7 @@ export const DevicePinDialog = ({
                   <Button
                     key={index}
                     onClick={() => handlePinButtonClick(position)}
-                    isDisabled={isSubmitting || pinPositions.length >= 9}
+                    disabled={isSubmitting || pinPositions.length >= 9}
                     size="lg"
                     h="60px"
                     w="60px"
@@ -202,15 +202,14 @@ export const DevicePinDialog = ({
                 ))}
               </Grid>
 
-              <HStack mt={3} spacing={2} justify="center">
+              <HStack mt={3} gap={2} justify="center">
                 <Button
-                  leftIcon={<LuDelete />}
                   onClick={handleBackspace}
-                  isDisabled={isSubmitting || pinPositions.length === 0}
+                  disabled={isSubmitting || pinPositions.length === 0}
                   size="sm"
                   variant="outline"
                 >
-                  Backspace
+                  <LuDelete /> Backspace
                 </Button>
               </HStack>
             </Box>
@@ -218,12 +217,12 @@ export const DevicePinDialog = ({
         </DialogBody>
 
         <DialogFooter>
-          <HStack spacing={3}>
+          <HStack gap={3}>
             <DialogActionTrigger asChild>
               <Button 
                 variant="outline" 
                 onClick={handleCancel}
-                isDisabled={isSubmitting}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
@@ -231,8 +230,8 @@ export const DevicePinDialog = ({
             <Button
               colorScheme="blue"
               onClick={handleSubmitPin}
-              isLoading={isSubmitting}
-              isDisabled={pinPositions.length === 0}
+              loading={isSubmitting}
+              disabled={pinPositions.length === 0}
             >
               Submit PIN
             </Button>

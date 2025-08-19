@@ -316,7 +316,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
       }}
       size="lg"
       placement="center"
-      motionPreset="slideInBottom"
+      motionPreset="slide-in-bottom"
     >
       <DialogContent
         bg="gray.800"
@@ -339,7 +339,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
         </DialogHeader>
 
         <DialogBody>
-          <VStack spacing={6} align="stretch">
+          <VStack gap={6} align="stretch">
             <Text color="gray.300" textAlign="center">
               {getDescription()}
             </Text>
@@ -418,7 +418,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
             )}
 
             {step === 'success' && (
-              <VStack spacing={4} py={8}>
+              <VStack gap={4} py={8}>
                 <Text fontSize="4xl">✅</Text>
                 <Text color="green.400" fontSize="lg" fontWeight="medium">
                   PIN Protection Enabled!
@@ -427,7 +427,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
             )}
 
             {step === 'error' && (
-              <VStack spacing={4} py={8}>
+              <VStack gap={4} py={8}>
                 <Text fontSize="4xl">❌</Text>
                 <Text color="red.400" fontSize="lg" fontWeight="medium">
                   {error || 'PIN setup failed'}
@@ -438,7 +438,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
         </DialogBody>
 
         <DialogFooter>
-          <HStack spacing={3}>
+          <HStack gap={3}>
             {(step === 'new_pin' || step === 'confirm_pin') && (
               <>
                 <Button

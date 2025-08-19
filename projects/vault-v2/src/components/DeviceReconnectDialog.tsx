@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
+  DialogRoot,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogCloseTrigger,
   VStack,
   Text,
   Spinner,
   Icon,
   Box,
-  useColorModeValue,
+  IconButton,
 } from '@chakra-ui/react';
 import { FaUsb } from 'react-icons/fa';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -32,10 +32,10 @@ export const DeviceReconnectDialog: React.FC<DeviceReconnectDialogProps> = ({
   onReconnected,
 }) => {
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const textColor = useColorModeValue('gray.800', 'white');
-  const subtextColor = useColorModeValue('gray.600', 'gray.400');
-  const iconColor = useColorModeValue('blue.500', 'blue.400');
+  const bgColor = 'gray.800';
+  const textColor = 'white';
+  const subtextColor = 'gray.400';
+  const iconColor = 'blue.400';
 
   useEffect(() => {
     if (!isOpen) return;
@@ -91,26 +91,28 @@ export const DeviceReconnectDialog: React.FC<DeviceReconnectDialogProps> = ({
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={() => {}}
-      closeOnOverlayClick={false}
-      closeOnEsc={false}
-      isCentered
+    <DialogRoot
+      open={isOpen}
+      onOpenChange={() => {}}
       size="md"
+      placement="center"
+      motionPreset="slide-in-bottom"
     >
-      <ModalOverlay />
-      <ModalContent bg={bgColor}>
-        <ModalHeader color={textColor}>Device Reconnection Required</ModalHeader>
-        {!isReconnecting && (
-          <ModalCloseButton
-            onClick={onClose}
-            color={textColor}
-            _hover={{ bg: 'gray.200' }}
-          />
-        )}
-        <ModalBody pb={6}>
-          <VStack spacing={6} align="center">
+      <DialogContent bg={bgColor}>
+        <DialogHeader>
+          <DialogTitle color={textColor}>Device Reconnection Required</DialogTitle>
+          {!isReconnecting && (
+            <DialogCloseTrigger asChild>
+              <IconButton
+                onClick={onClose}
+                variant="ghost"
+                size="sm"
+              />
+            </DialogCloseTrigger>
+          )}
+        </DialogHeader>
+        <DialogBody pb={6}>
+          <VStack gap={6} align="center">
             <Box position="relative">
               <Icon
                 as={FaUsb}
@@ -120,12 +122,12 @@ export const DeviceReconnectDialog: React.FC<DeviceReconnectDialogProps> = ({
               />
               {isReconnecting && (
                 <Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)">
-                  <Spinner size="xl" color={iconColor} thickness="4px" />
+                  <Spinner size="xl" color={iconColor} />
                 </Box>
               )}
             </Box>
 
-            <VStack spacing={3} align="center">
+            <VStack gap={3} align="center">
               <Text fontWeight="bold" fontSize="lg" color={textColor}>
                 {getReasonText()}
               </Text>
@@ -138,7 +140,7 @@ export const DeviceReconnectDialog: React.FC<DeviceReconnectDialogProps> = ({
               </Text>
               
               {!isReconnecting && (
-                <VStack spacing={2} mt={4}>
+                <VStack gap={2} mt={4}>
                   <Text fontSize="sm" color={subtextColor}>
                     Waiting for device reconnection...
                   </Text>
@@ -147,9 +149,9 @@ export const DeviceReconnectDialog: React.FC<DeviceReconnectDialogProps> = ({
               )}
             </VStack>
           </VStack>
-        </ModalBody>
-      </ModalContent>
-
+        </DialogBody>
+      </DialogContent>
+      
       <style>{`
         @keyframes pulse {
           0% {
@@ -170,6 +172,6 @@ export const DeviceReconnectDialog: React.FC<DeviceReconnectDialogProps> = ({
           animation: pulse 1.5s ease-in-out infinite;
         }
       `}</style>
-    </Modal>
+    </DialogRoot>
   );
 };
