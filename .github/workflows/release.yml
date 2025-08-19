@@ -2,23 +2,47 @@
 
 on:
   push:
+    branches: 
+      - 'release-*'
+      - master
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
 
 jobs:
   create-release:
-    if: startsWith(github.ref, 'refs/tags/')
+    # Always create release first, regardless of build success
+    if: startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create-release.outputs.id }}
       release_upload_url: ${{ steps.create-release.outputs.upload_url }}
+      release_tag: ${{ steps.release-tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      
+      - name: Determine release tag
+        id: release-tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            # Tag push - use the tag
+            TAG="${GITHUB_REF#refs/tags/}"
+          elif [[ "${GITHUB_REF}" == refs/heads/release-* ]]; then
+            # Release branch - use branch name + timestamp
+            BRANCH="${GITHUB_REF#refs/heads/}"
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            TAG="${BRANCH}-${TIMESTAMP}"
+          else
+            # Fallback
+            TAG="dev-$(date +%Y%m%d-%H%M%S)"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Release tag: ${TAG}"
       
       - name: Create Release
         id: create-release
@@ -26,14 +50,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: KeepKey Vault ${{ github.ref_name }}
-          draft: true
-          prerelease: false
+          tag_name: ${{ steps.release-tag.outputs.tag }}
+          release_name: KeepKey Vault ${{ steps.release-tag.outputs.tag }}
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
   build-tauri:
     needs: [create-release]
-    if: always()
+    # Continue even if some builds fail
+    if: always() && needs.create-release.result == 'success'
     permissions:
       contents: write
     
@@ -309,7 +334,7 @@ jobs:
           APPLE_TEAM_ID: ${{ steps.check-signing.outputs.has_apple_notarization == 'true' && secrets.APPLE_TEAM_ID || '' }}
         with:
           projectPath: ./projects/vault-v2
-          releaseId: ${{ startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.release_id || '' }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
       - name: Upload artifacts
@@ -323,7 +348,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Manual upload to release (if Tauri action fails)
-        if: startsWith(github.ref, 'refs/tags/') && steps.build-tauri.outcome == 'success'
+        if: needs.create-release.result == 'success' && steps.build-tauri.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -395,7 +420,7 @@ jobs:
           fi
 
   update-release-notes:
-    if: startsWith(github.ref, 'refs/tags/') && always() && needs.create-release.result == 'success'
+    if: always() && needs.create-release.result == 'success'
     needs: [create-release, build-tauri]
     permissions:
       contents: write
@@ -423,7 +448,7 @@ jobs:
               ? '🔒 **Security**: All releases are signed and verified. Please verify signatures before installation.'
               : '⚠️ **Security Warning**: This release is NOT signed. Use at your own risk in development environments only.';
             
-            const updatedBody = `## KeepKey Vault ${{ github.ref_name }}
+            const updatedBody = `## KeepKey Vault ${{ needs.create-release.outputs.release_tag }}
             
             ### Downloads
             
@@ -441,7 +466,7 @@ jobs:
             });
 
   publish-release:
-    if: startsWith(github.ref, 'refs/tags/') && always() && needs.create-release.result == 'success'
+    if: always() && needs.create-release.result == 'success'
     permissions:
       contents: write
     runs-on: ubuntu-latest
