@@ -4,6 +4,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
+use crate::commands;
 
 pub struct EventController {
     cancellation_token: CancellationToken,
@@ -74,6 +75,15 @@ impl EventController {
                         break;
                     }
                     _ = interval.tick() => {
+                        // Check onboarding status before processing devices
+                        let onboarding_complete = match commands::is_onboarded().await {
+                            Ok(onboarded) => onboarded,
+                            Err(e) => {
+                                println!("⚠️ Event controller: Failed to check onboarding status: {}", e);
+                                false // Default to not onboarded if we can't check
+                            }
+                        };
+                        
                         // Get current devices using high-level API
                         let current_devices = keepkey_rust::features::list_connected_devices();
                         
@@ -96,6 +106,20 @@ impl EventController {
                                 println!("   Device info: {} - {}", 
                                          device.manufacturer.as_deref().unwrap_or("Unknown"), 
                                          device.product.as_deref().unwrap_or("Unknown"));
+                                
+                                // If onboarding is not complete, just acknowledge the device but don't process it
+                                if !onboarding_complete {
+                                    println!("🚪 OnboardingGate: Device detected but onboarding not complete - deferring device processing");
+                                    
+                                    // Emit a minimal status to show device is detected but waiting for onboarding
+                                    let waiting_payload = serde_json::json!({
+                                        "status": "Device detected - complete onboarding to continue"
+                                    });
+                                    if let Err(e) = app_handle.emit("status:update", waiting_payload) {
+                                        println!("❌ Failed to emit onboarding waiting status: {}", e);
+                                    }
+                                    continue; // Skip all device processing
+                                }
                                 
                                 // Check if this might be a recovery device reconnecting with a different ID
                                 if let Some(state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {

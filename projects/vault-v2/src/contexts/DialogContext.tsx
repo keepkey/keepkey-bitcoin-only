@@ -65,6 +65,12 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Check for critical security dialogs that must be shown immediately
+    // Combined PIN/Passphrase dialog has highest priority when present
+    const pinPassphraseDialog = queue.find(d => d.id.includes('pin-passphrase'));
+    if (pinPassphraseDialog) {
+      return pinPassphraseDialog;
+    }
+    
     // PIN dialog has highest priority when present
     const pinDialog = queue.find(d => d.id.includes('pin-unlock'));
     if (pinDialog) {
@@ -93,8 +99,9 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     console.log(`🎯 [DialogContext] Current queue before:`, state.queue.map(d => d.id));
     console.log(`🎯 [DialogContext] Current active before:`, state.active?.id);
     
-    // Special handling for PIN dialog - it should always take priority when device is ready
+    // Special handling for PIN dialog and combined PIN/Passphrase dialog
     const isPinDialog = config.id.includes('pin-unlock');
+    const isPinPassphraseDialog = config.id.includes('pin-passphrase');
     
     // Use startTransition to avoid synchronous suspense issues with lazy components
     startTransition(() => {
@@ -114,21 +121,23 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           return prevState;
         }
         
-        // If this is a critical dialog or PIN dialog, remove lower priority dialogs
+        // If this is a critical dialog, PIN dialog, or combined PIN/Passphrase dialog, remove lower priority dialogs
         let newQueue = [...prevState.queue];
-        if (config.priority === 'critical' || isPinDialog) {
+        if (config.priority === 'critical' || isPinDialog || isPinPassphraseDialog) {
           // Remove non-critical dialogs except for PIN and passphrase dialogs
           newQueue = newQueue.filter(d => {
             const dialogPriority = PRIORITY_ORDER[d.priority || 'normal'];
             const configPriority = PRIORITY_ORDER[config.priority || 'normal'];
             const isDialogPin = d.id.includes('pin-unlock');
             const isDialogPassphrase = d.id.includes('passphrase');
+            const isDialogPinPassphrase = d.id.includes('pin-passphrase');
             
             // Keep dialog if:
             // 1. It's a PIN dialog (PIN dialogs are always kept)
             // 2. It's a passphrase dialog (passphrase follows PIN)
-            // 3. It has equal or higher priority than the new dialog
-            return isDialogPin || isDialogPassphrase || dialogPriority >= configPriority;
+            // 3. It's a combined PIN/Passphrase dialog (highest priority)
+            // 4. It has equal or higher priority than the new dialog
+            return isDialogPin || isDialogPassphrase || isDialogPinPassphrase || dialogPriority >= configPriority;
           });
           
           // Call onClose for removed dialogs
@@ -146,10 +155,17 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
         // Process queue with special PIN handling
         let newActive = processQueue(newQueue);
         
-        // If a PIN dialog is in the queue and device is ready, it should always be active
-        const pinDialog = newQueue.find(d => d.id.includes('pin-unlock'));
-        if (pinDialog && (isPinDialog || !prevState.active?.id.includes('pin-unlock'))) {
-          newActive = pinDialog;
+        // If a combined PIN/Passphrase dialog is in the queue, it should always be active
+        const pinPassphraseDialog = newQueue.find(d => d.id.includes('pin-passphrase'));
+        if (pinPassphraseDialog && (isPinPassphraseDialog || !prevState.active?.id.includes('pin-passphrase'))) {
+          newActive = pinPassphraseDialog;
+        }
+        // Otherwise, if a PIN dialog is in the queue and device is ready, it should always be active
+        else {
+          const pinDialog = newQueue.find(d => d.id.includes('pin-unlock'));
+          if (pinDialog && (isPinDialog || !prevState.active?.id.includes('pin-unlock'))) {
+            newActive = pinDialog;
+          }
         }
         
         console.log(`🎯 [DialogContext] New queue:`, newQueue.map(d => d.id));
@@ -340,7 +356,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               left: 0, 
               right: 0, 
               bottom: 0, 
-              zIndex: state.active.id.includes('pin-unlock') ? 99999 : 9999,
+              zIndex: state.active.id.includes('pin-passphrase') ? 100000 : state.active.id.includes('pin-unlock') ? 99999 : 9999,
               backgroundColor: 'rgba(0, 0, 0, 0.8)',
               display: 'flex',
               alignItems: 'center',
@@ -874,5 +890,52 @@ export function usePinSetupDialog() {
     },
     hide: (deviceId: string) => hide(`pin-setup-${deviceId}`),
     isShowing: (deviceId: string) => isShowing(`pin-setup-${deviceId}`),
+  };
+}
+
+// Pre-configured dialog for combined PIN and Passphrase entry
+export function usePinPassphraseDialog() {
+  const { show, hide, isShowing } = useDialog();
+  return {
+    show: (props: {
+      deviceId: string;
+      requestId?: string;
+      operationType?: string;
+      onComplete?: () => void;
+      onCancel?: () => void;
+      onDialogClose?: () => void;
+    }) => {
+      const dialogId = `pin-passphrase-${props.deviceId}`;
+      console.log(`🔐 [PinPassphraseDialog] show() called for device:`, props.deviceId);
+      
+      show({
+        id: dialogId,
+        component: React.lazy(() => import('../components/PinPassphraseDialog').then(m => ({ default: m.PinPassphraseDialog }))),
+        props: {
+          isOpen: true,
+          deviceId: props.deviceId,
+          requestId: props.requestId,
+          operationType: props.operationType,
+          onComplete: () => {
+            console.log(`🔐 [PinPassphraseDialog] Authentication completed successfully`);
+            if (props.onComplete) props.onComplete();
+            hide(dialogId);
+          },
+          onCancel: () => {
+            console.log(`🔐 [PinPassphraseDialog] Authentication cancelled`);
+            if (props.onCancel) props.onCancel();
+          },
+          onClose: () => {
+            console.log(`🔐 [PinPassphraseDialog] Dialog closed`);
+            if (props.onDialogClose) props.onDialogClose();
+            hide(dialogId);
+          }
+        },
+        priority: 'critical', // Highest priority for authentication flow
+        persistent: true, // User must complete or explicitly close
+      });
+    },
+    hide: (deviceId: string) => hide(`pin-passphrase-${deviceId}`),
+    isShowing: (deviceId: string) => isShowing(`pin-passphrase-${deviceId}`),
   };
 }

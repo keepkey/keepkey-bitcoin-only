@@ -12,6 +12,9 @@ import { FaCheckCircle } from "react-icons/fa";
 import { invoke } from "@tauri-apps/api/core";
 import { useDialog } from "../../contexts/DialogContext";
 import { useTranslation } from "react-i18next";
+// Safe import with conditional usage
+import { useOnboardingGate } from "../../contexts/OnboardingGateContext";
+import { useOnboardingState } from "../../hooks/useOnboardingState";
 
 // Import individual steps
 import { Step0Language } from "./steps/Step0Language";
@@ -70,6 +73,8 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
   const highlightColor = "green.500";
   const { hide } = useDialog();
   const { t } = useTranslation(['onboarding', 'common']);
+  const { setOnboardingComplete } = useOnboardingGate();
+  const { clearCache } = useOnboardingState();
 
   // Override STEPS with translated values
   const translatedSteps = STEPS.map(step => ({
@@ -99,6 +104,24 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
       console.log("Calling set_onboarding_completed...");
       await invoke("set_onboarding_completed");
       console.log("set_onboarding_completed completed successfully");
+
+      // Clear the onboarding state cache to ensure shouldShowOnboarding updates immediately
+      console.log("🚪 OnboardingWizard: Clearing onboarding state cache");
+      clearCache();
+
+      // Enable device interactions through the onboarding gate
+      console.log("🚪 OnboardingWizard: Enabling device interactions");
+      setOnboardingComplete(true);
+
+      // Start device operations on the backend
+      try {
+        console.log("🚪 OnboardingWizard: Starting device operations on backend");
+        await invoke("start_device_operations");
+        console.log("🚪 OnboardingWizard: Device operations started successfully");
+      } catch (error) {
+        console.error("🚪 OnboardingWizard: Failed to start device operations:", error);
+        // Don't fail the onboarding completion for this error
+      }
 
       // Call the completion callback if provided
       if (onComplete) {

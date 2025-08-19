@@ -11,53 +11,68 @@ import { FaGlobe } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
+import i18n from "../../../i18n";
 
 // Step components no longer need props - navigation handled by main wizard
 
+// Only show languages that are actually supported with full translations
 const LANGUAGES = [
   { key: "en", label: "English" },
   { key: "es", label: "Español" },
   { key: "fr", label: "Français" },
   { key: "de", label: "Deutsch" },
-  { key: "it", label: "Italiano" },
-  { key: "pt", label: "Português" },
-  { key: "ru", label: "Русский" },
-  { key: "zh", label: "中文" },
-  { key: "ja", label: "日本語" },
-  { key: "ko", label: "한국어" },
 ];
 
 export function Step0Language() {
-  const [selectedLanguage, setSelectedLanguage] = useState("en");
+  // Initialize with current i18n language instead of hardcoded "en"
+  const [selectedLanguage, setSelectedLanguage] = useState(i18n.language || "en");
   const { t } = useTranslation(['onboarding']);
 
   useEffect(() => {
-    // Load saved language preference
+    // Set initial language to current i18n language
+    setSelectedLanguage(i18n.language || "en");
+    
+    // Load saved language preference (this might override the above)
     loadLanguagePreference();
   }, []);
 
   const loadLanguagePreference = async () => {
     try {
       const savedLang = await invoke<string | null>("get_preference", { key: "language" });
-      if (savedLang) {
+      if (savedLang && LANGUAGES.some(lang => lang.key === savedLang)) {
         setSelectedLanguage(savedLang);
+        // Apply the saved language to i18n if different from current
+        if (i18n.language !== savedLang) {
+          await i18n.changeLanguage(savedLang);
+          console.log("Applied saved language preference:", savedLang);
+        }
       }
     } catch (error) {
       console.error("Failed to load language preference:", error);
     }
   };
 
-  const handleLanguageChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedLanguage(event.target.value);
+  const handleLanguageChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const newLanguage = event.target.value;
+    setSelectedLanguage(newLanguage);
+    
+    // Immediately change the language in i18n to update translations
+    await i18n.changeLanguage(newLanguage);
+    console.log("Language changed to:", newLanguage);
+    
     // Auto-save language preference when changed
-    handleLanguageSave(event.target.value);
+    handleLanguageSave(newLanguage);
   };
 
   const handleLanguageSave = async (language: string) => {
     try {
-      // Save language preference immediately
+      // Save language preference to backend
       await invoke("set_preference", { key: "language", value: language });
-      console.log("Language preference saved:", language);
+      console.log("Language preference saved to backend:", language);
+      
+      // Also save to localStorage for i18n persistence
+      localStorage.setItem('preferredLanguage', language);
+      console.log("Language preference saved to localStorage:", language);
     } catch (error) {
       console.error("Failed to save language preference:", error);
     }
