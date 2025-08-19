@@ -9,16 +9,16 @@ use crate::commands::{DeviceRequestWrapper, DeviceRequest, DeviceResponse, Devic
 
 // Create a cache for device states to remember OOB bootloader status
 lazy_static::lazy_static! {
-    static ref DEVICE_STATE_CACHE: Arc<RwLock<HashMap<String, DeviceStateCache>>> = Arc::new(RwLock::new(HashMap::new()));
+    pub static ref DEVICE_STATE_CACHE: Arc<RwLock<HashMap<String, DeviceStateCache>>> = Arc::new(RwLock::new(HashMap::new()));
     pub static ref PASSPHRASE_REQUEST_STATE: Arc<RwLock<HashMap<String, PassphraseRequestState>>> = Arc::new(RwLock::new(HashMap::new()));
 }
 
 #[derive(Debug, Clone)]
-struct DeviceStateCache {
-    is_oob_bootloader: bool,
-    last_features: Option<keepkey_rust::messages::Features>,
+pub struct DeviceStateCache {
+    pub is_oob_bootloader: bool,
+    pub last_features: Option<keepkey_rust::messages::Features>,
     #[allow(dead_code)]
-    last_update: std::time::Instant,
+    pub last_update: std::time::Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -275,6 +275,9 @@ pub async fn add_to_device_queue(
     }
 
 
+    // Mark device as busy when starting operation
+    crate::device::state::set_device_busy(&request.device_id, Some(request_type.to_string())).await;
+    
     // Process the request based on type
     let result = match request.request {
         DeviceRequest::GetXpub { ref path } => {
@@ -402,6 +405,9 @@ pub async fn add_to_device_queue(
                 .get_features()
                 .await
                 .map_err(|e| format!("Failed to get features: {}", e))?;
+            
+            // Update device state based on features
+            crate::device::state::update_device_state_from_features(&request.device_id, &features).await;
             
             // Create a serializable version of features
             let features_json = serde_json::json!({
@@ -778,6 +784,9 @@ pub async fn add_to_device_queue(
             }
         }
     };
+    
+    // Mark device as not busy when operation completes
+    crate::device::state::set_device_busy(&request.device_id, None).await;
     
     // Store the response for queue status queries
     {

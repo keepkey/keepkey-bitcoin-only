@@ -13,7 +13,8 @@ import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
 import { VaultInterface } from './components/VaultInterface';
 import { useWallet } from './contexts/WalletContext';
-import { DialogProvider, useDialog, usePassphraseDialog } from './contexts/DialogContext'
+import { DialogProvider, useDialog, usePassphraseDialog } from './contexts/DialogContext';
+import { useDeviceInteraction } from './hooks/useDeviceInteraction';
 
 // Define the expected structure of DeviceFeatures from Rust
 interface DeviceFeatures {
@@ -62,6 +63,9 @@ function App() {
         const { hideAll, activeDialog, getQueue, isWizardActive } = useDialog();
         const { fetchedXpubs, portfolio, isSync, reinitialize } = useWallet();
         const passphraseDialog = usePassphraseDialog();
+        
+        // Enable global device interaction handling (PIN, passphrase, button dialogs)
+        useDeviceInteraction();
         
         // Check wallet context state and sync with local state
         useEffect(() => {
@@ -258,6 +262,12 @@ function App() {
         useEffect(() => {
             let unlistenStatusUpdate: (() => void) | undefined;
             let unlistenDeviceReady: (() => void) | undefined;
+            let unlistenFeaturesUpdated: (() => void) | undefined;
+            let unlistenAccessError: (() => void) | undefined;
+            let unlistenDeviceDisconnected: (() => void) | undefined;
+            let unlistenPassphraseRequest: (() => void) | undefined;
+            let unlistenPassphraseSuccess: (() => void) | undefined;
+            let unlistenNoDeviceFound: (() => void) | undefined;
 
             // Add keyboard listener for F12 to open devtools
             const handleKeyDown = (e: KeyboardEvent) => {
@@ -268,7 +278,7 @@ function App() {
             };
             window.addEventListener('keydown', handleKeyDown);
 
-            const setupEventListeners = async () => {
+            (async () => {
                 try {
                     console.log('🎯 Setting up event listeners...');
                     console.log('🔐 [App] ***** APP IS RUNNING - CONSOLE LOGS WORKING *****');
@@ -294,7 +304,7 @@ function App() {
                             setLoadingStatus(payload.status);
                             
                             // Special check for "Device ready" status
-                            if (payload.status === "Device ready") {
+                            if (payload.status === 'Device ready') {
                                 console.log('📱 [App] Received "Device ready" status! Current state:', {
                                     deviceConnected,
                                     deviceUpdateComplete
@@ -324,7 +334,7 @@ function App() {
                     });
 
                     // Listen for device features-updated events (includes status evaluation for DeviceUpdateManager)
-                    const unlistenFeaturesUpdated = await listen('device:features-updated', (event) => {
+                    unlistenFeaturesUpdated = await listen('device:features-updated', (event) => {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const payload = event.payload as any;
                         console.log('Device features-updated event received:', payload);
@@ -338,7 +348,7 @@ function App() {
                     });
 
                     // Listen for device access errors from backend
-                    const unlistenAccessError = await listen('device:access-error', (event) => {
+                    unlistenAccessError = await listen('device:access-error', (event) => {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const errorData = event.payload as any;
                         console.log('Device access error event received:', errorData);
@@ -348,7 +358,7 @@ function App() {
                     });
 
                     // Listen for device disconnection events
-                    const unlistenDeviceDisconnected = await listen('device:disconnected', (event) => {
+                    unlistenDeviceDisconnected = await listen('device:disconnected', (event) => {
                         console.log('Device disconnected event received:', event.payload);
                         setDeviceConnected(false);
                         setDeviceInfo(null);
@@ -357,21 +367,8 @@ function App() {
 
                     // Listen for passphrase request events from device
                     console.log('🔐 [App] Setting up passphrase_request event listener...');
-                    
-                    // Test listener for debugging - listen to ALL events
-                    try {
-                        const { listen } = await import('@tauri-apps/api/event');
-                        // @ts-ignore
-                        const unlistenAll = await listen('*', (event) => {
-                            if (event.event.includes('passphrase')) {
-                                console.log('🔐 [App] ⚡ Received passphrase-related event:', event.event, event.payload);
-                            }
-                        });
-                    } catch (e) {
-                        console.log('🔐 [App] Could not set up universal event listener:', e);
-                    }
-                    
-                    const unlistenPassphraseRequest = await listen('passphrase_request', (event) => {
+
+                    unlistenPassphraseRequest = await listen('passphrase_request', (event) => {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const payload = event.payload as any;
                         console.log('🔐 [App] ==================== PASSPHRASE REQUEST RECEIVED ====================');
@@ -405,7 +402,7 @@ function App() {
                     });
 
                     // Listen for passphrase success event to close the modal
-                    const unlistenPassphraseSuccess = await listen('passphrase:success', (event) => {
+                    unlistenPassphraseSuccess = await listen('passphrase:success', async (event) => {
                         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const payload = event.payload as any;
                         console.log('🔐 [App] Passphrase success received:', payload);
@@ -416,23 +413,65 @@ function App() {
                         } else {
                             passphraseDialog.hide();
                         }
+                        
+                        // Auto-recovery: If app seems stuck after passphrase, reinitialize after delay
+                        console.log('🔐 [App] Starting auto-recovery timer after passphrase success...');
+                        
+                        // First attempt: Quick check and try to reinitialize
+                        setTimeout(async () => {
+                            try {
+                                // Check if we're still stuck (loading status not progressed)
+                                if (loadingStatus === 'Scanning for devices...' || loadingStatus === 'Initializing app...') {
+                                    console.log('🔄 [App] Auto-recovery: App appears stuck after passphrase, reinitializing...');
+                                    console.log('🔄 [App] Current loading status:', loadingStatus);
+                                    
+                                    // Trigger frontend ready to re-establish device connection
+                                    await invoke('frontend_ready');
+                                    console.log('🔄 [App] Auto-recovery: Frontend ready sent');
+                                    
+                                    // Also try to get device status to trigger initialization
+                                    try {
+                                        await invoke('get_connected_devices_with_features');
+                                        console.log('🔄 [App] Auto-recovery: Device query sent');
+                                    } catch (e) {
+                                        console.log('🔄 [App] Auto-recovery: Device query failed:', e);
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('🔄 [App] Auto-recovery first attempt failed:', error);
+                            }
+                        }, 1500);
+                        
+                        // Second attempt: More aggressive restart if still stuck
+                        setTimeout(async () => {
+                            try {
+                                if (!deviceConnected || loadingStatus === 'Scanning for devices...' || loadingStatus === 'Initializing app...') {
+                                    console.log('🔄 [App] Auto-recovery: Still stuck after 5 seconds, performing backend restart...');
+                                    console.log('🔄 [App] Device connected:', deviceConnected, 'Loading status:', loadingStatus);
+                                    await invoke('restart_backend_startup');
+                                    console.log('🔄 [App] Auto-recovery: Backend restart initiated');
+                                }
+                            } catch (error) {
+                                console.error('🔄 [App] Auto-recovery second attempt failed:', error);
+                            }
+                        }, 5000);
                     });
 
                     // Listen for "no device found" event from backend
-                    const unlistenNoDeviceFound = await listen('device:no-device-found', (event) => {
+                    unlistenNoDeviceFound = await listen('device:no-device-found', (event) => {
                         console.log('📱 [App] No device found event received from backend:', event.payload);
                         if (!deviceConnected && !noDeviceDialogShown) {
                             setNoDeviceDialogShown(true);
                             showNoDevice({
                                 onRetry: async () => {
-                                    console.log("📱 [App] User clicked retry - restarting backend");
+                                    console.log('📱 [App] User clicked retry - restarting backend');
                                     setNoDeviceDialogShown(false);
                                     // Restart the backend to scan for devices again
                                     try {
                                         await invoke('restart_backend_startup');
                                         reinitialize();
                                     } catch (error) {
-                                        console.error("Failed to restart backend:", error);
+                                        console.error('Failed to restart backend:', error);
                                     }
                                 }
                             });
@@ -440,33 +479,23 @@ function App() {
                     });
 
                     console.log('✅ All event listeners set up successfully');
-                    
-                    // Return cleanup function that removes all listeners
-                    return () => {
-                        console.log('🧹 Cleaning up event listeners...');
-                        if (unlistenStatusUpdate) unlistenStatusUpdate();
-                        if (unlistenDeviceReady) unlistenDeviceReady();
-                        if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
-                        if (unlistenAccessError) unlistenAccessError();
-                        if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
-                        if (unlistenPassphraseRequest) unlistenPassphraseRequest();
-                        if (unlistenPassphraseSuccess) unlistenPassphraseSuccess();
-                        if (unlistenNoDeviceFound) unlistenNoDeviceFound();
-                    };
-                    
                 } catch (error) {
-                    console.error("Failed to set up event listeners:", error);
+                    console.error('Failed to set up event listeners:', error);
                 }
-            };
-
-            setupEventListeners();
+            })();
 
             return () => {
                 window.removeEventListener('keydown', handleKeyDown);
                 if (unlistenStatusUpdate) unlistenStatusUpdate();
                 if (unlistenDeviceReady) unlistenDeviceReady();
+                if (unlistenFeaturesUpdated) unlistenFeaturesUpdated();
+                if (unlistenAccessError) unlistenAccessError();
+                if (unlistenDeviceDisconnected) unlistenDeviceDisconnected();
+                if (unlistenPassphraseRequest) unlistenPassphraseRequest();
+                if (unlistenPassphraseSuccess) unlistenPassphraseSuccess();
+                if (unlistenNoDeviceFound) unlistenNoDeviceFound();
             };
-        }, [noDeviceDialogShown, showNoDevice, reinitialize, passphraseDialog, activeDialog, getQueue]); // Add dependencies for the no device listener
+        }, []);
 
         const mcpUrl = "http://127.0.0.1:1646/mcp";
 

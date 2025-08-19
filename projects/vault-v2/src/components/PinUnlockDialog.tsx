@@ -55,13 +55,21 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose, isManag
       setDeviceReadyStatus('Preparing device for PIN entry...')
       console.log('🔍 Preparing PIN unlock for device:', deviceId)
       
-      // Skip the readiness check - if we're showing this dialog, 
-      // it's because the device needs PIN unlock
-      // The device might already be in PIN flow from a previous GetAddress call
+      // Check if device is already in PIN flow
+      const isInPinFlow = await invoke('check_device_in_pin_flow', { deviceId })
+      if (isInPinFlow) {
+        console.log('🔐 Device already in PIN flow, ready for PIN entry')
+        setDeviceReadyStatus('Device ready - PIN matrix should be visible on device')
+        setStep('enter')
+        setIsLoading(false)
+        return
+      }
       
-      // Device is ready for PIN unlock attempt
-      setDeviceReadyStatus('Device ready - requesting PIN matrix...')
-      await triggerPinRequest()
+      // Since the backend already triggered PIN when emitting device:pin-request-triggered,
+      // we should just go straight to enter mode
+      console.log('🔐 Device PIN was already triggered by backend, ready for entry')
+      setDeviceReadyStatus('Device ready - PIN matrix should be visible on device')
+      setStep('enter')
       
     } catch (err: any) {
       console.error('❌ Device readiness verification failed:', err)
@@ -79,6 +87,15 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose, isManag
       setError(null)
       setDeviceReadyStatus('Checking device lock status...')
       console.log('🔐 Triggering PIN request for device:', deviceId)
+      
+      // Check if device is already in PIN flow to avoid duplicate requests
+      const isInPinFlow = await invoke('check_device_in_pin_flow', { deviceId })
+      if (isInPinFlow) {
+        console.log('🔐 Device already in PIN flow, skipping trigger')
+        setDeviceReadyStatus('Device ready - PIN matrix should be visible on device')
+        setStep('enter')
+        return
+      }
       
       const result = await invoke('trigger_pin_request', { deviceId })
       
@@ -190,13 +207,14 @@ export const PinUnlockDialog = ({ isOpen, deviceId, onUnlocked, onClose, isManag
           setStep('reconnect')
           // Don't auto-close - user needs to reconnect device
         } else {
-          console.log('🔓 Normal PIN unlock - showing success briefly')
+          console.log('🔓 Normal PIN unlock - closing immediately to allow passphrase dialog')
           setStep('success')
-          // Auto-close after brief success display
+          
+          // Small delay to ensure backend has time to send passphrase_request event
           setTimeout(() => {
-            console.log('🔒 PIN dialog auto-closing after success')
+            console.log('🔒 Closing PIN dialog after successful submission')
             onUnlocked()
-          }, 1000)
+          }, 100)
         }
       } else {
         throw new Error('PIN verification failed')

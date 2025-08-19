@@ -176,18 +176,27 @@ impl EventController {
                                                 Some(&features)
                                             );
                                             
-                                                                        // Check if device is locked with PIN before determining if it's ready
-                            let has_pin_protection = features.pin_protection;
-                            let pin_cached = features.pin_cached;
-                            let is_pin_locked = features.initialized && has_pin_protection && !pin_cached;
+                                                                        // Use the already-calculated status values to avoid duplication
+                            let is_pin_locked = status.needs_pin_unlock;
+                            
+                            let has_passphrase_protection = features.passphrase_protection;
+                            let passphrase_cached = features.passphrase_cached;
+                            let is_passphrase_locked = features.initialized && has_passphrase_protection && !passphrase_cached;
+                            
+                            // Debug logging for lock states
+                            println!("🔐 Device lock status:");
+                            println!("  PIN locked (needs_pin_unlock): {}", is_pin_locked);
+                            println!("  Passphrase protection: {}, cached: {}, locked: {}", has_passphrase_protection, passphrase_cached, is_passphrase_locked);
                             
                             // Emit status updates based on what the device needs
                             // CRITICAL: Device in bootloader mode is NEVER ready
+                            // Device is also NOT ready if locked with PIN OR passphrase
                             let is_actually_ready = !features.bootloader_mode &&  // Never ready if in bootloader mode
                                                    !status.needs_bootloader_update && 
                                                    !status.needs_firmware_update && 
                                                    !status.needs_initialization &&
-                                                   !is_pin_locked;  // Device is NOT ready if locked with PIN
+                                                   !is_pin_locked &&           // Device is NOT ready if locked with PIN
+                                                   !is_passphrase_locked;      // Device is NOT ready if locked with passphrase
                             
                             if is_actually_ready {
                                                 println!("✅ Device is fully ready, emitting device:ready event");
@@ -210,14 +219,32 @@ impl EventController {
                                     println!("📡 Successfully emitted/queued device:ready for {}", device_for_task.unique_id);
                                 }
                                             } else {
-                                                                                println!("⚠️ Device connected but needs updates (bootloader_mode: {}, bootloader: {}, firmware: {}, init: {}, pin_locked: {})", 
+                                                                                println!("⚠️ Device connected but needs updates (bootloader_mode: {}, bootloader: {}, firmware: {}, init: {}, pin_locked: {}, passphrase_locked: {})", 
                                         features.bootloader_mode,
                                         status.needs_bootloader_update, 
                                         status.needs_firmware_update, 
                                         status.needs_initialization,
-                                        is_pin_locked);
+                                        is_pin_locked,
+                                        is_passphrase_locked);
                                                 
-                                                if is_pin_locked {
+                                                // Handle passphrase unlock (comes first in the KeepKey flow)
+                                                if is_passphrase_locked {
+                                                    println!("🔐 Device is initialized but locked with passphrase - emitting unlock event");
+                                                    
+                                                    // Emit passphrase unlock needed event
+                                                    let passphrase_unlock_payload = serde_json::json!({
+                                                        "deviceId": device_for_task.unique_id,
+                                                        "features": features,
+                                                        "status": status,
+                                                        "needsPassphraseUnlock": true
+                                                    });
+                                                    
+                                                    if let Err(e) = crate::commands::emit_or_queue_event(&app_for_task, "device:passphrase-unlock-needed", passphrase_unlock_payload).await {
+                                                        println!("❌ Failed to emit/queue device:passphrase-unlock-needed event: {}", e);
+                                                    } else {
+                                                        println!("📡 Successfully emitted/queued device:passphrase-unlock-needed for {}", device_for_task.unique_id);
+                                                    }
+                                                } else if is_pin_locked {
                                                     println!("🔒 Device is initialized but locked with PIN - emitting unlock event");
                                                     
                                                     // Emit PIN unlock needed event
@@ -505,17 +532,23 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
                        error_str.contains("Failure: Unknown message") ||
                        error_str.contains("Unexpected response") {
                         
-                        println!("🔧 Device may be in OOB bootloader mode, trying Initialize message...");
-                        
-                        // Try the direct approach using keepkey-rust's proven method
-                        match try_oob_bootloader_detection(device).await {
-                            Ok(features) => {
-                                println!("✅ Successfully detected OOB bootloader mode for device {}", device.unique_id);
-                                return Ok(features);
-                            }
-                            Err(oob_err) => {
-                                println!("❌ OOB bootloader detection also failed for {}: {}", device.unique_id, oob_err);
-                                last_error = Some(format!("Failed to get device features: {} (OOB attempt: {})", error_str, oob_err));
+                        // IMPORTANT: Check if device is in PIN flow before attempting OOB detection
+                        if crate::commands::is_device_in_pin_flow(&device.unique_id) {
+                            println!("🔒 Device {} is in PIN flow - skipping OOB bootloader detection to avoid disrupting PIN entry", device.unique_id);
+                            last_error = Some("Device is currently in PIN entry mode".to_string());
+                        } else {
+                            println!("🔧 Device may be in OOB bootloader mode, trying Initialize message...");
+                            
+                            // Try the direct approach using keepkey-rust's proven method
+                            match try_oob_bootloader_detection(device).await {
+                                Ok(features) => {
+                                    println!("✅ Successfully detected OOB bootloader mode for device {}", device.unique_id);
+                                    return Ok(features);
+                                }
+                                Err(oob_err) => {
+                                    println!("❌ OOB bootloader detection also failed for {}: {}", device.unique_id, oob_err);
+                                    last_error = Some(format!("Failed to get device features: {} (OOB attempt: {})", error_str, oob_err));
+                                }
                             }
                         }
                     } else {

@@ -25,7 +25,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   const [showStartButton, setShowStartButton] = React.useState(false);
   const [syncingTime, setSyncingTime] = React.useState(0);
 
-  console.log('portfolio: ', portfolio);
+  // console.log('portfolio: ', portfolio);
 
   // Timer to show the start button after 15 seconds
   React.useEffect(() => {
