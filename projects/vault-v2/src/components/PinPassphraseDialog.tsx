@@ -94,10 +94,24 @@ export const PinPassphraseDialog = ({
     const setupListener = async () => {
       const { listen } = await import('@tauri-apps/api/event');
       
-      const unlisten = await listen('device:awaiting_passphrase', (event: any) => {
+      // Listen for the actual passphrase_request event emitted by backend
+      const unlisten = await listen('passphrase_request', (event: any) => {
         console.log('🔐 [PinPassphraseDialog] Received passphrase request event:', event);
-        if (event.payload?.device_id === deviceId && step === 'pin-submitting') {
+        // Check if this event is for our device and we're waiting after PIN
+        if (event.payload?.deviceId === deviceId && step === 'pin-submitting') {
           console.log('🔐 [PinPassphraseDialog] Auto-transitioning to passphrase step');
+          
+          // Clear the timeout that would close the dialog
+          if ((window as any).__pinTimeoutId) {
+            clearTimeout((window as any).__pinTimeoutId);
+            delete (window as any).__pinTimeoutId;
+          }
+          
+          // Store the request ID if provided
+          if (event.payload?.requestId) {
+            (window as any).__passphraseRequestId = event.payload.requestId;
+          }
+          
           setStep('passphrase-entry');
         }
       });
@@ -315,30 +329,30 @@ export const PinPassphraseDialog = ({
       if (result === true) {
         console.log('✅ PIN submitted successfully');
         
-        // Check if device has passphrase protection enabled
-        try {
-          const status = await invoke('get_device_status', { deviceId });
-          console.log('📱 Device status after PIN:', status);
-          
-          // If passphrase protection is enabled, transition to passphrase step
-          // The backend will already be expecting a PassphraseAck
-          if (status && status.features && status.features.passphrase_protection) {
-            console.log('🔐 Device has passphrase protection enabled, moving to passphrase step');
-            setStep('passphrase-entry');
-          } else {
-            // No passphrase needed, we're done
-            console.log('✅ PIN successful, no passphrase protection enabled');
+        // Don't check device status here - it returns cached data during PIN/passphrase flow
+        // Instead, wait briefly for a passphrase_request event
+        // If we get one, the listener will auto-transition to passphrase-entry
+        // If we don't get one within 1 second, assume no passphrase is needed
+        
+        console.log('⏳ Waiting for potential passphrase request...');
+        
+        // Set a timeout to complete if no passphrase request comes
+        const timeoutId = setTimeout(() => {
+          // Only complete if we're still in pin-submitting state
+          // (not if we've already transitioned to passphrase-entry)
+          if (step === 'pin-submitting') {
+            console.log('✅ No passphrase request received, PIN unlock complete');
             setStep('success');
             setTimeout(() => {
               if (onComplete) onComplete();
               onClose();
             }, 500);
           }
-        } catch (err) {
-          console.log('⚠️ Could not check passphrase status, assuming it is needed:', err);
-          // If we can't check, assume passphrase is needed (safer)
-          setStep('passphrase-entry');
-        }
+        }, 1000); // Wait 1 second for passphrase request
+        
+        // Store timeout ID so we can clear it if we transition to passphrase
+        // (The useEffect listener will handle the transition)
+        (window as any).__pinTimeoutId = timeoutId;
       } else {
         throw new Error('PIN verification failed');
       }
@@ -402,7 +416,10 @@ export const PinPassphraseDialog = ({
     setPassphraseError(null);
 
     try {
-      console.log('🔐 [PinPassphraseDialog] Sending passphrase for device:', deviceId, 'request:', requestId);
+      // Use stored request ID from passphrase_request event if available
+      const actualRequestId = requestId || (window as any).__passphraseRequestId;
+      console.log('🔐 [PinPassphraseDialog] Sending passphrase for device:', deviceId, 'request:', actualRequestId);
+      
       // Use the correct backend command for sending passphrase
       // Include the requestId if available so backend knows which request this is for
       const params: any = {
@@ -410,8 +427,8 @@ export const PinPassphraseDialog = ({
         passphrase: passphrase || '', // Empty string for no passphrase
       };
       
-      if (requestId) {
-        params.requestId = requestId;
+      if (actualRequestId) {
+        params.requestId = actualRequestId;
       }
       
       await invoke('send_passphrase', params);
@@ -470,14 +487,17 @@ export const PinPassphraseDialog = ({
     setPassphraseError(null);
     
     try {
+      // Use stored request ID from passphrase_request event if available
+      const actualRequestId = requestId || (window as any).__passphraseRequestId;
+      
       // Use the correct backend command for sending empty passphrase
       const params: any = {
         deviceId,
         passphrase: '', // Empty passphrase
       };
       
-      if (requestId) {
-        params.requestId = requestId;
+      if (actualRequestId) {
+        params.requestId = actualRequestId;
       }
       
       await invoke('send_passphrase', params);
