@@ -96,6 +96,13 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   // Show a dialog
   const show = useCallback((config: DialogConfig) => {
     console.log(`🎯 [DialogContext] show() called for dialog:`, config.id, config.priority);
+    
+    // ABSOLUTE DUPLICATE PREVENTION: If ANY dialog with this ID exists ANYWHERE, DROP the request
+    if (state.active?.id === config.id || state.queue.some(d => d.id === config.id)) {
+      console.log(`🚫 [DialogContext] DROPPING DUPLICATE - Dialog "${config.id}" already exists (active or queued)`);
+      return; // JUST DROP IT!
+    }
+    
     console.log(`🎯 [DialogContext] Current queue before:`, state.queue.map(d => d.id));
     console.log(`🎯 [DialogContext] Current active before:`, state.active?.id);
     
@@ -109,15 +116,20 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
         // Check if dialog already exists in queue
         const exists = prevState.queue.some(d => d.id === config.id);
         if (exists) {
-          console.warn(`🎯 [DialogContext] Dialog with id "${config.id}" already exists in queue`);
+          // Only log this warning once per dialog to reduce noise
+          // if (!(window as any).__dialogWarningLogged?.[config.id]) {
+          //   (window as any).__dialogWarningLogged = (window as any).__dialogWarningLogged || {};
+          //   (window as any).__dialogWarningLogged[config.id] = true;
+          //   console.warn(`🎯 [DialogContext] Dialog with id "${config.id}" already exists in queue`);
+          // }
           // For passphrase dialogs, ensure they become active after PIN closes
-          if (config.id.includes('passphrase') && !prevState.active) {
-            // PIN just closed, make passphrase active
-            return {
-              ...prevState,
-              active: prevState.queue.find(d => d.id === config.id) || null
-            };
-          }
+          // if (config.id.includes('passphrase') && !prevState.active) {
+          //   // PIN just closed, make passphrase active
+          //   return {
+          //     ...prevState,
+          //     active: prevState.queue.find(d => d.id === config.id) || null
+          //   };
+          // }
           return prevState;
         }
         
@@ -125,19 +137,22 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
         let newQueue = [...prevState.queue];
         if (config.priority === 'critical' || isPinDialog || isPinPassphraseDialog) {
           // Remove non-critical dialogs except for PIN and passphrase dialogs
-          newQueue = newQueue.filter(d => {
+          newQueue = newQueue.filter((d, index, self) => {
+            // ✅ 1. Ensure uniqueness by ID
+            const isFirst = self.findIndex(x => x.id === d.id) === index;
+            if (!isFirst) return false;
+
+            // ✅ 2. Apply your existing priority/type logic
             const dialogPriority = PRIORITY_ORDER[d.priority || 'normal'];
             const configPriority = PRIORITY_ORDER[config.priority || 'normal'];
             const isDialogPin = d.id.includes('pin-unlock');
-            const isDialogPassphrase = d.id.includes('passphrase');
-            const isDialogPinPassphrase = d.id.includes('pin-passphrase');
-            
+            // const isDialogPassphrase = d.id.includes('passphrase');
+            // const isDialogPinPassphrase = d.id.includes('pin-passphrase');
+
             // Keep dialog if:
             // 1. It's a PIN dialog (PIN dialogs are always kept)
-            // 2. It's a passphrase dialog (passphrase follows PIN)
-            // 3. It's a combined PIN/Passphrase dialog (highest priority)
-            // 4. It has equal or higher priority than the new dialog
-            return isDialogPin || isDialogPassphrase || isDialogPinPassphrase || dialogPriority >= configPriority;
+            // 2. It has equal or higher priority than the new dialog
+            return isDialogPin || dialogPriority >= configPriority;
           });
           
           // Call onClose for removed dialogs
@@ -282,10 +297,10 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     return state.queue;
   }, [state.queue]);
 
-  // Check if a dialog is showing
+  // Check if a dialog is showing (active OR queued)
   const isShowing = useCallback((id: string) => {
-    return state.active?.id === id;
-  }, [state.active]);
+    return state.active?.id === id || state.queue.some(d => d.id === id);
+  }, [state.active, state.queue]);
 
   // Request app focus (for critical dialogs)
   const requestAppFocus = useCallback(async () => {

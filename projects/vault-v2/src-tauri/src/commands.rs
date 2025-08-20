@@ -4479,17 +4479,25 @@ pub async fn trigger_pin_request(
                 mark_device_in_pin_flow(&device_id)?;
             }
             
-            // Emit PIN request event to frontend
-            let pin_event_payload = serde_json::json!({
-                "deviceId": device_id,
-                "requestType": "GetAddress",
-                "needsPinEntry": true
-            });
+            // Only emit PIN request event if no dialog is already handling this device
+            // This prevents duplicate dialog creation when PIN is triggered from within an existing dialog
+            let should_emit_event = true; // For now, always emit - the frontend prevents duplicates
             
-            if let Err(e) = app.emit("device:pin-request-triggered", &pin_event_payload) {
-                log::error!("Failed to emit PIN request event: {}", e);
+            if should_emit_event {
+                // Emit PIN request event to frontend
+                let pin_event_payload = serde_json::json!({
+                    "deviceId": device_id,
+                    "requestType": "GetAddress",
+                    "needsPinEntry": true
+                });
+                
+                if let Err(e) = app.emit("device:pin-request-triggered", &pin_event_payload) {
+                    log::error!("Failed to emit PIN request event: {}", e);
+                } else {
+                    log::info!("📡 Emitted device:pin-request-triggered event for device: {}", device_id);
+                }
             } else {
-                log::info!("📡 Emitted device:pin-request-triggered event for device: {}", device_id);
+                log::info!("📡 Skipping device:pin-request-triggered event - dialog already handling device");
             }
             
             // Keep device marked as in PIN flow - will be unmarked when PIN is completed

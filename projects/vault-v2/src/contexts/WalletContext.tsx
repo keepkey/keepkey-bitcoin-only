@@ -816,9 +816,11 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   // Listen for device reconnects and purge queue
   useEffect(() => {
+    console.log(TAG, '🔧 Setting up WalletContext event listeners...');
     let unlistenConnect: Promise<() => void>;
     let unlistenDisconnect: Promise<() => void>;
     let unlistenPinRequest: Promise<() => void>;
+    let unlistenPinUnlockNeeded: Promise<() => void>;
     let unlistenPassphraseRequest: Promise<() => void>;
     
     (async () => {
@@ -891,6 +893,33 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         }
       });
       
+      // ALSO handle PIN unlock needed events from backend
+      unlistenPinUnlockNeeded = listen('device:pin-unlock-needed', async (event: any) => {
+        const tag = TAG + " | device:pin-unlock-needed | ";
+        console.log(tag, '🔒 PIN unlock needed event received:', event.payload);
+        
+        if (event.payload?.deviceId) {
+          const deviceId = event.payload.deviceId;
+          
+          // Check if auth dialog is already showing for this device
+          if (authDialog.isShowing(deviceId)) {
+            console.log(tag, '⚠️ Auth dialog already showing for device, not creating duplicate');
+            return;
+          }
+          
+          console.log(tag, '🔒 Showing unified auth dialog for device:', deviceId);
+          
+          // Show unified auth dialog (PIN + Passphrase if needed)
+          authDialog.show({
+            deviceId,
+            operationType: 'unlock',
+            onComplete: () => {
+              console.log(tag, '🔓 Device authenticated successfully');
+            }
+          });
+        }
+      });
+      
       // Handle passphrase requests from backend when operations need passphrase
       unlistenPassphraseRequest = listen('passphrase_request', async (event: any) => {
         const tag = TAG + " | passphrase_request | ";
@@ -925,6 +954,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       unlistenConnect?.then(fn => fn());
       unlistenDisconnect?.then(fn => fn());
       unlistenPinRequest?.then(fn => fn());
+      unlistenPinUnlockNeeded?.then(fn => fn());
       unlistenPassphraseRequest?.then(fn => fn());
     };
   }, [authDialog]);
