@@ -161,15 +161,18 @@ export const PinPassphraseDialog = ({
             setStep('passphrase-entry');
             setIsLoading(false);
             return;
-          } else {
+          } else if (operationType !== 'settings') {
             // No requestId means this was opened manually or for some other reason
-            // In this case, just close since PIN is already cached
+            // For non-settings operations, close since PIN is already cached
             console.log('🔐 PIN cached and no requestId - closing dialog');
             setTimeout(() => {
               if (onComplete) onComplete();
               onClose();
             }, 100);
             return;
+          } else {
+            // For settings operations, we need to wait for the PIN request even if PIN is cached
+            console.log('🔐 Settings operation - continuing to wait for PIN request');
           }
         }
       } catch (err) {
@@ -177,6 +180,23 @@ export const PinPassphraseDialog = ({
       }
       
       // Device needs PIN to be triggered
+      
+      // For settings operations, device might already be awaiting PIN
+      if (operationType === 'settings') {
+        console.log('🔐 Settings operation - checking if device is already awaiting PIN...');
+        try {
+          const deviceState = await invoke<string>('get_device_interaction_state', { deviceId });
+          if (deviceState.includes('AwaitingPIN')) {
+            console.log('✅ Device is already awaiting PIN for settings operation');
+            setStep('pin-entry');
+            setDeviceReadyStatus('PIN matrix ready');
+            setIsLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.log('⚠️ Could not check device interaction state:', err);
+        }
+      }
       
       // Device needs PIN but hasn't been triggered yet - trigger it now
       console.log('🔐 Device needs PIN, triggering PIN request...');
@@ -196,8 +216,12 @@ export const PinPassphraseDialog = ({
       } catch (err: any) {
         const errorStr = String(err).toLowerCase();
         
-        // If the error indicates the device is awaiting passphrase, go directly to passphrase
-        if (errorStr.includes('awaiting passphrase') || errorStr.includes('passphrase')) {
+        // Special handling for when device is already awaiting PIN
+        if (errorStr.includes('awaiting pin') || errorStr.includes('device is awaiting pin input')) {
+          console.log('🔐 Device is already awaiting PIN, proceeding to PIN entry');
+          setStep('pin-entry');
+          setDeviceReadyStatus('PIN matrix ready');
+        } else if (errorStr.includes('awaiting passphrase') || errorStr.includes('passphrase')) {
           console.log('🔐 Device is awaiting passphrase, skipping PIN step');
           setStep('passphrase-entry');
           setDeviceReadyStatus('Device ready for passphrase');

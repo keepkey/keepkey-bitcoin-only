@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Text,
@@ -27,6 +27,9 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const authDialog = usePinPassphraseDialog();
+  const unlistenersRef = useRef<UnlistenFn[]>([]);
+  
+  console.log('[PassphraseSettings] Component rendered - deviceId:', deviceId, 'isEnabled:', isEnabled, 'isUpdating:', isUpdating);
 
   // Debug log the initial prop value
   console.log(`[PassphraseSettings] Component mounted/updated - deviceId: ${deviceId}, initialEnabled prop: ${initialEnabled}`);
@@ -156,6 +159,9 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     if (newState) {
       // Show info about the flow
       setStatusMessage('Press and hold the button on your KeepKey to confirm enabling passphrase protection.');
+      
+      // Just a small delay to ensure any listeners are ready
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
     
     try {
@@ -174,12 +180,36 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       }
       
       // Send the enable/disable command to the device using the v2 command
-      await invoke('enable_passphrase_protection_v2', {
+      console.log('[PassphraseSettings] Calling enable_passphrase_protection_v2');
+      const response = await invoke('enable_passphrase_protection_v2', {
         deviceId,
         enabled: newState,
       });
+      console.log('[PassphraseSettings] Backend response:', response);
       
-      // Update local state
+      // Check device state immediately after the command
+      const deviceState = await invoke<string>('get_device_interaction_state', { deviceId });
+      console.log('[PassphraseSettings] Device state after command:', deviceState);
+      
+      // If device is awaiting PIN, show the dialog immediately
+      if (deviceState.includes('AwaitingPIN')) {
+        console.log('[PassphraseSettings] Device is awaiting PIN, showing dialog immediately');
+        setStatusMessage('Please enter your PIN to change passphrase settings.');
+        authDialog.show({
+          deviceId: deviceId,
+          operationType: 'settings',
+          onComplete: () => {
+            console.log('[PassphraseSettings] PIN entry completed');
+            setStatusMessage('PIN accepted, applying changes...');
+            // Update local state after PIN is accepted
+            setIsEnabled(newState);
+          },
+        });
+        // Don't update state yet - wait for PIN completion
+        return;
+      }
+      
+      // Update local state only if no PIN is needed
       setIsEnabled(newState);
       
       // Check if device is in PIN/interaction state before notifying parent
@@ -206,12 +236,14 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       
       setIsUpdating(false);
     } catch (err) {
-      console.error('Failed to update passphrase protection:', err);
+      console.error('[PassphraseSettings] Failed to update passphrase protection:', err);
       
       setStatusMessage(`Error: ${err instanceof Error ? err.message : 'Failed to update passphrase protection'}`);
       setTimeout(() => setStatusMessage(null), 5000);
       
       setIsUpdating(false);
+      // Revert the switch on error (if we updated it prematurely)
+      setIsEnabled(!newState);
     }
   };
 
