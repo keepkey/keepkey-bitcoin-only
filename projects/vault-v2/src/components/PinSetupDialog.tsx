@@ -12,6 +12,7 @@ import {
 import { FaCircle } from 'react-icons/fa';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { useTypedTranslation } from '../hooks/useTypedTranslation';
 
 interface PinSetupDialogProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
   onSuccess,
   onError,
 }) => {
+  const { t } = useTypedTranslation('setup');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [step, setStepInternal] = useState<'initializing' | 'new_pin' | 'confirm_pin' | 'success' | 'error'>('initializing');
   
@@ -272,15 +274,15 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
   const getTitle = () => {
     switch (step) {
       case 'initializing':
-        return 'Initializing PIN Setup...';
+        return t('pinSetup.initializingPinSetup');
       case 'new_pin':
-        return 'Create Your PIN';
+        return t('pinSetup.createYourPin');
       case 'confirm_pin':
-        return 'Confirm Your PIN';
+        return t('pinSetup.confirmYourPin');
       case 'success':
-        return 'PIN Enabled Successfully!';
+        return t('pinSetup.pinSetupSuccess');
       case 'error':
-        return 'PIN Setup Failed';
+        return t('pinSetup.pinSetupError');
       default:
         return 'PIN Setup';
     }
@@ -291,7 +293,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
       case 'initializing':
         return 'Connecting to your device...';
       case 'new_pin':
-        return 'Look at your KeepKey device for the number layout. Enter your new PIN using the positions shown below.';
+        return t('pinSetup.usePinLayout');
       case 'confirm_pin':
         return 'Re-enter your PIN to confirm it matches.';
       case 'success':
@@ -370,7 +372,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
 
                 {positions.length < 4 && (
                   <Text fontSize="xs" color="yellow.400" textAlign="center">
-                    Minimum 4 digits recommended
+                    {t('pinSetup.recommendFourDigits')}
                   </Text>
                 )}
 
@@ -449,7 +451,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
                   color="gray.300"
                   _hover={{ bg: 'gray.700' }}
                 >
-                  Clear
+                  {t('pinSetup.backspace')}
                 </Button>
                 <Button
                   colorScheme="green"
@@ -457,7 +459,7 @@ export const PinSetupDialog: React.FC<PinSetupDialogProps> = ({
                   disabled={isProcessing || positions.length === 0}
                   loading={isProcessing}
                 >
-                  {step === 'new_pin' ? 'Set PIN' : 'Confirm PIN'}
+                  {step === 'new_pin' ? t('pinSetup.setPin') : t('pinSetup.confirmPin')}
                 </Button>
               </>
             )}

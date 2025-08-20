@@ -12,6 +12,7 @@ import { FaCheckCircle } from "react-icons/fa";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useDialog } from "../../contexts/DialogContext";
+import { useTypedTranslation } from "../../hooks/useTypedTranslation";
 
 // Import individual steps
 import { Step0Welcome } from "./steps/Step0Welcome";
@@ -49,13 +50,13 @@ const CREATE_ALL_STEPS: Step[] = [
   {
     id: "bootloader",
     label: "Bootloader",
-    description: "Verify and update bootloader if needed",
+    description: "bootloaderUpdate.verifyUpdateBootloader",
     component: StepBootloaderUpdate,
   },
   {
     id: "firmware",
     label: "Firmware",
-    description: "Verify and update firmware if needed",
+    description: "bootloaderUpdate.verifyUpdateFirmware",
     component: StepFirmwareUpdate,
   },
   {
@@ -100,13 +101,13 @@ const RECOVER_ALL_STEPS: Step[] = [
   {
     id: "bootloader",
     label: "Bootloader",
-    description: "Verify and update bootloader if needed",
+    description: "bootloaderUpdate.verifyUpdateBootloader",
     component: StepBootloaderUpdate,
   },
   {
     id: "firmware",
     label: "Firmware",
-    description: "Verify and update firmware if needed",
+    description: "bootloaderUpdate.verifyUpdateFirmware",
     component: StepFirmwareUpdate,
   },
   {
@@ -143,15 +144,15 @@ const RECOVER_ALL_STEPS: Step[] = [
 
 // Define visible steps for progress bar
 const CREATE_VISIBLE_STEPS = [
-  { id: "bootloader", label: "Check Bootloader", number: 1 },
-  { id: "firmware", label: "Check Firmware", number: 2 },
-  { id: "create-or-recover", label: "Create Wallet", number: 3 },
+  { id: "bootloader", label: "bootloaderUpdate.checkBootloader", number: 1 },
+  { id: "firmware", label: "bootloaderUpdate.checkFirmware", number: 2 },
+  { id: "create-or-recover", label: "bootloaderUpdate.createWallet", number: 3 },
 ];
 
 const RECOVER_VISIBLE_STEPS = [
-  { id: "bootloader", label: "Check Bootloader", number: 1 },
-  { id: "firmware", label: "Check Firmware", number: 2 },
-  { id: "create-or-recover", label: "Recover Wallet", number: 3 },
+  { id: "bootloader", label: "bootloaderUpdate.checkBootloader", number: 1 },
+  { id: "firmware", label: "bootloaderUpdate.checkFirmware", number: 2 },
+  { id: "create-or-recover", label: "bootloaderUpdate.recoverWallet", number: 3 },
 ];
 
 export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, onFirmwareUpdateStart, onFirmwareUpdateComplete }: SetupWizardProps) {
@@ -167,6 +168,7 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
   
   const highlightColor = "orange.500"; // Bitcoin orange
   const { hide } = useDialog();
+  const { t } = useTypedTranslation('setup');
   
   // Listen for device connection events to update device ID after bootloader update
   useEffect(() => {
@@ -340,10 +342,10 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
       >
         <VStack gap={4}>
           <Text fontSize="2xl" fontWeight="bold" color={highlightColor}>
-            KeepKey Bitcoin Setup
+            {t('bootloaderUpdate.keepKeyBitcoinSetup')}
           </Text>
           <Text fontSize="md" color="gray.400">
-            {ALL_STEPS[currentStep].description}
+            {t(ALL_STEPS[currentStep].description)}
           </Text>
         </VStack>
       </Box>
@@ -415,7 +417,7 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
                   display={{ base: "none", lg: "block" }}
                   whiteSpace="nowrap"
                 >
-                  {step.label}
+                  {t(step.label)}
                 </Text>
                 {index < VISIBLE_STEPS.length - 1 && (
                   <Box

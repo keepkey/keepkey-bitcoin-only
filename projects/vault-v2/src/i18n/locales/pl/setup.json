@@ -1,0 +1,132 @@
+{
+  "welcome": {
+    "title": "Witamy w KeepKey",
+    "subtitle": "Edycja Tylko Bitcoin",
+    "description": "Bezpieczny portfel sprzętowy skoncentrowany wyłącznie na Bitcoin",
+    "settingUp": "Konfigurowanie urządzenia..."
+  },
+  "setupMethod": {
+    "title": "Wybierz Metodę Konfiguracji",
+    "subtitle": "Utwórz nowy portfel lub przywróć istniejący",
+    "createWallet": {
+      "title": "Utwórz Nowy Portfel",
+      "description": "Wygeneruj nową frazę odzyskiwania i skonfiguruj nowy portfel",
+      "button": "Utwórz Nowy"
+    },
+    "recoverWallet": {
+      "title": "Odzyskaj Portfel",
+      "description": "Przywróć portfel używając istniejącej frazy odzyskiwania",
+      "button": "Odzyskaj Portfel"
+    }
+  },
+  "deviceLabel": {
+    "title": "Nazwij Swoje Urządzenie",
+    "subtitle": "Nadaj swojemu KeepKey własną nazwę",
+    "placeholder": "Wprowadź nazwę urządzenia",
+    "description": "Ta nazwa pomoże Ci zidentyfikować urządzenie",
+    "button": "Ustaw Nazwę"
+  },
+  "pinSetup": {
+    "title": "Ustaw Ochronę PIN",
+    "subtitle": "Chroń swoje urządzenie kodem PIN",
+    "description": "PIN dodaje dodatkową warstwę bezpieczeństwa do Twojego urządzenia",
+    "createPin": "Utwórz PIN",
+    "skipPin": "Pomiń na Razie",
+    "warning": "Twoje urządzenie będzie niechronione bez kodu PIN",
+    "createYourPin": "Utwórz Swój PIN",
+    "confirmYourPin": "Potwierdź Swój PIN",
+    "usePinLayout": "Użyj układu PIN pokazanego na urządzeniu, aby znaleźć miejsce do naciśnięcia na klawiaturze PIN.",
+    "recommendFourDigits": "💡 Zalecamy użycie 4 cyfr dla optymalnego bezpieczeństwa",
+    "backspace": "Backspace",
+    "setPin": "Ustaw PIN",
+    "confirmPin": "Potwierdź PIN",
+    "initializingPinSetup": "Inicjowanie Konfiguracji PIN...",
+    "pinSetupSuccess": "Konfiguracja PIN Zakończona Sukcesem!",
+    "pinSetupError": "Błąd Konfiguracji PIN"
+  },
+  "backup": {
+    "title": "Wykonaj Kopię Zapasową Portfela",
+    "subtitle": "Zapisz swoją frazę odzyskiwania",
+    "description": "Ta fraza to jedyny sposób na odzyskanie portfela, jeśli urządzenie zostanie zgubione lub uszkodzone",
+    "warning": "Nigdy nie udostępniaj swojej frazy odzyskiwania nikomu",
+    "button": "Pokaż Frazę Odzyskiwania",
+    "skipButton": "Pomiń Kopię Zapasową (Niezalecane)"
+  },
+  "complete": {
+    "title": "Konfiguracja Zakończona!",
+    "subtitle": "Twój KeepKey jest gotowy do użycia",
+    "description": "Możesz teraz bezpiecznie przechowywać i zarządzać swoimi Bitcoin",
+    "button": "Rozpocznij Używanie KeepKey"
+  },
+  "firmwareUpdate": {
+    "title": "Aktualizacja Firmware",
+    "subtitle": "Zaktualizuj firmware urządzenia",
+    "checking": "Sprawdzanie aktualizacji...",
+    "available": "Dostępna aktualizacja",
+    "updating": "Aktualizowanie firmware...",
+    "complete": "Aktualizacja zakończona",
+    "failed": "Aktualizacja nie powiodła się",
+    "skipUpdate": "Pomiń na Razie",
+    "skipUpdateNote": "Możesz zaktualizować firmware później w ustawieniach urządzenia"
+  },
+  "recoveryPhrase": {
+    "lookAtDevice": "Spójrz na Swoje Urządzenie",
+    "phraseDisplayed": "Twoja fraza odzyskiwania jest wyświetlana na ekranie KeepKey",
+    "writeDownExactly": "Zapisz każde słowo dokładnie tak, jak jest pokazane na urządzeniu",
+    "onlyOnceWarning": "⚠️ ZOBACZYSZ TO TYLKO RAZ",
+    "byDesign": "To jest celowe - frazy nie można odzyskać później",
+    "takeTime": "Poświęć czas, aby dokładnie zapisać wszystkie słowa",
+    "waitingConfirmation": "Urządzenie będzie czekać na Twoje potwierdzenie"
+  },
+  "recovery": {
+    "title": "Odzyskaj Swój Portfel",
+    "sentenceLength": "Długość Frazy Odzyskiwania",
+    "twelveWords": "12 słów",
+    "eighteenWords": "18 słów",
+    "twentyFourWords": "24 słowa",
+    "recoverWallet": "Odzyskaj Portfel",
+    "startingRecovery": "Rozpoczynanie Odzyskiwania...",
+    "back": "Wstecz"
+  },
+  "bootloaderUpdate": {
+    "title": "Aktualizacja Bootloadera",
+    "subtitle": "Krytyczna aktualizacja bezpieczeństwa",
+    "description": "Ta aktualizacja poprawia bezpieczeństwo i stabilność urządzenia",
+    "warning": "Nie odłączaj urządzenia podczas aktualizacji",
+    "button": "Zaktualizuj Bootloader",
+    "keepKeyBitcoinSetup": "Konfiguracja Bitcoin KeepKey",
+    "verifyUpdateBootloader": "Sprawdź i zaktualizuj bootloader jeśli potrzeba",
+    "verifyUpdateFirmware": "Sprawdź i zaktualizuj firmware jeśli potrzeba",
+    "updateFirmwareTo": "Zaktualizuj Firmware do v{{version}}",
+    "checkBootloader": "Sprawdź Bootloader",
+    "checkFirmware": "Sprawdź Firmware",
+    "createWallet": "Utwórz Portfel",
+    "recoverWallet": "Odzyskaj Portfel",
+    "enterFirmwareUpdateMode": "Wejdź w Tryb Aktualizacji Firmware",
+    "toUpdateFirmware": "Aby zaktualizować firmware, urządzenie musi być w Trybie Aktualizacji",
+    "holdButtonWhileConnecting": "Przytrzymaj przycisk podczas podłączania urządzenia",
+    "quickSteps": "Szybkie Kroki:",
+    "unplugDevice": "1. Odłącz urządzenie KeepKey",
+    "holdButtonAndPlug": "2. Przytrzymaj przycisk i podłącz ponownie",
+    "followDirections": "3. Postępuj zgodnie z instrukcjami na urządzeniu",
+    "releaseButton": "4. Zwolnij przycisk",
+    "firmwareUpdater": "Aktualizator Firmware",
+    "updateAvailableFor": "Dostępna aktualizacja dla bootloadera v{{version}}",
+    "letsUpdateToLatest": "Zaktualizujmy do najnowszej wersji dla najlepszego doświadczenia",
+    "updateRequired": "Wymagana Aktualizacja:",
+    "yourDeviceHasBootloader": "Twoje urządzenie ma bootloader v{{version}}",
+    "weWillUpdateTo": "Zaktualizujemy go do v{{version}} dla lepszego bezpieczeństwa",
+    "thisIsRequiredStep": "To jest wymagany krok w procesie konfiguracji",
+    "currentVersion": "OBECNA WERSJA",
+    "latestVersion": "NAJNOWSZA WERSJA",
+    "onKeepKeyVerifyBackup": "Na KeepKey pojawi się prośba o weryfikację kopii zapasowej. Zrobimy to po aktualizacji, przytrzymaj przycisk, aby pominąć to teraz i kontynuować.",
+    "followDirectionsOnDevice": "Postępuj zgodnie z instrukcjami na urządzeniu",
+    "yourKeepKeyWillGuide": "Twój KeepKey poprowadzi Cię przez proces aktualizacji.",
+    "doNotDisconnectDuringUpdate": "Nie odłączaj urządzenia podczas aktualizacji.",
+    "importantInstructions": "Ważne Instrukcje:",
+    "mayNeedReenterPin": "Może być konieczne ponowne wprowadzenie kodu PIN po aktualizacji",
+    "fundsRemainSafe": "Twoje środki i ustawienia pozostaną bezpieczne",
+    "factoryFirmwareWarning": "Twoje urządzenie ma fabryczny firmware. Aktualizacja jest zdecydowanie zalecana.",
+    "status": "Status"
+  }
+}

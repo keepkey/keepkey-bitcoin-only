@@ -1,5 +1,15 @@
 {
   "title": "Einstellungen",
+  "tabs": {
+    "general": "Allgemein",
+    "security": "Sicherheit",
+    "advanced": "Erweitert",
+    "about": "Über",
+    "device": "Gerät",
+    "network": "Netzwerk",
+    "backup": "Sicherung",
+    "bitcoin": "Bitcoin"
+  },
   "general": {
     "title": "Allgemeine Einstellungen",
     "language": {
@@ -146,6 +156,29 @@
       "stopped": "Gestoppt",
       "serviceStatus": "Service Status",
       "restartRequired": "Neustart erforderlich um Änderungen anzuwenden"
+    }
+  },
+  "bitcoin": {
+    "title": "Bitcoin-Einstellungen",
+    "addressType": {
+      "label": "Bitcoin-Adresstyp",
+      "description": "Wählen Sie Ihren bevorzugten Bitcoin-Adresstyp. Dies wirkt sich sowohl auf Wechselgeld- als auch auf Empfangsadressen aus.",
+      "nativeSegwit": {
+        "title": "Native SegWit (Bech32)",
+        "description": "Niedrigste Gebühren, beste Effizienz. Adressen beginnen mit bc1",
+        "example": "Beispiel: bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh"
+      },
+      "segwit": {
+        "title": "SegWit (P2SH-umschlossen)",
+        "description": "Gute Kompatibilität, moderate Gebühren. Adressen beginnen mit 3",
+        "example": "Beispiel: 3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"
+      },
+      "legacy": {
+        "title": "Legacy",
+        "description": "Maximale Kompatibilität, höchste Gebühren. Adressen beginnen mit 1",
+        "example": "Beispiel: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+      },
+      "recommendation": "Native SegWit bietet die niedrigsten Transaktionsgebühren und wird weitgehend unterstützt. Verwenden Sie Legacy nur, wenn dies für die Kompatibilität mit älteren Diensten erforderlich ist."
     }
   },
   "about": {

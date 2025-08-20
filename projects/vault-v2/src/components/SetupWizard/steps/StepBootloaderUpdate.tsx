@@ -3,6 +3,7 @@ import { FaShieldAlt, FaExclamationTriangle } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import holdAndConnectSvg from '../../../assets/svg/hold-and-connect.svg';
+import { useTypedTranslation } from '../../../hooks/useTypedTranslation';
 
 interface StepBootloaderUpdateProps {
   deviceId: string;
@@ -16,6 +17,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack, onBootloaderUpd
   const [deviceStatus, setDeviceStatus] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showBootloaderInstructions, setShowBootloaderInstructions] = useState(false);
+  const { t } = useTypedTranslation('setup');
 
   useEffect(() => {
     // Only check device status if we have a deviceId
@@ -174,18 +176,18 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack, onBootloaderUpd
             <HStack gap={2}>
               <Icon as={FaExclamationTriangle} color="yellow.500" boxSize={6} />
               <Text fontSize="xl" fontWeight="bold" color="white">
-                Enter Firmware Update Mode
+                {t('bootloaderUpdate.enterFirmwareUpdateMode')}
               </Text>
             </HStack>
 
             <Text fontSize="sm" color="gray.300" textAlign="center">
-              To update the firmware, your device must be in Update Mode
+              {t('bootloaderUpdate.toUpdateFirmware')}
             </Text>
 
             <Box display="flex" justifyContent="center" py={2}>
               <Image
                 src={holdAndConnectSvg}
-                alt="Hold button while connecting device"
+                alt={t('bootloaderUpdate.holdButtonWhileConnecting')}
                 maxW={{ base: "200px", md: "240px" }}
                 height="auto"
               />
@@ -195,11 +197,11 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack, onBootloaderUpd
           {/* Right side - Steps and actions */}
           <VStack gap={4} flex={{ base: "none", lg: 1 }} w={{ base: "100%", lg: "auto" }}>
             <VStack align="stretch" gap={1} bg="gray.700" p={4} borderRadius="md" fontSize="sm" w="100%">
-              <Text fontWeight="semibold" color="yellow.300">Quick Steps:</Text>
-              <Text color="gray.200">1. Unplug your KeepKey device</Text>
-              <Text color="gray.200">2. Hold the button and plug it back in</Text>
-              <Text color="gray.200">3. Follow directions on device</Text>
-              <Text color="gray.200">4. Release the button</Text>
+              <Text fontWeight="semibold" color="yellow.300">{t('bootloaderUpdate.quickSteps')}</Text>
+              <Text color="gray.200">{t('bootloaderUpdate.unplugDevice')}</Text>
+              <Text color="gray.200">{t('bootloaderUpdate.holdButtonAndPlug')}</Text>
+              <Text color="gray.200">{t('bootloaderUpdate.followDirections')}</Text>
+              <Text color="gray.200">{t('bootloaderUpdate.releaseButton')}</Text>
             </VStack>
 
           </VStack>
@@ -232,15 +234,15 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack, onBootloaderUpd
           
           <VStack gap={2}>
             <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white" textAlign="center">
-              Firmware Updater
+              {t('bootloaderUpdate.firmwareUpdater')}
             </Text>
             {isOldBootloader ? (
               <>
                 <Text fontSize={{ base: "sm", md: "md" }} color="blue.400" textAlign="center">
-                  Update available for bootloader v{currentBootloaderVersion}
+                  {t('bootloaderUpdate.updateAvailableFor', { version: currentBootloaderVersion })}
                 </Text>
                 <Text fontSize="xs" color="gray.400" textAlign="center">
-                  Let's update to the latest version for the best experience
+                  {t('bootloaderUpdate.letsUpdateToLatest')}
                 </Text>
               </>
             ) : deviceStatus.needsBootloaderUpdate ? (
@@ -259,16 +261,16 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack, onBootloaderUpd
             <Box w="100%" p={4} bg="blue.900" borderRadius="lg" borderWidth="2px" borderColor="blue.500">
               <VStack gap={2} align="start">
                 <Text color="blue.300" fontWeight="bold" fontSize="sm">
-                  Update Required:
+                  {t('bootloaderUpdate.updateRequired')}
                 </Text>
                 <Text fontSize="xs" color="blue.200">
-                  • Your device has bootloader v{currentBootloaderVersion}
+                  • {t('bootloaderUpdate.yourDeviceHasBootloader', { version: currentBootloaderVersion })}
                 </Text>
                 <Text fontSize="xs" color="blue.200">
-                  • We'll update it to v2.1.5 for improved security
+                  • {t('bootloaderUpdate.weWillUpdateTo', { version: '2.1.5' })}
                 </Text>
                 <Text fontSize="xs" color="blue.200">
-                  • This is a required step in the setup process
+                  • {t('bootloaderUpdate.thisIsRequiredStep')}
                 </Text>
               </VStack>
             </Box>
@@ -282,7 +284,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack, onBootloaderUpd
               <HStack gap={8} justify="space-between">
                 <VStack gap={1} align="start">
                   <Text fontSize="xs" color="gray.400" textTransform="uppercase">
-                    Current Version
+                    {t('bootloaderUpdate.currentVersion')}
                   </Text>
                   <Text fontSize="lg" color="white" fontWeight="bold">
                     v{deviceStatus.bootloaderCheck.currentVersion}
@@ -290,7 +292,7 @@ export function StepBootloaderUpdate({ deviceId, onNext, onBack, onBootloaderUpd
                 </VStack>
                 <VStack gap={1} align="start">
                   <Text fontSize="xs" color="gray.400" textTransform="uppercase">
-                    Latest Version
+                    {t('bootloaderUpdate.latestVersion')}
                   </Text>
                   <Text fontSize="lg" color="green.400" fontWeight="bold">
                     v{deviceStatus.bootloaderCheck.latestVersion}

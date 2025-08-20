@@ -629,7 +629,6 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   _selected={{ bg: "gray.700", color: "white" }}
                   _hover={{ color: "white" }}
                 >
-                  <FaBitcoin size={16} />
                   Bitcoin
                 </Tabs.Trigger>
                 <Tabs.Trigger 
@@ -640,8 +639,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   _selected={{ bg: "gray.700", color: "white" }}
                   _hover={{ color: "white" }}
                 >
-                  <LuCpu size={16} />
-                  KeepKey
+                KeepKey
                 </Tabs.Trigger>
                 <Tabs.Trigger 
                   value="logs"

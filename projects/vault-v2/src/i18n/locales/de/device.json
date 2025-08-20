@@ -2,45 +2,202 @@
   "status": {
     "connected": "Verbunden",
     "disconnected": "Getrennt",
-    "locked": "Gesperrt",
-    "unlocked": "Entsperrt",
     "busy": "Beschäftigt",
     "ready": "Bereit",
+    "bootloader": "Bootloader-Modus",
+    "initialized": "Initialisiert",
+    "notInitialized": "Nicht Initialisiert",
+    "locked": "Gesperrt",
+    "unlocked": "Entsperrt",
+    "needsBackup": "Sicherung Erforderlich",
     "updating": "Wird aktualisiert",
     "error": "Fehler"
   },
   "info": {
+    "deviceId": "Geräte-ID",
+    "firmwareVersion": "Firmware-Version",
+    "bootloaderVersion": "Bootloader-Version",
     "model": "Modell",
-    "firmware": "Firmware",
-    "serial": "Seriennummer",
     "label": "Bezeichnung",
+    "serialNumber": "Seriennummer",
     "initialized": "Initialisiert",
-    "features": "Funktionen"
+    "features": "Funktionen",
+    "capabilities": "Fähigkeiten"
   },
   "actions": {
-    "connect": "Gerät verbinden",
-    "disconnect": "Trennen",
-    "unlock": "Entsperren",
-    "lock": "Sperren",
-    "wipe": "Gerät löschen",
-    "recover": "Gerät wiederherstellen",
-    "update": "Firmware aktualisieren",
-    "initialize": "Initialisieren"
+    "update": "Gerät Aktualisieren",
+    "updateFirmware": "Firmware Aktualisieren",
+    "updateBootloader": "Bootloader Aktualisieren",
+    "wipe": "Gerät Löschen",
+    "wiping": "Wird gelöscht...",
+    "recover": "Gerät Wiederherstellen",
+    "initialize": "Gerät Initialisieren",
+    "backup": "Gerät Sichern",
+    "changePin": "PIN Ändern",
+    "removePin": "PIN Entfernen",
+    "enablePassphrase": "Passphrase Aktivieren",
+    "disablePassphrase": "Passphrase Deaktivieren",
+    "changeLabel": "Bezeichnung Ändern",
+    "applySettings": "Einstellungen Anwenden",
+    "cancel": "Vorgang Abbrechen",
+    "createWallet": "Wallet Erstellen",
+    "verifySeed": "Seed Verifizieren"
   },
   "messages": {
     "confirmOnDevice": "Bitte auf Ihrem Gerät bestätigen",
+    "followDirections": "Befolgen Sie die Anweisungen auf Ihrem Gerät",
     "enterPin": "Geben Sie Ihre PIN auf dem Gerät ein",
-    "followInstructions": "Befolgen Sie die Anweisungen auf dem Gerät",
-    "doNotDisconnect": "Trennen Sie das Gerät nicht",
-    "updateAvailable": "Eine Firmware-Aktualisierung ist verfügbar",
-    "backupDevice": "Sichern Sie Ihr Gerät, bevor Sie fortfahren"
+    "enterPassphrase": "Geben Sie Ihre Passphrase ein",
+    "holdButton": "Halten Sie die Taste auf Ihrem KeepKey gedrückt",
+    "releaseButton": "Lassen Sie die Taste los",
+    "deviceBusy": "Gerät ist beschäftigt, bitte warten",
+    "connectDevice": "Bitte verbinden Sie Ihr KeepKey-Gerät",
+    "disconnectDevice": "Bitte trennen Sie Ihr Gerät",
+    "checkDevice": "Überprüfen Sie den Bildschirm Ihres Geräts",
+    "loadingDevices": "Geräte werden geladen...",
+    "noDevicesConnected": "Keine KeepKey-Geräte verbunden",
+    "connectToGetStarted": "Verbinden Sie Ihr KeepKey-Gerät über USB, um zu beginnen",
+    "connectedDevices": "Verbundene Geräte"
   },
-  "errors": {
-    "notDetected": "Gerät nicht erkannt",
-    "connectionFailed": "Verbindung fehlgeschlagen",
-    "actionCancelled": "Aktion auf dem Gerät abgebrochen",
-    "timeout": "Geräte-Timeout abgelaufen",
-    "busy": "Gerät ist mit einer anderen Operation beschäftigt",
-    "updateFailed": "Firmware-Aktualisierung fehlgeschlagen"
+  "troubleshooting": {
+    "title": "Fehlerbehebung",
+    "subtitle": "Haben Sie Probleme mit Ihrem Gerät?",
+    "notDetected": {
+      "title": "Gerät Nicht Erkannt",
+      "tips": [
+        "Stellen Sie sicher, dass Ihr KeepKey über USB angeschlossen ist",
+        "Versuchen Sie einen anderen USB-Port oder ein anderes Kabel",
+        "Starten Sie die KeepKey Desktop-Anwendung neu",
+        "Prüfen Sie, ob andere Anwendungen das Gerät verwenden"
+      ]
+    },
+    "connectionLost": {
+      "title": "Verbindung Verloren",
+      "tips": [
+        "Überprüfen Sie Ihre USB-Kabelverbindung",
+        "Stellen Sie sicher, dass das Gerät nicht von einer anderen Anwendung verwendet wird",
+        "Versuchen Sie, das Gerät zu trennen und wieder anzuschließen",
+        "Starten Sie die Anwendung neu, wenn das Problem weiterhin besteht"
+      ]
+    },
+    "communicationFailed": {
+      "title": "Gerät erkannt, aber keine Kommunikation",
+      "description": "Ihr KeepKey wurde erkannt, aber wir können keine Kommunikation herstellen. Dies kann normalerweise mit grundlegenden Fehlerbehebungsschritten behoben werden.",
+      "launchTroubleshooter": "Fehlerbehebung Starten"
+    },
+    "connectionAttempts": {
+      "attempting": "Verbindungsversuch ({{attempt}}/{{max}})...",
+      "giveUp": "Aufgabe nach {{max}} Versuchen – bitte schließen Sie Ihr KeepKey erneut an."
+    },
+    "bootloaderMode": {
+      "title": "Gerät im Bootloader-Modus",
+      "description": "Ihr Gerät befindet sich im Bootloader-Modus. Dies wird für Firmware-Updates verwendet.",
+      "howToExit": "Um den Bootloader-Modus zu verlassen, trennen Sie Ihr Gerät und schließen Sie es wieder an"
+    },
+    "updateFailed": {
+      "title": "Update Fehlgeschlagen",
+      "tips": [
+        "Stellen Sie eine stabile USB-Verbindung während des Updates sicher",
+        "Trennen Sie das Gerät während des Updates nicht",
+        "Versuchen Sie, manuell in den Bootloader-Modus zu wechseln",
+        "Kontaktieren Sie den Support, wenn das Problem weiterhin besteht"
+      ]
+    },
+    "deviceInvalidState": {
+      "title": "Gerät in ungültigem Zustand",
+      "description": "Ihr KeepKey reagiert nicht ordnungsgemäß.",
+      "explanation": "Dies kann passieren, wenn sich das Gerät in einem unerwarteten Zustand befindet oder wenn ein Kommunikationsfehler aufgetreten ist.",
+      "steps": {
+        "title": "Bitte befolgen Sie diese Schritte:",
+        "step1": "Trennen Sie Ihr KeepKey vom USB-Port",
+        "step2": "Warten Sie 2-3 Sekunden",
+        "step3": "Schließen Sie Ihr KeepKey normal wieder an"
+      },
+      "warning": "Halten Sie beim Wiederanschließen KEINE Tasten gedrückt",
+      "error": "Fehler: {{error}}",
+      "timeoutError": "Zeitüberschreitung beim Abrufen der Gerätefunktionen",
+      "persistentProblem": "Wenn das Problem nach dem Wiederanschließen weiterhin besteht, schließen Sie bitte alle anderen Wallet-Anwendungen, die möglicherweise Ihr KeepKey verwenden."
+    }
+  },
+  "bootloader": {
+    "title": "Bootloader-Modus",
+    "description": "Ihr KeepKey befindet sich im Bootloader-Modus",
+    "instructions": {
+      "title": "So gelangen Sie in den Bootloader-Modus:",
+      "step1": "Trennen Sie Ihr KeepKey",
+      "step2": "Halten Sie die Taste auf Ihrem KeepKey gedrückt",
+      "step3": "Schließen Sie Ihr KeepKey wieder an, während Sie die Taste gedrückt halten",
+      "step4": "Halten Sie die Taste gedrückt, bis 'BOOTLOADER MODE' auf dem Bildschirm erscheint",
+      "step5": "Lassen Sie die Taste los"
+    },
+    "update": {
+      "title": "Update Verfügbar",
+      "description": "Ein Bootloader-Update ist für Ihr Gerät verfügbar",
+      "warning": "Trennen Sie Ihr Gerät während des Updates nicht"
+    }
+  },
+  "firmware": {
+    "title": "Firmware-Update",
+    "checking": "Suche nach Firmware-Updates...",
+    "available": "Firmware-Update verfügbar",
+    "current": "Aktuelle Version",
+    "latest": "Neueste Version",
+    "upToDate": "Ihre Firmware ist auf dem neuesten Stand",
+    "downloading": "Firmware wird heruntergeladen...",
+    "installing": "Firmware wird installiert...",
+    "verifying": "Firmware wird überprüft...",
+    "success": "Firmware erfolgreich aktualisiert",
+    "failed": "Firmware-Update fehlgeschlagen",
+    "warning": "Warnung: Trennen Sie Ihr Gerät während des Update-Vorgangs nicht"
+  },
+  "initialization": {
+    "title": "Gerät Initialisieren",
+    "description": "Richten Sie Ihr KeepKey zum ersten Mal ein",
+    "options": {
+      "create": "Neue Wallet Erstellen",
+      "recover": "Bestehende Wallet Wiederherstellen",
+      "import": "Seed-Phrase Importieren"
+    },
+    "inProgress": "Gerät wird initialisiert...",
+    "success": "Gerät erfolgreich initialisiert",
+    "failed": "Geräteinitialisierung fehlgeschlagen"
+  },
+  "recovery": {
+    "title": "Gerät Wiederherstellen",
+    "description": "Stellen Sie Ihre Wallet mit Ihrem Wiederherstellungs-Seed wieder her",
+    "wordCount": "Anzahl der Wörter",
+    "enterWord": "Wort {{number}} eingeben",
+    "checkDevice": "Überprüfen Sie Ihr Gerät für die Wortpositionen",
+    "inProgress": "Wallet wird wiederhergestellt...",
+    "success": "Wallet erfolgreich wiederhergestellt",
+    "failed": "Wiederherstellung fehlgeschlagen"
+  },
+  "wipe": {
+    "title": "Gerät Löschen",
+    "warning": "Warnung: Dies wird alle Daten von Ihrem Gerät löschen!",
+    "confirm": "Sind Sie sicher, dass Sie Ihr Gerät löschen möchten?",
+    "description": "Diese Aktion kann nicht rückgängig gemacht werden. Stellen Sie sicher, dass Sie Ihren Wiederherstellungs-Seed gesichert haben.",
+    "inProgress": "Gerät wird gelöscht...",
+    "success": "Gerät erfolgreich gelöscht",
+    "failed": "Löschen des Geräts fehlgeschlagen"
+  },
+  "badges": {
+    "keepkey": "KeepKey-Gerät",
+    "hardwareWallet": "Hardware-Wallet",
+    "secureElement": "Sicheres Element",
+    "usbConnected": "USB Verbunden",
+    "firmwareOutdated": "Firmware Veraltet",
+    "backupNeeded": "Sicherung Erforderlich"
+  },
+  "updateStatus": {
+    "title": "Update-Status:",
+    "bootloaderAvailable": "Bootloader-Update verfügbar (v{{version}})",
+    "firmwareAvailable": "Firmware-Update verfügbar (v{{version}})",
+    "needsInitialization": "Gerät muss initialisiert werden",
+    "upToDate": "Gerät ist auf dem neuesten Stand und bereit"
+  },
+  "dangerZone": {
+    "title": "Gefahrenzone:",
+    "wipeDevice": "Gerät Löschen"
   }
 }

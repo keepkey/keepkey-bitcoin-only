@@ -3,6 +3,7 @@ import { FaDownload, FaExclamationTriangle } from "react-icons/fa";
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useTypedTranslation } from "../../../hooks/useTypedTranslation";
 
 interface StepFirmwareUpdateProps {
   deviceId: string;
@@ -32,6 +33,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
   const rebootPollRef = useRef<NodeJS.Timeout | null>(null);
+  const { t } = useTypedTranslation('setup');
 
   useEffect(() => {
     checkDeviceStatus();
@@ -285,7 +287,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
           
           <VStack gap={2}>
             <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white" textAlign="center">
-              Firmware Update
+              {t('firmwareUpdate.title')}
             </Text>
             {!deviceStatus.firmwareCheck ? (
               <HStack gap={2} justify="center">
@@ -297,7 +299,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
             ) : deviceStatus.needsFirmwareUpdate ? (
               <>
                 <Text fontSize={{ base: "sm", md: "md" }} color="gray.400" textAlign="center">
-                  A new firmware version is available for your KeepKey
+                  {t('firmwareUpdate.available')}
                 </Text>
                 {isOOBDevice && (
                   <Badge colorScheme="red" fontSize="sm">
@@ -316,16 +318,16 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
           <Box w="100%" p={4} bg="gray.700" borderRadius="lg" borderWidth="2px" borderColor="orange.500">
             <VStack gap={2} align="start">
               <Text color="orange.400" fontWeight="bold" fontSize="sm">
-                ⚠️ Important Instructions:
+                ⚠️ {t('bootloaderUpdate.importantInstructions', 'Important Instructions:')}
               </Text>
               <Text fontSize="xs" color="gray.300">
-                • Do not disconnect your device during the update
+                • {t('bootloaderUpdate.doNotDisconnectDuringUpdate')}
               </Text>
               <Text fontSize="xs" color="gray.300">
-                • You may need to re-enter your PIN after the update
+                • {t('bootloaderUpdate.mayNeedReenterPin', 'You may need to re-enter your PIN after the update')}
               </Text>
               <Text fontSize="xs" color="gray.300">
-                • Your funds and settings will remain safe
+                • {t('bootloaderUpdate.fundsRemainSafe', 'Your funds and settings will remain safe')}
               </Text>
             </VStack>
           </Box>
@@ -347,7 +349,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
               <HStack gap={8} justify="space-between">
                 <VStack gap={1} align="start">
                   <Text fontSize="xs" color="gray.400" textTransform="uppercase">
-                    Current Version
+                    {t('bootloaderUpdate.currentVersion')}
                   </Text>
                   <Text fontSize="lg" color={isOOBDevice ? "red.400" : "white"} fontWeight="bold">
                     v{deviceStatus.firmwareCheck.currentVersion}
@@ -355,7 +357,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
                 </VStack>
                 <VStack gap={1} align="start">
                   <Text fontSize="xs" color="gray.400" textTransform="uppercase">
-                    Latest Version
+                    {t('bootloaderUpdate.latestVersion')}
                   </Text>
                   <Text fontSize="lg" color="green.400" fontWeight="bold">
                     v{deviceStatus.firmwareCheck.latestVersion}
@@ -364,7 +366,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
               </HStack>
               {isOOBDevice && (
                 <Text fontSize="sm" color="orange.400" mt={3}>
-                  ⚠️ Your device has factory firmware. Update is highly recommended.
+                  ⚠️ {t('bootloaderUpdate.factoryFirmwareWarning', 'Your device has factory firmware. Update is highly recommended.')}
                 </Text>
               )}
             </Box>
@@ -527,7 +529,7 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
             {deviceStatus.firmwareCheck && (
               <Box w="100%" p={3} bg="gray.800" borderRadius="md" borderWidth="1px" borderColor="gray.600">
                 <HStack gap={2}>
-                  <Text fontSize="sm" color="gray.400">Status:</Text>
+                  <Text fontSize="sm" color="gray.400">{t('bootloaderUpdate.status', 'Status:')}:</Text>
                   {!deviceStatus.firmwareCheck.currentVersion || !deviceStatus.firmwareCheck.latestVersion ? (
                     <Badge colorScheme="orange">Checking...</Badge>
                   ) : deviceStatus.firmwareCheck.currentVersion === deviceStatus.firmwareCheck.latestVersion ? (
@@ -551,15 +553,33 @@ export function StepFirmwareUpdate({ deviceId, onNext, onBack, onFirmwareUpdateS
                 </HStack>
               </Button>
             ) : deviceStatus.needsFirmwareUpdate && !isUpdating ? (
-              <Button
-                colorScheme="orange"
-                size="lg"
-                w="100%"
-                onClick={handleFirmwareUpdate}
-                loading={isUpdating}
-              >
-                Update Firmware to v{deviceStatus.firmwareCheck?.latestVersion || "7.10.0"}
-              </Button>
+              <>
+                <Button
+                  colorScheme="orange"
+                  size="lg"
+                  w="100%"
+                  onClick={handleFirmwareUpdate}
+                  loading={isUpdating}
+                >
+                  {t('bootloaderUpdate.updateFirmwareTo', { version: deviceStatus.firmwareCheck?.latestVersion || "7.10.0" })}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  w="100%"
+                  onClick={onNext}
+                  borderColor="gray.600"
+                  color="gray.300"
+                  _hover={{ bg: "gray.700" }}
+                >
+                  {t('firmwareUpdate.skipUpdate')}
+                </Button>
+                {!isOOBDevice && (
+                  <Text fontSize="xs" color="gray.500" textAlign="center">
+                    {t('firmwareUpdate.skipUpdateNote')}
+                  </Text>
+                )}
+              </>
             ) : deviceStatus.firmwareCheck?.currentVersion === "7.10.0" && !isUpdating ? (
               <Button
                 colorScheme="green"

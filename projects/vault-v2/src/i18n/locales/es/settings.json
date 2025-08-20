@@ -8,7 +8,8 @@
     "about": "Acerca de",
     "device": "Dispositivo",
     "network": "Red",
-    "backup": "Copia de seguridad"
+    "backup": "Copia de seguridad",
+    "bitcoin": "Bitcoin"
   },
   "general": {
     "title": "Configuración General",
@@ -106,6 +107,29 @@
     "stopped": "Detenido",
     "serviceStatus": "Estado del Servicio",
     "restartRequired": "Se requiere reiniciar para aplicar los cambios"
+  },
+  "bitcoin": {
+    "title": "Configuración de Bitcoin",
+    "addressType": {
+      "label": "Tipo de Dirección Bitcoin",
+      "description": "Elige tu tipo de dirección Bitcoin preferido. Esto afecta tanto las direcciones de cambio como las de recepción.",
+      "nativeSegwit": {
+        "title": "SegWit Nativo (Bech32)",
+        "description": "Tarifas más bajas, mejor eficiencia. Las direcciones comienzan con bc1",
+        "example": "Ejemplo: bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh"
+      },
+      "segwit": {
+        "title": "SegWit (P2SH-envuelto)",
+        "description": "Buena compatibilidad, tarifas moderadas. Las direcciones comienzan con 3",
+        "example": "Ejemplo: 3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"
+      },
+      "legacy": {
+        "title": "Legado",
+        "description": "Máxima compatibilidad, tarifas más altas. Las direcciones comienzan con 1",
+        "example": "Ejemplo: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+      },
+      "recommendation": "SegWit Nativo ofrece las tarifas de transacción más bajas y es ampliamente compatible. Usa Legado solo si es necesario para compatibilidad con servicios antiguos."
+    }
   },
   "messages": {
     "saved": "Configuración guardada exitosamente",

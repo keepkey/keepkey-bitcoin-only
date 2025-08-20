@@ -1,0 +1,346 @@
+{
+  "creation": {
+    "title": "Create New Wallet",
+    "subtitle": "Set up a new wallet on your KeepKey",
+    "steps": {
+      "generate": "Generate Seed",
+      "verify": "Verify Seed",
+      "complete": "Complete"
+    },
+    "generating": "Generating new wallet...",
+    "generated": "Wallet generated successfully",
+    "verifying": "Verifying seed phrase...",
+    "verified": "Seed phrase verified",
+    "failed": "Wallet creation failed"
+  },
+  "recovery": {
+    "title": "Recover Wallet",
+    "subtitle": "Restore your wallet using recovery seed",
+    "seedLength": {
+      "label": "Seed phrase length",
+      "12words": "12 words",
+      "18words": "18 words",
+      "24words": "24 words"
+    },
+    "enterSeed": "Enter your recovery seed phrase",
+    "wordNumber": "Word {{number}}",
+    "recovering": "Recovering wallet...",
+    "recovered": "Wallet recovered successfully",
+    "failed": "Recovery failed",
+    "invalidSeed": "Invalid seed phrase"
+  },
+  "seed": {
+    "title": "Recovery Seed",
+    "subtitle": "Your wallet backup phrase",
+    "warning": "Write down these words in order and store them securely",
+    "warningStrong": "Never share your seed phrase with anyone!",
+    "word": "Word {{number}}",
+    "verify": {
+      "title": "Verify Your Seed",
+      "subtitle": "Confirm you've written down your seed correctly",
+      "instruction": "Select word {{number}} of your seed phrase",
+      "correct": "Correct!",
+      "incorrect": "Incorrect. Please try again",
+      "complete": "Seed phrase verified successfully"
+    },
+    "backup": {
+      "title": "Backup Your Seed",
+      "instruction": "Have you written down your seed phrase?",
+      "confirm": "Yes, I've written it down",
+      "skip": "Skip (Not Recommended)"
+    }
+  },
+  "passphrase": {
+    "title": "Passphrase",
+    "subtitle": "Additional security layer",
+    "enter": "Enter passphrase",
+    "confirm": "Confirm passphrase",
+    "placeholder": "Enter your passphrase",
+    "enabled": "Passphrase enabled",
+    "disabled": "Passphrase disabled",
+    "warning": "Passphrases create a hidden wallet. If you forget your passphrase, you cannot recover your funds!",
+    "mismatch": "Passphrases do not match"
+  },
+  "portfolio": {
+    "title": "Portfolio",
+    "totalBalance": "Total Balance",
+    "availableBalance": "Available Balance",
+    "pendingBalance": "Pending",
+    "assets": "Assets",
+    "noAssets": "No assets found",
+    "loading": "Loading portfolio...",
+    "fetchingKeys": "Fetching device keys...",
+    "syncing": "Syncing with your KeepKey",
+    "takingLonger": "This is taking longer than usual...",
+    "readyToStart": "Ready to get started?",
+    "connectDevice": "Make sure your KeepKey is connected and unlocked",
+    "pressToStart": "Press here to start! 🚀",
+    "refresh": "Refresh Portfolio",
+    "lastUpdated": "Last updated {{time}} ago",
+    "chart": {
+      "1d": "1D",
+      "1w": "1W",
+      "1m": "1M",
+      "3m": "3M",
+      "1y": "1Y",
+      "all": "ALL"
+    }
+  },
+  "assets": {
+    "title": "Assets",
+    "search": "Search assets...",
+    "balance": "Balance",
+    "value": "Value",
+    "price": "Price",
+    "change24h": "24h Change",
+    "bitcoin": "Bitcoin",
+    "noAssets": "No assets to display",
+    "hideSmallBalances": "Hide small balances",
+    "showAll": "Show all"
+  },
+  "receive": {
+    "title": "Receive",
+    "titleBitcoin": "Receive Bitcoin",
+    "subtitle": "Generate address to receive funds",
+    "generateReceiveAddress": "Generate Receive Address",
+    "generateAddressDescription": "Generate a Bitcoin address to receive payments. This address will be linked to your KeepKey device.",
+    "selectAsset": "Select Asset",
+    "generateAddress": "Generate Address",
+    "generateNew": "Generate New",
+    "generatingAddress": "Generating Address...",
+    "generatingAddressHint": "Please confirm on your KeepKey device",
+    "address": "Address",
+    "bitcoinAddress": "Bitcoin Address",
+    "amount": "Amount (optional)",
+    "description": "Description (optional)",
+    "copyAddress": "Copy Address",
+    "addressCopied": "Copied!",
+    "showQR": "Show QR Code",
+    "verifyOnDevice": "Verify on Device",
+    "verified": "Address verified",
+    "addressGenerated": "Receive Address Generated",
+    "useThisAddress": "Use this address to receive Bitcoin payments",
+    "failed": "Failed to generate address",
+    "failedNoResponse": "Failed to generate address - no response from device",
+    "failedEnsureConnected": "Failed to generate receive address. Ensure your device is connected and unlocked.",
+    "noAssetFound": "Bitcoin asset not found in portfolio. Please sync your device or check your wallet setup.",
+    "noBitcoinAsset": "No Bitcoin asset found in portfolio",
+    "loadingWallet": "Loading Wallet...",
+    "backToVault": "Back to Vault",
+    "goBack": "Go back",
+    "addressType": {
+      "label": "Address Type",
+      "legacy": "Legacy (P2PKH)",
+      "segwit": "SegWit (P2SH-P2WPKH)",
+      "nativeSegwit": "Native SegWit (P2WPKH)"
+    },
+    "derivationPath": "Derivation Path",
+    "scriptType": "Script Type",
+    "scriptTypeInfo": {
+      "legacy": "Pay-to-Public-Key-Hash (P2PKH)",
+      "segwit": "Pay-to-Script-Hash wrapped Witness (P2SH-P2WPKH)",
+      "nativeSegwit": "Pay-to-Witness-Public-Key-Hash (P2WPKH)"
+    },
+    "addressFormat": "Address Format",
+    "addressFormatInfo": {
+      "legacy": "Starts with 1",
+      "segwit": "Starts with 3",
+      "nativeSegwit": "Starts with bc1"
+    },
+    "advancedView": "Advanced View",
+    "technicalDetails": "Technical Details",
+    "accountExtendedPublicKey": "Account Extended Public Key",
+    "path": "Path",
+    "generatedBy": "Generated By",
+    "keepKeyDevice": "KeepKey Device",
+    "hardwareWallet": "Hardware Wallet",
+    "copy": "Copy",
+    "retry": "Retry",
+    "timeout": {
+      "message": "This is taking longer than usual. Your device may need attention.",
+      "icon": "⏱️"
+    },
+    "error": {
+      "icon": "⚠️"
+    },
+    "success": {
+      "icon": "✅"
+    },
+    "info": {
+      "addressDerivation": "This address is derived from your hardware wallet's seed phrase using BIP44/49/84 standards. Each address is unique and can only be spent by your KeepKey device.",
+      "icon": "💡"
+    },
+    "security": {
+      "verifyAddress": "Always verify your Address on device before sending funds!",
+      "icon": "🔒"
+    }
+  },
+  "send": {
+    "title": "Send",
+    "titleBitcoin": "Send Bitcoin",
+    "subtitle": "Send funds from your wallet",
+    "selectAsset": "Select Asset",
+    "recipient": "Recipient Address",
+    "recipientPlaceholder": "Enter Bitcoin address",
+    "amount": "Amount",
+    "amountPlaceholder": "Enter amount",
+    "max": "Max",
+    "fee": "Network Fee",
+    "total": "Total",
+    "memo": "Memo (optional)",
+    "review": "Review Transaction",
+    "reviewDetails": "Review Details",
+    "confirm": "Confirm & Send",
+    "sign": "Sign Transaction",
+    "signPreparing": "Preparing...",
+    "signTransaction": "Sign Transaction",
+    "sending": "Sending transaction...",
+    "broadcasting": "Broadcasting...",
+    "broadcasted": "Transaction broadcasted",
+    "broadcastSuccess": "Transaction broadcast successfully! ✅",
+    "transactionComplete": "Transaction Complete",
+    "transactionSigned": "Transaction signed successfully!",
+    "transactionSignedMessage": "Your transaction has been successfully signed",
+    "failed": "Transaction failed",
+    "failedToBuild": "Failed to build transaction",
+    "failedToSign": "Failed to sign transaction",
+    "failedToBroadcast": "Failed to broadcast transaction",
+    "noTransactionToSign": "No transaction to sign",
+    "noSignedTransaction": "No signed transaction to broadcast",
+    "insufficient": "Insufficient balance",
+    "invalidAddress": "Invalid Bitcoin address",
+    "invalidAddressFormat": "Invalid Bitcoin address format",
+    "enterValidRecipientAndAmount": "Please enter a valid recipient address and amount",
+    "amountMustBeGreater": "Amount must be greater than 0",
+    "noKeepKeyConnected": "No KeepKey device connected",
+    "noXpubsFound": "No Bitcoin xpubs found. Please sync your wallet first.",
+    "emptySignedTx": "Received empty or null signed transaction hex",
+    "unableToLoadFeeRates": "Unable to load current fee rates, using estimates",
+    "failedToCopyTxid": "Failed to copy TXID to clipboard",
+    "scanQrCode": "Scan QR code",
+    "goBack": "Go back",
+    "back": "Back",
+    "availableBalance": "Available Balance",
+    "estimatedFee": "Estimated Fee",
+    "estimatedTotal": "Estimated Total",
+    "compose": "Compose",
+    "composeTransaction": "Compose Transaction",
+    "reviewingTransaction": "Reviewing Transaction",
+    "signingTransaction": "Signing Transaction",
+    "confirmOnDevice": "Confirm on your KeepKey device",
+    "complete": "Complete",
+    "building": "Building...",
+    "buildingTransaction": "Building transaction...",
+    "feeLevel": {
+      "slow": "Slow",
+      "normal": "Normal",
+      "medium": "Medium",
+      "fast": "Fast",
+      "custom": "Custom"
+    },
+    "available": "Available",
+    "noBalanceWarning": "⚠️ No balance available. Please fund your wallet.",
+    "loadingWallet": "Loading Wallet...",
+    "validAddress": "✓ Valid Bitcoin address",
+    "maxSendWarning": "💰 MAX SEND: Will send all available funds minus network fees",
+    "qrCodeNotImplemented": "QR code scanning will be implemented later",
+    "insufficientBalanceDetailed": "Insufficient balance. Available: {{available}} {{currency}}",
+    "feeEstimate": {
+      "slow": "~60 min",
+      "medium": "~30 min",
+      "fast": "~10 min"
+    },
+    "summary": {
+      "title": "Transaction Summary",
+      "from": "From",
+      "to": "To",
+      "amount": "Amount",
+      "fee": "Fee",
+      "feeRate": "Fee Rate",
+      "total": "Total",
+      "inputs": "Inputs",
+      "outputs": "Outputs"
+    },
+    "signedTransaction": {
+      "title": "Signed Transaction",
+      "show": "Show",
+      "hide": "Hide",
+      "copyHex": "Copy Transaction Hex",
+      "hexCopied": "Transaction hex copied!"
+    },
+    "broadcastResult": {
+      "success": "Transaction Broadcast Successful",
+      "successMessage": "Your transaction has been submitted to the Bitcoin network",
+      "txid": "Transaction ID",
+      "copyTxid": "Copy TXID",
+      "viewOnMempool": "View on Mempool",
+      "sendAnother": "Send Another Transaction",
+      "viewOnExplorer": "View on Explorer",
+      "confirmations": "Confirmations will begin appearing shortly"
+    },
+    "errors": {
+      "generic": "An error occurred",
+      "unknownBroadcast": "Unknown broadcast error"
+    },
+    "steps": {
+      "compose": {
+        "title": "Compose Transaction",
+        "number": "1"
+      },
+      "review": {
+        "title": "Review Details",
+        "number": "2"
+      },
+      "sign": {
+        "title": "Sign Transaction",
+        "number": "3"
+      },
+      "complete": {
+        "title": "Transaction Complete",
+        "number": "4"
+      }
+    }
+  },
+  "transactions": {
+    "title": "Transactions",
+    "history": "Transaction History",
+    "pending": "Pending",
+    "confirmed": "Confirmed",
+    "failed": "Failed",
+    "sent": "Sent",
+    "received": "Received",
+    "noTransactions": "No transactions yet",
+    "loading": "Loading transactions...",
+    "details": {
+      "title": "Transaction Details",
+      "txid": "Transaction ID",
+      "status": "Status",
+      "confirmations": "Confirmations",
+      "date": "Date",
+      "time": "Time",
+      "from": "From",
+      "to": "To",
+      "amount": "Amount",
+      "fee": "Fee",
+      "total": "Total",
+      "memo": "Memo",
+      "viewOnExplorer": "View on Explorer"
+    },
+    "filters": {
+      "all": "All",
+      "sent": "Sent",
+      "received": "Received",
+      "pending": "Pending"
+    }
+  },
+  "accounts": {
+    "title": "Accounts",
+    "account": "Account {{number}}",
+    "addAccount": "Add Account",
+    "selectAccount": "Select Account",
+    "balance": "Balance",
+    "transactions": "Transactions",
+    "rename": "Rename Account",
+    "delete": "Delete Account"
+  }
+}

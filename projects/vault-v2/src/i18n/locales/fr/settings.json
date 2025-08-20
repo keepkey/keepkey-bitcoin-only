@@ -1,5 +1,15 @@
 {
   "title": "Paramètres",
+  "tabs": {
+    "general": "Général",
+    "security": "Sécurité",
+    "advanced": "Avancé",
+    "about": "À propos",
+    "device": "Appareil",
+    "network": "Réseau",
+    "backup": "Sauvegarde",
+    "bitcoin": "Bitcoin"
+  },
   "general": {
     "title": "Paramètres généraux",
     "language": {
@@ -146,6 +156,29 @@
       "stopped": "Arrêté",
       "serviceStatus": "Statut du Service",
       "restartRequired": "Redémarrage requis pour appliquer les modifications"
+    }
+  },
+  "bitcoin": {
+    "title": "Paramètres Bitcoin",
+    "addressType": {
+      "label": "Type d'Adresse Bitcoin",
+      "description": "Choisissez votre type d'adresse Bitcoin préféré. Cela affecte les adresses de changement et de réception.",
+      "nativeSegwit": {
+        "title": "SegWit Natif (Bech32)",
+        "description": "Frais les plus bas, meilleure efficacité. Les adresses commencent par bc1",
+        "example": "Exemple : bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh"
+      },
+      "segwit": {
+        "title": "SegWit (P2SH-encapsulé)",
+        "description": "Bonne compatibilité, frais modérés. Les adresses commencent par 3",
+        "example": "Exemple : 3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"
+      },
+      "legacy": {
+        "title": "Hérité",
+        "description": "Compatibilité maximale, frais les plus élevés. Les adresses commencent par 1",
+        "example": "Exemple : 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+      },
+      "recommendation": "SegWit Natif offre les frais de transaction les plus bas et est largement pris en charge. Utilisez Hérité uniquement si nécessaire pour la compatibilité avec des services plus anciens."
     }
   },
   "about": {

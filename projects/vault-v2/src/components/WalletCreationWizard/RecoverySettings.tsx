@@ -6,7 +6,6 @@ import {
   HStack,
   Text,
   Button,
-  Stack,
 } from "@chakra-ui/react";
 
 interface RecoverySettingsProps {
@@ -17,8 +16,8 @@ interface RecoverySettingsProps {
 }
 
 export interface RecoverySettings {
-  wordCount: 12;
-  usePassphrase: boolean;
+  wordCount: 12 | 18 | 24;
+  usePassphrase: boolean; // Always false, option removed from UI
 }
 
 export function RecoverySettings({ 
@@ -27,19 +26,16 @@ export function RecoverySettings({
   isLoading = false, 
   error 
 }: RecoverySettingsProps) {
-  const [wordCount] = useState<12>(12);
-  const [usePassphrase, setUsePassphrase] = useState(false);
+  const [wordCount, setWordCount] = useState<12 | 18 | 24>(12);
+  // Passphrase option removed - always false
+  const usePassphrase = false;
 
   const handleSubmit = () => {
     const settings: RecoverySettings = {
       wordCount,
-      usePassphrase,
+      usePassphrase, // Always false
     };
     onComplete(settings);
-  };
-
-  const handlePassphraseToggle = () => {
-    setUsePassphrase(!usePassphrase);
   };
 
   return (
@@ -78,49 +74,68 @@ export function RecoverySettings({
             <Text fontSize="lg" fontWeight="semibold" mb={4}>
               Recovery Sentence Length
             </Text>
-            <Box
-              p={3}
-              borderRadius="md"
-              bg="blue.600"
-              borderWidth="2px"
-              borderColor="blue.400"
-            >
-              <Text fontSize="md">12 words</Text>
-            </Box>
-          </Box>
-
-          <Box w="100%">
-            <HStack justify="space-between" align="start">
-              <VStack align="start" gap={1} flex={1}>
-                <Text fontSize="lg" fontWeight="semibold">
-                  Recover with passphrase?
-                </Text>
-                <Text fontSize="sm" color="gray.400">
-                  If you are unsure if your recovery sentence is protected by a passphrase, leave this off.
-                </Text>
-              </VStack>
+            <HStack gap={3} w="100%">
               <Box
-                w="50px"
-                h="25px"
-                bg={usePassphrase ? "blue.500" : "gray.600"}
-                borderRadius="full"
+                flex={1}
+                p={3}
+                borderRadius="md"
+                bg={wordCount === 12 ? "blue.600" : "gray.700"}
+                borderWidth="2px"
+                borderColor={wordCount === 12 ? "blue.400" : "gray.600"}
                 cursor="pointer"
-                onClick={handlePassphraseToggle}
-                position="relative"
                 transition="all 0.2s"
+                onClick={() => setWordCount(12)}
+                _hover={{
+                  borderColor: wordCount === 12 ? "blue.400" : "gray.500",
+                  bg: wordCount === 12 ? "blue.600" : "gray.650"
+                }}
               >
-                <Box
-                  w="21px"
-                  h="21px"
-                  bg="white"
-                  borderRadius="full"
-                  position="absolute"
-                  top="2px"
-                  left={usePassphrase ? "27px" : "2px"}
-                  transition="all 0.2s"
-                />
+                <Text fontSize="md" textAlign="center" fontWeight={wordCount === 12 ? "bold" : "normal"}>
+                  12 words
+                </Text>
+              </Box>
+              <Box
+                flex={1}
+                p={3}
+                borderRadius="md"
+                bg={wordCount === 18 ? "blue.600" : "gray.700"}
+                borderWidth="2px"
+                borderColor={wordCount === 18 ? "blue.400" : "gray.600"}
+                cursor="pointer"
+                transition="all 0.2s"
+                onClick={() => setWordCount(18)}
+                _hover={{
+                  borderColor: wordCount === 18 ? "blue.400" : "gray.500",
+                  bg: wordCount === 18 ? "blue.600" : "gray.650"
+                }}
+              >
+                <Text fontSize="md" textAlign="center" fontWeight={wordCount === 18 ? "bold" : "normal"}>
+                  18 words
+                </Text>
+              </Box>
+              <Box
+                flex={1}
+                p={3}
+                borderRadius="md"
+                bg={wordCount === 24 ? "blue.600" : "gray.700"}
+                borderWidth="2px"
+                borderColor={wordCount === 24 ? "blue.400" : "gray.600"}
+                cursor="pointer"
+                transition="all 0.2s"
+                onClick={() => setWordCount(24)}
+                _hover={{
+                  borderColor: wordCount === 24 ? "blue.400" : "gray.500",
+                  bg: wordCount === 24 ? "blue.600" : "gray.650"
+                }}
+              >
+                <Text fontSize="md" textAlign="center" fontWeight={wordCount === 24 ? "bold" : "normal"}>
+                  24 words
+                </Text>
               </Box>
             </HStack>
+            <Text fontSize="sm" color="gray.400" mt={3}>
+              Enter your {wordCount}-word recovery phrase to restore your wallet.
+            </Text>
           </Box>
 
           <VStack gap={3} w="100%">
