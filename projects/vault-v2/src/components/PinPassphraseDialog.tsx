@@ -1,21 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  DialogRoot,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogBody,
-  DialogFooter,
-  DialogActionTrigger,
-  DialogCloseTrigger,
-} from '@chakra-ui/react';
-import {
   Box,
   Text,
   Button,
   HStack,
   VStack,
-  Grid,
   Spinner,
   IconButton,
   SimpleGrid,
@@ -97,15 +86,56 @@ export const PinPassphraseDialog = ({
       verifyDeviceReadiness();
     }
   }, [isOpen]);
+  
+  // Listen for passphrase events to auto-transition
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const setupListener = async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      
+      // Listen for the actual passphrase_request event emitted by backend
+      const unlisten = await listen('passphrase_request', (event: any) => {
+        console.log('🔐 [PinPassphraseDialog] Received passphrase request event:', event);
+        // Check if this event is for our device and we're waiting after PIN
+        if (event.payload?.deviceId === deviceId && step === 'pin-submitting') {
+          console.log('🔐 [PinPassphraseDialog] Auto-transitioning to passphrase step');
+          
+          // Clear the timeout that would close the dialog
+          if ((window as any).__pinTimeoutId) {
+            clearTimeout((window as any).__pinTimeoutId);
+            delete (window as any).__pinTimeoutId;
+          }
+          
+          // Store the request ID if provided
+          if (event.payload?.requestId) {
+            (window as any).__passphraseRequestId = event.payload.requestId;
+          }
+          
+          setStep('passphrase-entry');
+        }
+      });
+      
+      return unlisten;
+    };
+    
+    let unlistenFn: (() => void) | undefined;
+    setupListener().then(fn => { unlistenFn = fn; });
+    
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, [isOpen, deviceId, step]);
 
   const verifyDeviceReadiness = async () => {
     try {
       setIsLoading(true);
       setPinError(null);
-      setDeviceReadyStatus('Preparing device for PIN entry...');
-      console.log('🔍 Preparing PIN unlock for device:', deviceId);
+      setDeviceReadyStatus('Checking device status...');
+      console.log('🔍 Checking device status for:', deviceId);
       
-      // Check if device is already in PIN flow
+      // IMPORTANT: Check if device is already in PIN flow FIRST
+      // This prevents disrupting an active PIN matrix display
       const isInPinFlow = await invoke('check_device_in_pin_flow', { deviceId });
       if (isInPinFlow) {
         console.log('🔐 Device already in PIN flow, ready for PIN entry');
@@ -115,11 +145,68 @@ export const PinPassphraseDialog = ({
         return;
       }
       
-      // Since the backend already triggered PIN when emitting device:pin-request-triggered,
-      // we should just go straight to enter mode
-      console.log('🔐 Device PIN was already triggered by backend, ready for entry');
-      setDeviceReadyStatus('Device ready - PIN matrix should be visible on device');
-      setStep('pin-entry');
+      // Only check device status if NOT in PIN flow to avoid disrupting the device
+      try {
+        const status = await invoke('get_device_status', { deviceId });
+        console.log('📱 Device status:', status);
+        
+        // Check if PIN is cached (device is already unlocked for PIN)
+        // The backend returns the status in this format: { features: { pin_cached: boolean, ... } }
+        if (status && status.features && status.features.pin_cached === true) {
+          console.log('🔐 PIN is cached, device only needs passphrase');
+          // If we have a requestId, that means we were called in response to a passphrase_request event
+          // So we should show the passphrase entry dialog
+          if (requestId) {
+            console.log('🔐 Have requestId, showing passphrase entry for request:', requestId);
+            setStep('passphrase-entry');
+            setIsLoading(false);
+            return;
+          } else {
+            // No requestId means this was opened manually or for some other reason
+            // In this case, just close since PIN is already cached
+            console.log('🔐 PIN cached and no requestId - closing dialog');
+            setTimeout(() => {
+              if (onComplete) onComplete();
+              onClose();
+            }, 100);
+            return;
+          }
+        }
+      } catch (err) {
+        console.log('⚠️ Could not check device status:', err);
+      }
+      
+      // Device needs PIN to be triggered
+      
+      // Device needs PIN but hasn't been triggered yet - trigger it now
+      console.log('🔐 Device needs PIN, triggering PIN request...');
+      setDeviceReadyStatus('Requesting PIN from device...');
+      
+      try {
+        const result = await invoke('trigger_pin_request', { deviceId });
+        if (result === true) {
+          console.log('✅ PIN trigger successful, device should be showing PIN matrix');
+          setStep('pin-entry');
+          setDeviceReadyStatus('PIN matrix ready');
+        } else {
+          console.log('⚠️ PIN trigger returned false, showing trigger button');
+          setStep('trigger');
+          setDeviceReadyStatus('Please trigger PIN manually');
+        }
+      } catch (err: any) {
+        const errorStr = String(err).toLowerCase();
+        
+        // If the error indicates the device is awaiting passphrase, go directly to passphrase
+        if (errorStr.includes('awaiting passphrase') || errorStr.includes('passphrase')) {
+          console.log('🔐 Device is awaiting passphrase, skipping PIN step');
+          setStep('passphrase-entry');
+          setDeviceReadyStatus('Device ready for passphrase');
+        } else {
+          console.log('⚠️ PIN trigger failed, showing trigger button:', err);
+          setStep('trigger');
+          setDeviceReadyStatus('Please trigger PIN manually');
+        }
+      }
       
     } catch (err: any) {
       console.error('❌ Device readiness verification failed:', err);
@@ -242,34 +329,30 @@ export const PinPassphraseDialog = ({
       if (result === true) {
         console.log('✅ PIN submitted successfully');
         
-        // Small delay to let backend process and determine next step
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Don't check device status here - it returns cached data during PIN/passphrase flow
+        // Instead, wait briefly for a passphrase_request event
+        // If we get one, the listener will auto-transition to passphrase-entry
+        // If we don't get one within 1 second, assume no passphrase is needed
         
-        // Check if we now need a passphrase or if we're done
-        try {
-          // This will trigger a passphrase request if needed
-          const deviceStatus = await invoke('get_device_status', { deviceId });
-          console.log('📱 Device status after PIN:', deviceStatus);
-          
-          // Transition to passphrase step - if no passphrase is needed, it will auto-close
-          setStep('passphrase-entry');
-          
-        } catch (statusErr: any) {
-          // If we get a passphrase request error, that's expected - go to passphrase step
-          const statusErrStr = String(statusErr);
-          if (statusErrStr.includes('PassphraseRequest') || statusErrStr.includes('passphrase')) {
-            console.log('🔐 Passphrase required after PIN success');
-            setStep('passphrase-entry');
-          } else {
-            // PIN was successful and no passphrase needed
-            console.log('✅ PIN successful, no passphrase needed');
+        console.log('⏳ Waiting for potential passphrase request...');
+        
+        // Set a timeout to complete if no passphrase request comes
+        const timeoutId = setTimeout(() => {
+          // Only complete if we're still in pin-submitting state
+          // (not if we've already transitioned to passphrase-entry)
+          if (step === 'pin-submitting') {
+            console.log('✅ No passphrase request received, PIN unlock complete');
             setStep('success');
             setTimeout(() => {
               if (onComplete) onComplete();
               onClose();
             }, 500);
           }
-        }
+        }, 1000); // Wait 1 second for passphrase request
+        
+        // Store timeout ID so we can clear it if we transition to passphrase
+        // (The useEffect listener will handle the transition)
+        (window as any).__pinTimeoutId = timeoutId;
       } else {
         throw new Error('PIN verification failed');
       }
@@ -333,11 +416,22 @@ export const PinPassphraseDialog = ({
     setPassphraseError(null);
 
     try {
-      console.log('🔐 [PinPassphraseDialog] Sending passphrase for device:', deviceId);
-      await invoke('send_passphrase', {
-        passphrase,
+      // Use stored request ID from passphrase_request event if available
+      const actualRequestId = requestId || (window as any).__passphraseRequestId;
+      console.log('🔐 [PinPassphraseDialog] Sending passphrase for device:', deviceId, 'request:', actualRequestId);
+      
+      // Use the correct backend command for sending passphrase
+      // Include the requestId if available so backend knows which request this is for
+      const params: any = {
         deviceId,
-      });
+        passphrase: passphrase || '', // Empty string for no passphrase
+      };
+      
+      if (actualRequestId) {
+        params.requestId = actualRequestId;
+      }
+      
+      await invoke('send_passphrase', params);
 
       // Mark as submitted for this session
       setHasSubmittedPassphraseForSession(true);
@@ -385,10 +479,40 @@ export const PinPassphraseDialog = ({
     }
   };
 
-  const handleSkipPassphrase = () => {
+  const handleSkipPassphrase = async () => {
     console.log('🔐 [PinPassphraseDialog] Skipping passphrase (using empty passphrase)');
-    setPassphrase('');
-    handleSubmitPassphrase();
+    
+    // Directly send empty passphrase
+    setStep('passphrase-submitting');
+    setPassphraseError(null);
+    
+    try {
+      // Use stored request ID from passphrase_request event if available
+      const actualRequestId = requestId || (window as any).__passphraseRequestId;
+      
+      // Use the correct backend command for sending empty passphrase
+      const params: any = {
+        deviceId,
+        passphrase: '', // Empty passphrase
+      };
+      
+      if (actualRequestId) {
+        params.requestId = actualRequestId;
+      }
+      
+      await invoke('send_passphrase', params);
+      
+      console.log('🔐 [PinPassphraseDialog] Empty passphrase sent successfully');
+      setStep('success');
+      setTimeout(() => {
+        if (onComplete) onComplete();
+        onClose();
+      }, 500);
+    } catch (err) {
+      console.error('🔐 [PinPassphraseDialog] Failed to send empty passphrase:', err);
+      setPassphraseError('Failed to skip passphrase');
+      setStep('passphrase-entry');
+    }
   };
 
   const handleCancel = () => {
@@ -437,41 +561,61 @@ export const PinPassphraseDialog = ({
     />
   ));
 
-  return (
-    <DialogRoot
-      open={isOpen}
-      onOpenChange={(e) => {
-        if (!e.open && step !== 'pin-submitting' && step !== 'passphrase-submitting') {
-          handleCancel();
-        }
-      }}
-      size="md"
-      placement="center"
-      motionPreset="slide-in-bottom"
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {step.startsWith('pin') || step === 'verifying' || step === 'trigger' 
-              ? 'PIN Required' 
-              : step.startsWith('passphrase') 
-              ? 'Passphrase Required'
-              : 'Authentication Required'}
-          </DialogTitle>
-          <DialogCloseTrigger asChild>
-            <IconButton
-              variant="ghost"
-              size="sm"
-              disabled={step === 'pin-submitting' || step === 'passphrase-submitting'}
-            >
-              <LuX />
-            </IconButton>
-          </DialogCloseTrigger>
-        </DialogHeader>
+  if (!isOpen) return null;
 
-        <DialogBody>
+  return (
+    <Box
+      position="fixed"
+      top={0}
+      left={0}
+      right={0}
+      bottom={0}
+      bg="blackAlpha.800"
+      zIndex={99999}
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+    >
+      <Box
+        bg="gray.800"
+        color="white"
+        borderRadius="xl"
+        boxShadow="2xl"
+        borderWidth="1px"
+        borderColor="gray.700"
+        overflow="hidden"
+        maxW="450px"
+        w="90%"
+      >
+        {/* Header */}
+        <Box bg="gray.850" p={4} position="relative">
+          <Heading fontSize="xl" fontWeight="bold" color="white" textAlign="center">
+            {step.startsWith('pin') || step === 'verifying' || step === 'trigger' 
+              ? t('pin.unlock.title')
+              : step.startsWith('passphrase') 
+              ? 'Enter Passphrase'
+              : 'Authentication Required'}
+          </Heading>
+          <Button
+            position="absolute"
+            right={2}
+            top="50%"
+            transform="translateY(-50%)"
+            size="sm"
+            variant="ghost"
+            onClick={handleCancel}
+            disabled={step === 'pin-submitting' || step === 'passphrase-submitting'}
+            color="gray.400"
+            _hover={{ color: "white", bg: "gray.700" }}
+            borderRadius="md"
+          >
+            <Icon as={FaTimes} />
+          </Button>
+        </Box>
+
+        <Box p={5}>
           <VStack spacing={6} py={4}>
-            <Text fontSize="md" color="gray.600" textAlign="center">
+            <Text fontSize="md" color="gray.300" textAlign="center">
               {getOperationDescription()}
             </Text>
 
@@ -490,7 +634,7 @@ export const PinPassphraseDialog = ({
 
             {step === 'trigger' && (
               <VStack gap={3} py={4}>
-                <Text color="gray.600" fontSize="sm">
+                <Text color="gray.300" fontSize="sm">
                   Device ready for PIN entry
                 </Text>
                 {isLoading ? (
@@ -506,26 +650,34 @@ export const PinPassphraseDialog = ({
             {step === 'pin-entry' && (
               <VStack gap={4} w="full">
                 <VStack gap={1}>
-                  <Text color="gray.600" fontSize="sm" textAlign="center">
+                  <Text color="gray.300" fontSize="sm" textAlign="center">
                     Look at your device screen for the numbers layout
                   </Text>
-                  <Text color="gray.500" fontSize="xs" textAlign="center">
+                  <Text color="gray.400" fontSize="xs" textAlign="center">
                     Click the positions that match the numbers shown on your device
                   </Text>
                 </VStack>
 
                 {/* PIN Display */}
-                <HStack spacing={2}>
-                  {pinDots}
-                </HStack>
+                <Box
+                  p={3}
+                  bg="gray.750"
+                  borderRadius="lg"
+                  borderWidth="1px"
+                  borderColor="gray.600"
+                >
+                  <HStack spacing={2} justify="center">
+                    {pinDots}
+                  </HStack>
+                </Box>
 
                 {/* PIN Matrix */}
                 <Box
                   p={4}
                   borderRadius="lg"
                   borderWidth="1px"
-                  borderColor="gray.200"
-                  bg="gray.50"
+                  borderColor="gray.600"
+                  bg="gray.750"
                 >
                   <SimpleGrid
                     columns={3}
@@ -542,9 +694,12 @@ export const PinPassphraseDialog = ({
                         h="50px"
                         w="50px"
                         fontSize="xl"
-                        colorScheme="gray"
-                        variant="outline"
-                        _hover={{ bg: 'gray.100' }}
+                        bg="gray.700"
+                        borderWidth="1px"
+                        borderColor="gray.600"
+                        color="white"
+                        _hover={{ bg: 'gray.600', borderColor: 'blue.400' }}
+                        _active={{ bg: 'gray.650' }}
                       >
                         <Icon as={FaCircle} boxSize={3} />
                       </Button>
@@ -590,7 +745,7 @@ export const PinPassphraseDialog = ({
             {step === 'passphrase-entry' && (
               <VStack gap={4} w="full">
                 <VStack gap={1}>
-                  <Text color="gray.600" fontSize="sm" textAlign="center">
+                  <Text color="gray.300" fontSize="sm" textAlign="center">
                     {awaitingDeviceConfirmation 
                       ? 'Confirm on Device' 
                       : 'Enter Passphrase (Optional)'}
@@ -601,12 +756,12 @@ export const PinPassphraseDialog = ({
                 <Box
                   p={3}
                   borderRadius="md"
-                  bg="blue.50"
+                  bg="blue.900"
                   borderWidth="1px"
-                  borderColor="blue.200"
+                  borderColor="blue.700"
                   w="full"
                 >
-                  <Text color="blue.700" fontSize="sm" textAlign="center">
+                  <Text color="blue.200" fontSize="sm" textAlign="center">
                     {awaitingDeviceConfirmation 
                       ? 'Please confirm the passphrase on your device'
                       : 'After submitting, you will need to confirm on your device'}
@@ -625,11 +780,11 @@ export const PinPassphraseDialog = ({
                     style={{
                       width: '100%',
                       padding: '12px 40px 12px 12px',
-                      border: '2px solid #E2E8F0',
+                      border: '2px solid #4A5568',
                       borderRadius: '8px',
                       fontSize: '16px',
-                      backgroundColor: 'white',
-                      color: 'black',
+                      backgroundColor: '#2D3748',
+                      color: 'white',
                       outline: 'none',
                     }}
                   />
@@ -651,16 +806,16 @@ export const PinPassphraseDialog = ({
                 <Box
                   p={3}
                   borderRadius="md"
-                  bg="orange.50"
+                  bg="orange.900"
                   borderWidth="1px"
-                  borderColor="orange.200"
+                  borderColor="orange.700"
                   w="full"
                 >
                   <VStack gap={1} align="start">
-                    <Text fontWeight="bold" color="orange.700" fontSize="sm">
+                    <Text fontWeight="bold" color="orange.300" fontSize="sm">
                       Use with Caution
                     </Text>
-                    <Text color="orange.600" fontSize="xs">
+                    <Text color="orange.400" fontSize="xs">
                       Wrong passphrases create different wallets. You will lose access to your funds if you forget it.
                     </Text>
                   </VStack>
@@ -694,15 +849,15 @@ export const PinPassphraseDialog = ({
               <Box
                 p={3}
                 borderRadius="md"
-                bg="red.50"
+                bg="red.900"
                 borderWidth="1px"
-                borderColor="red.200"
+                borderColor="red.700"
                 w="full"
               >
                 <HStack gap={2} align="start">
                   <Icon as={FaExclamationTriangle} color="red.400" mt={0.5} boxSize={4} />
                   <VStack align="start" gap={1} flex={1}>
-                    <Text color="red.700" fontSize="sm">
+                    <Text color="red.300" fontSize="sm">
                       {pinError || passphraseError}
                     </Text>
                     {pinError && (
@@ -721,19 +876,21 @@ export const PinPassphraseDialog = ({
               </Box>
             )}
           </VStack>
-        </DialogBody>
+        </Box>
 
-        <DialogFooter>
-          <HStack spacing={3}>
-            <DialogActionTrigger asChild>
-              <Button 
-                variant="outline" 
-                onClick={handleCancel}
-                isDisabled={step === 'pin-submitting' || step === 'passphrase-submitting'}
-              >
-                Cancel
-              </Button>
-            </DialogActionTrigger>
+        {/* Footer */}
+        <Box p={4} borderTopWidth="1px" borderColor="gray.700" bg="gray.850">
+          <HStack spacing={3} justify="flex-end">
+            <Button 
+              variant="outline" 
+              onClick={handleCancel}
+              isDisabled={step === 'pin-submitting' || step === 'passphrase-submitting'}
+              borderColor="gray.600"
+              color="gray.300"
+              _hover={{ bg: "gray.700" }}
+            >
+              {t('common.buttons.cancel')}
+            </Button>
             
             {step === 'pin-entry' && (
               <Button
@@ -741,7 +898,7 @@ export const PinPassphraseDialog = ({
                 onClick={handleSubmitPin}
                 isDisabled={pinPositions.length === 0}
               >
-                Submit PIN
+                {t('passphrase.buttons.submit')}
               </Button>
             )}
             
@@ -752,20 +909,20 @@ export const PinPassphraseDialog = ({
                   onClick={handleSkipPassphrase}
                   isDisabled={hasSubmittedPassphraseForSession}
                 >
-                  Skip Passphrase
+                  {t('common.buttons.skip')}
                 </Button>
                 <Button
                   colorScheme="blue"
                   onClick={handleSubmitPassphrase}
                   isDisabled={hasSubmittedPassphraseForSession}
                 >
-                  Submit Passphrase
+                  {t('passphrase.buttons.submit')}
                 </Button>
               </>
             )}
           </HStack>
-        </DialogFooter>
-      </DialogContent>
-    </DialogRoot>
+        </Box>
+      </Box>
+    </Box>
   );
 };

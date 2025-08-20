@@ -103,11 +103,41 @@ pub async fn add_to_device_queue(
     }
     
     // ------------------------------------------------------------------
+    // Check if device has an active passphrase request - BLOCK OTHER REQUESTS
+    // ------------------------------------------------------------------
+    let has_active_passphrase = {
+        let passphrase_state = PASSPHRASE_REQUEST_STATE.read().await;
+        passphrase_state.get(&request.device_id).map_or(false, |state| state.is_active)
+    };
+    
+    if has_active_passphrase {
+        // Don't interrupt passphrase flow with ANY device operations
+        match &request.request {
+            DeviceRequest::GetXpub { .. } | 
+            DeviceRequest::GetAddress { .. } | 
+            DeviceRequest::SignTransaction { .. } | 
+            DeviceRequest::GetFeatures => {
+                println!("🚫 BLOCKING request during passphrase flow - device is awaiting passphrase");
+                return Err("PASSPHRASE_REQUIRED".to_string());  // Return same error so frontend knows
+            },
+            DeviceRequest::SendRaw { .. } => {
+                // Allow SendRaw as it might be the PassphraseAck
+            }
+        }
+    }
+    
+    // ------------------------------------------------------------------
     // Pre-flight status check – ensure the device can service this request
     // ------------------------------------------------------------------
-    // Skip GetFeatures if device is in PIN flow to avoid interrupting the PIN screen
-    let raw_features_opt = if crate::commands::is_device_in_pin_flow(&request.device_id) {
-        println!("⚠️ Skipping GetFeatures check - device is in PIN flow");
+    
+    // Skip GetFeatures if device is in PIN flow OR has active passphrase request to avoid disrupting
+    let raw_features_opt = if crate::commands::is_device_in_pin_flow(&request.device_id) || has_active_passphrase {
+        if crate::commands::is_device_in_pin_flow(&request.device_id) {
+            println!("⚠️ Skipping GetFeatures check - device is in PIN flow");
+        }
+        if has_active_passphrase {
+            println!("⚠️ Skipping GetFeatures check - device has active passphrase request");
+        }
         // Check cache for last known features
         let cache = DEVICE_STATE_CACHE.read().await;
         cache.get(&request.device_id).and_then(|state| state.last_features.clone())
