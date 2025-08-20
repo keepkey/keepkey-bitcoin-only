@@ -224,27 +224,17 @@ pub fn get_device_features_for_device(target_device: &FriendlyUsbDevice) -> Resu
         std::thread::sleep(std::time::Duration::from_millis(800));
     }
     
-    // Try Initialize without reset first (conditional reset approach)
-    log::info!("{TAG} Sending Initialize to device {} (no reset)...", target_device.unique_id);
-    let init_msg: Message = Initialize::default().into();
+    // Reset the device to clear any stuck state (reverting to original approach for stability)
+    log::info!("{TAG} Resetting device {} before communication...", target_device.unique_id);
+    transport.reset()
+        .map_err(|e| anyhow!("Failed to reset device {}: {}", target_device.unique_id, e))?;
     
-    let features_msg = match transport.handle(init_msg.clone()) {
-        Ok(msg) => {
-            log::info!("{TAG} Initialize succeeded without reset for device {}", target_device.unique_id);
-            Ok(msg)
-        },
-        Err(e) => {
-            log::warn!("{TAG} Initialize failed ({}) for device {}, trying reset then retry...", e, target_device.unique_id);
-            // Only reset after failure
-            let _ = transport.reset(); // Best-effort reset
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            
-            // Retry after reset
-            transport.handle(init_msg)
-                .map_err(|e2| anyhow!("Failed to communicate with device {} even after reset. First error: {}, Second error: {}", 
-                                     target_device.unique_id, e, e2))
-        }
-    }?;
+    // Add a small delay after reset
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    let features_msg = transport
+        .handle(Initialize::default().into())
+        .map_err(|e| anyhow!("Failed to communicate with device {}: {}", target_device.unique_id, e))?;
 
     // Extract features from response
     let features = match features_msg {
@@ -479,16 +469,20 @@ pub fn get_device_features_via_hid(target_device: &FriendlyUsbDevice) -> Result<
             Ok(mut transport) => {
                 let adapter = &mut transport as &mut dyn ProtocolAdapter;
                 
+                // Reset device before communication
+                log::info!("{TAG} Resetting HID device via serial {} before communication...", serial);
+                let _ = adapter.reset(); // Ignore reset errors for HID
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                
                 // Add Windows settle delay
                 #[cfg(target_os = "windows")]
                 {
-                    log::info!("{TAG} Windows detected - adding settle delay before HID Initialize");
-                    std::thread::sleep(std::time::Duration::from_millis(800));
+                    log::info!("{TAG} Windows detected - adding settle delay after reset");
+                    std::thread::sleep(std::time::Duration::from_millis(700));
                 }
                 
                 let init_msg: Message = Initialize::default().into();
-                // Try without reset first
-                match adapter.handle(init_msg.clone()) {
+                match adapter.handle(init_msg) {
                     Ok(features_msg) => {
                         let features = match features_msg {
                             Message::Features(f) => f,

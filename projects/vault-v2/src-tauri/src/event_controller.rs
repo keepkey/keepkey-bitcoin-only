@@ -445,7 +445,10 @@ impl EventController {
                                                 println!("❌ Failed to emit disconnect status: {}", e);
                                             }
                                             
-                                            // Clean up device queue for disconnected device
+                                            // TEMPORARILY DISABLED: Clean up device queue for disconnected device
+                                            // This is causing crashes due to improper USB resource cleanup
+                                            // TODO: Fix USB transport Drop implementation before re-enabling
+                                            /*
                                             if let Some(state) = app_for_debounce.try_state::<crate::commands::DeviceQueueManager>() {
                                                 let queue_manager_arc = state.inner().clone();
                                                 println!("♻️ Cleaning up device queue for disconnected device: {}", check_id);
@@ -455,6 +458,8 @@ impl EventController {
                                                     println!("✅ Device queue cleaned up for: {}", check_id);
                                                 }
                                             }
+                                            */
+                                            println!("⚠️ Skipping device queue cleanup to prevent USB crashes");
                                             
                                             let _ = app_for_debounce.emit("device:disconnected", &check_id);
                                         } else {
@@ -475,7 +480,10 @@ impl EventController {
                                         println!("❌ Failed to emit disconnect status: {}", e);
                                     }
                                     
-                                    // Clean up device queue for disconnected device
+                                    // TEMPORARILY DISABLED: Clean up device queue for disconnected device
+                                    // This is causing crashes due to improper USB resource cleanup
+                                    // TODO: Fix USB transport Drop implementation before re-enabling
+                                    /*
                                     if let Some(state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {
                                         let device_id = device.unique_id.clone();
                                         // Clone the underlying Arc so it outlives this scope
@@ -489,6 +497,8 @@ impl EventController {
                                             }
                                         });
                                     }
+                                    */
+                                    println!("⚠️ Skipping device queue cleanup to prevent USB crashes");
                                     
                                     let _ = app_handle.emit("device:disconnected", &device.unique_id);
                                 }

@@ -10,6 +10,7 @@ import {
 } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { usePinPassphraseDialog } from '../contexts/DialogContext';
 
 interface PassphraseSettingsProps {
   deviceId: string;
@@ -25,6 +26,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
   const [isEnabled, setIsEnabled] = useState(initialEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const authDialog = usePinPassphraseDialog();
 
   // Debug log the initial prop value
   console.log(`[PassphraseSettings] Component mounted/updated - deviceId: ${deviceId}, initialEnabled prop: ${initialEnabled}`);
@@ -70,15 +72,26 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
 
     // Listen for PIN requests for settings changes
     const setupPinListener = async () => {
+      console.log('[PassphraseSettings] Setting up PIN listener for device:', deviceId);
       const unlisten = await listen<{
         device_id: string;
         request_id: string;
         kind: string;
       }>('device:awaiting_pin', (event) => {
+        console.log('[PassphraseSettings] device:awaiting_pin event received:', event.payload);
         if (event.payload.device_id === deviceId && event.payload.kind === 'settings') {
+          console.log('[PassphraseSettings] Event matches our device and is for settings!');
           setStatusMessage('Please enter your PIN to change passphrase settings.');
-          // Note: The PIN dialog should be handled by a global component
-          // that listens for these events
+          // Show the PIN dialog
+          console.log('[PassphraseSettings] Showing PIN dialog for settings change');
+          authDialog.show({
+            deviceId: deviceId,
+            operationType: 'settings',
+            onComplete: () => {
+              console.log('[PassphraseSettings] PIN entry completed');
+              setStatusMessage('PIN accepted, applying changes...');
+            },
+          });
         }
       });
       unlisteners.push(unlisten);
@@ -136,6 +149,9 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     
     const newState = !isEnabled;
     setIsUpdating(true);
+    
+    // Add a debug log to confirm we're entering the function
+    console.log('[PassphraseSettings] handleTogglePassphrase called, newState:', newState);
     
     if (newState) {
       // Show info about the flow
