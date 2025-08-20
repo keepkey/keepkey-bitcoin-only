@@ -408,16 +408,24 @@ pub async fn get_device_status(
     
     println!("Getting device status for: {}", device_id);
     
-    // Check if device is in PIN flow or awaiting PIN/Button - if so, we should not send any commands
+    // Check if device is in PIN flow or awaiting PIN/Button/Passphrase - if so, we should not send any commands
     let device_interaction_state = {
         let sessions = crate::device::interaction_state::DEVICE_SESSIONS.read().await;
         sessions.get(&device_id).map(|s| s.state.clone())
     };
     
+    // Also check if there's an active passphrase request
+    let has_active_passphrase = {
+        let passphrase_state = crate::device::PASSPHRASE_REQUEST_STATE.read().await;
+        passphrase_state.get(&device_id).map_or(false, |state| state.is_active)
+    };
+    
     let should_use_cache = is_device_in_pin_flow(&device_id) || 
+        has_active_passphrase ||
         matches!(device_interaction_state, 
             Some(crate::device::interaction_state::DeviceInteractionState::AwaitingPIN { .. }) |
-            Some(crate::device::interaction_state::DeviceInteractionState::AwaitingButton { .. })
+            Some(crate::device::interaction_state::DeviceInteractionState::AwaitingButton { .. }) |
+            Some(crate::device::interaction_state::DeviceInteractionState::AwaitingPassphrase { .. })
         );
     
     if should_use_cache {
@@ -471,8 +479,13 @@ pub async fn get_device_status(
             }
         };
         
-        // CRITICAL: Check if device is now in PIN flow after any previous operations
-        // This can happen if another operation triggered a PinMatrixRequest
+        // CRITICAL: Check if device is now in PIN flow or passphrase flow after any previous operations
+        // This can happen if another operation triggered a PinMatrixRequest or PassphraseRequest
+        let has_active_passphrase = {
+            let passphrase_state = crate::device::PASSPHRASE_REQUEST_STATE.read().await;
+            passphrase_state.get(&device_id).map_or(false, |state| state.is_active)
+        };
+        
         if is_device_in_pin_flow(&device_id) {
             println!("🔒 Device {} entered PIN flow - using minimal status without fetching features", device_id);
             // Return a minimal status indicating device needs PIN
@@ -480,6 +493,24 @@ pub async fn get_device_status(
                 device_id: device_id.clone(),
                 connected: true,
                 needs_pin_unlock: true,
+                needs_firmware_update: false,
+                needs_bootloader_update: false,
+                needs_initialization: false,
+                features: None,
+                bootloader_check: None,
+                firmware_check: None,
+                initialization_check: None,
+            };
+            return Ok(Some(status));
+        }
+        
+        if has_active_passphrase {
+            println!("🔐 Device {} has active passphrase request - using minimal status without fetching features", device_id);
+            // Return a minimal status indicating device is ready but needs passphrase
+            let status = DeviceStatus {
+                device_id: device_id.clone(),
+                connected: true,
+                needs_pin_unlock: false, // PIN is already unlocked if we're at passphrase stage
                 needs_firmware_update: false,
                 needs_bootloader_update: false,
                 needs_initialization: false,
@@ -514,7 +545,12 @@ pub async fn get_device_status(
             let max_attempts = if just_updated_bootloader { 10 } else { 3 };
             
             for attempt in 1..=max_attempts {
-                // IMPORTANT: Check PIN flow state before EACH attempt
+                // IMPORTANT: Check PIN flow AND passphrase state before EACH attempt
+                let has_active_passphrase = {
+                    let passphrase_state = crate::device::PASSPHRASE_REQUEST_STATE.read().await;
+                    passphrase_state.get(&device_id).map_or(false, |state| state.is_active)
+                };
+                
                 if is_device_in_pin_flow(&device_id) {
                     println!("🔒 Device {} entered PIN flow during feature fetch - aborting", device_id);
                     // Return minimal status for PIN locked device
@@ -522,6 +558,23 @@ pub async fn get_device_status(
                         device_id: device_id.clone(),
                         connected: true,
                         needs_pin_unlock: true,
+                        needs_firmware_update: false,
+                        needs_bootloader_update: false,
+                        needs_initialization: false,
+                        features: None,
+                        bootloader_check: None,
+                        firmware_check: None,
+                        initialization_check: None,
+                    }));
+                }
+                
+                if has_active_passphrase {
+                    println!("🔐 Device {} has active passphrase request during feature fetch - aborting", device_id);
+                    // Return minimal status for device awaiting passphrase
+                    return Ok(Some(DeviceStatus {
+                        device_id: device_id.clone(),
+                        connected: true,
+                        needs_pin_unlock: false,
                         needs_firmware_update: false,
                         needs_bootloader_update: false,
                         needs_initialization: false,
