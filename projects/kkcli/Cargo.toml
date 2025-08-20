@@ -1,6 +1,6 @@
 [package]
 name = "kkcli"
-version = "2.2.9"
+version = "2.2.10"
 authors = ["MrNerdHair <mrnerdhair@gmail.com>"]
 edition = "2021"
 
