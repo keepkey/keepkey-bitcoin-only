@@ -283,10 +283,10 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
     justCompletedBootloaderUpdate.current = true;
   };
 
-  const StepComponent = ALL_STEPS[currentStep].component;
+  const StepComponent = effectiveAllSteps[currentStep].component;
   
   // Debug current step
-  console.log("SetupWizard render - currentStep:", currentStep, "stepId:", ALL_STEPS[currentStep].id, "component:", StepComponent.name);
+  console.log("SetupWizard render - currentStep:", currentStep, "stepId:", effectiveAllSteps[currentStep].id, "component:", StepComponent.name);
 
   // Global Enter -> Next handler (except guarded steps)
   useEffect(() => {
@@ -304,7 +304,7 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
         // contenteditable elements
         if ((ae as any).isContentEditable) return;
       }
-      const stepId = ALL_STEPS[currentStep].id;
+      const stepId = effectiveAllSteps[currentStep].id;
       // Guard bootloader step from auto-enter next
       if (stepId === 'bootloader') return;
       // Require choice on flow selection
@@ -317,7 +317,7 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
   }, [currentStep, flowType]);
   
   // Calculate progress based on visible steps
-  const currentStepId = ALL_STEPS[currentStep].id;
+  const currentStepId = effectiveAllSteps[currentStep].id;
   const visibleStepIndex = VISIBLE_STEPS.findIndex(step => step.id === currentStepId);
   
   // If we're past all visible steps, show 100% progress
@@ -327,7 +327,7 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
   } else {
     // Check if we're past all visible steps
     const lastVisibleStepId = VISIBLE_STEPS[VISIBLE_STEPS.length - 1].id;
-    const lastVisibleStepIndex = ALL_STEPS.findIndex(step => step.id === lastVisibleStepId);
+    const lastVisibleStepIndex = effectiveAllSteps.findIndex(step => step.id === lastVisibleStepId);
     if (currentStep > lastVisibleStepIndex) {
       actualProgress = 100;
     }
@@ -346,6 +346,19 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
     onFirmwareUpdateStart,
     onFirmwareUpdateComplete,
   };
+
+  // If recovery completed, skip PIN setup step automatically
+  const effectiveAllSteps = (() => {
+    if (wizardData.recoveryCompleted) {
+      const filtered = ALL_STEPS.filter(s => s.id !== 'pin');
+      return filtered as typeof ALL_STEPS;
+    }
+    if (wizardData.skipPinSetup) {
+      const filtered = ALL_STEPS.filter(s => s.id !== 'pin');
+      return filtered as typeof ALL_STEPS;
+    }
+    return ALL_STEPS;
+  })();
 
   return (
     <Box
@@ -373,7 +386,7 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
             {t('bootloaderUpdate.keepKeyBitcoinSetup')}
           </Text>
           <Text fontSize="md" color="gray.400">
-            {t(ALL_STEPS[currentStep].description)}
+            {t(effectiveAllSteps[currentStep].description)}
           </Text>
         </VStack>
       </Box>
@@ -405,13 +418,13 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
           wrap="nowrap"
         >
           {VISIBLE_STEPS.map((step, index) => {
-            const stepIndex = ALL_STEPS.findIndex(s => s.id === step.id);
+            const stepIndex = effectiveAllSteps.findIndex(s => s.id === step.id);
             const lastVisibleStepId = VISIBLE_STEPS[VISIBLE_STEPS.length - 1].id;
-            const lastVisibleStepIndex = ALL_STEPS.findIndex(s => s.id === lastVisibleStepId);
+            const lastVisibleStepIndex = effectiveAllSteps.findIndex(s => s.id === lastVisibleStepId);
             const isPastAllVisible = currentStep > lastVisibleStepIndex;
             
             const isCompleted = isPastAllVisible || (stepIndex !== -1 && stepIndex < currentStep);
-            const isCurrent = !isPastAllVisible && ALL_STEPS[currentStep]?.id === step.id;
+            const isCurrent = !isPastAllVisible && effectiveAllSteps[currentStep]?.id === step.id;
             const isActive = isCompleted || isCurrent;
             
             return (
@@ -473,7 +486,7 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
         overflow="hidden"
       >
         <Box w="100%" maxW="900px">
-          <StepComponent key={`step-${currentStep}-${ALL_STEPS[currentStep].id}`} {...stepProps} />
+          <StepComponent key={`step-${currentStep}-${effectiveAllSteps[currentStep].id}`} {...stepProps} />
         </Box>
       </Box>
 
@@ -498,14 +511,14 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
               Previous
             </Button>
             {/* Only show Next when not on special guarded steps */}
-            {(ALL_STEPS[currentStep].id !== 'create-or-recover' || flowType) &&
-             ALL_STEPS[currentStep].id !== 'bootloader' && (
+            {(effectiveAllSteps[currentStep].id !== 'create-or-recover' || flowType) &&
+             effectiveAllSteps[currentStep].id !== 'bootloader' && (
               <Button
                 colorScheme="orange"
                 onClick={handleNext}
                 size="lg"
               >
-                {currentStep === ALL_STEPS.length - 1 ? "Complete Setup" : "Next"}
+                {currentStep === effectiveAllSteps.length - 1 ? "Complete Setup" : "Next"}
               </Button>
             )}
           </HStack>
