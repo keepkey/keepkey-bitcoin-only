@@ -89,6 +89,9 @@
     "status": "Statut",
     "created": "Créé",
     "updated": "Mis à jour",
-    "version": "Version"
+    "version": "Version",
+    "recommended": "Recommandé",
+    "compatible": "Compatible",
+    "legacy": "Hérité"
   }
 }

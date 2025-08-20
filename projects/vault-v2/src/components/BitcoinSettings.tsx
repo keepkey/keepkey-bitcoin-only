@@ -14,29 +14,29 @@ import { useSettings, BitcoinAddressType } from '../contexts/SettingsContext';
 import { useTranslation } from 'react-i18next';
 
 export const BitcoinSettings: React.FC = () => {
-  const { t } = useTranslation(['settings']);
+  const { t } = useTranslation(['settings', 'common']);
   const { bitcoinAddressType, setBitcoinAddressType } = useSettings();
 
   const addressTypeInfo = {
     'p2wpkh': {
-      label: 'Native SegWit (Bech32)',
-      description: 'Lowest fees, best efficiency. Addresses start with bc1',
-      example: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-      badge: 'Recommended',
+      label: t('bitcoin.addressType.nativeSegwit.title'),
+      description: t('bitcoin.addressType.nativeSegwit.description'),
+      example: t('bitcoin.addressType.nativeSegwit.example'),
+      badge: t('recommended', { ns: 'common' }),
       badgeColor: 'green'
     },
     'p2sh-p2wpkh': {
-      label: 'SegWit (P2SH-wrapped)',
-      description: 'Good compatibility, moderate fees. Addresses start with 3',
-      example: '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy',
-      badge: 'Compatible',
+      label: t('bitcoin.addressType.segwit.title'),
+      description: t('bitcoin.addressType.segwit.description'),
+      example: t('bitcoin.addressType.segwit.example'),
+      badge: t('compatible', { ns: 'common' }),
       badgeColor: 'blue'
     },
     'p2pkh': {
-      label: 'Legacy',
-      description: 'Maximum compatibility, highest fees. Addresses start with 1',
-      example: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
-      badge: 'Legacy',
+      label: t('bitcoin.addressType.legacy.title'),
+      description: t('bitcoin.addressType.legacy.description'),
+      example: t('bitcoin.addressType.legacy.example'),
+      badge: t('legacy', { ns: 'common' }),
       badgeColor: 'gray'
     }
   };
@@ -47,12 +47,12 @@ export const BitcoinSettings: React.FC = () => {
         <HStack mb={4}>
           <Icon as={FaBitcoin} color="orange.500" boxSize={5} />
           <Text fontSize="lg" fontWeight="bold" color="white">
-            Bitcoin Address Type
+            {t('bitcoin.addressType.label')}
           </Text>
         </HStack>
         
         <Text fontSize="sm" color="gray.400" mb={4}>
-          Choose your preferred Bitcoin address type. This affects both change addresses and receive addresses.
+          {t('bitcoin.addressType.description')}
         </Text>
 
         <VStack gap={3} align="stretch">
@@ -118,7 +118,7 @@ export const BitcoinSettings: React.FC = () => {
         <HStack mt={4} p={3} bg="blue.900" borderRadius="md" borderWidth={1} borderColor="blue.700">
           <Icon as={FaInfoCircle} color="blue.400" />
           <Text fontSize="sm" color="blue.300">
-            Native SegWit offers the lowest transaction fees and is widely supported. Use Legacy only if required for compatibility with older services.
+            {t('bitcoin.addressType.recommendation')}
           </Text>
         </HStack>
       </Box>

@@ -116,7 +116,10 @@
     "on": "On",
     "off": "Off",
     "step": "Step",
-    "of": "of"
+    "of": "of",
+    "recommended": "Zalecane",
+    "compatible": "Kompatybilny",
+    "legacy": "Starszy"
   },
   "messages": {
     "loading": "Please wait while we load your data",
