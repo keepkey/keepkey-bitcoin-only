@@ -287,6 +287,34 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
   
   // Debug current step
   console.log("SetupWizard render - currentStep:", currentStep, "stepId:", ALL_STEPS[currentStep].id, "component:", StepComponent.name);
+
+  // Global Enter -> Next handler (except guarded steps)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+      // If a recovery flow is actively locking the UI, do not advance
+      if ((window as any).KEEPKEY_RECOVERY_IN_PROGRESS) return;
+      // If any modal is active, do not advance wizard
+      if ((window as any).KEEPKEY_MODAL_ACTIVE) return;
+      // Do not auto-advance if focused on an editable input/textarea/select/button
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae) {
+        const tag = ae.tagName?.toLowerCase();
+        if (['input', 'textarea', 'select', 'button'].includes(tag)) return;
+        // contenteditable elements
+        if ((ae as any).isContentEditable) return;
+      }
+      const stepId = ALL_STEPS[currentStep].id;
+      // Guard bootloader step from auto-enter next
+      if (stepId === 'bootloader') return;
+      // Require choice on flow selection
+      if (stepId === 'create-or-recover' && !flowType) return;
+      e.preventDefault();
+      handleNext();
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [currentStep, flowType]);
   
   // Calculate progress based on visible steps
   const currentStepId = ALL_STEPS[currentStep].id;
@@ -469,8 +497,9 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
             >
               Previous
             </Button>
-            {/* Only show Next button if not on flow selection step or if flow is selected */}
-            {(ALL_STEPS[currentStep].id !== 'create-or-recover' || flowType) && (
+            {/* Only show Next when not on special guarded steps */}
+            {(ALL_STEPS[currentStep].id !== 'create-or-recover' || flowType) &&
+             ALL_STEPS[currentStep].id !== 'bootloader' && (
               <Button
                 colorScheme="orange"
                 onClick={handleNext}

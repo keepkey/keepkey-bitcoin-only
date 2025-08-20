@@ -1452,8 +1452,9 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
                 // Use explicit bootloader version if available
                 bl_version.clone()
             } else {
-                // For modern firmware without explicit bootloader version, assume it's recent enough
-                "2.1.4".to_string() // Assume recent bootloader if not specified
+                // For modern firmware without explicit bootloader version, we cannot assume it's up to date
+                // Treat as unknown so the UI can prompt for verification/update
+                "Unknown bootloader".to_string()
             }
         };
         
@@ -1463,7 +1464,7 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             // Modern bootloaders (2.1.4) don't need bootloader updates - they need firmware updates
             current_bootloader_version.starts_with("1.")
         } else if current_bootloader_version == "Unknown bootloader" {
-            false // Can't determine, assume no update needed
+            true // Unknown bootloader version: require update to ensure device is on a safe version
         } else {
             match semver::Version::parse(&current_bootloader_version) {
                 Ok(current_ver) => {
