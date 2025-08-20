@@ -120,7 +120,18 @@ export const PinPassphraseDialog = ({
       setDeviceReadyStatus('Checking device status...');
       console.log('🔍 Checking device status for:', deviceId);
       
-      // First check if device needs PIN or just passphrase
+      // IMPORTANT: Check if device is already in PIN flow FIRST
+      // This prevents disrupting an active PIN matrix display
+      const isInPinFlow = await invoke('check_device_in_pin_flow', { deviceId });
+      if (isInPinFlow) {
+        console.log('🔐 Device already in PIN flow, ready for PIN entry');
+        setDeviceReadyStatus('Device ready - PIN matrix should be visible on device');
+        setStep('pin-entry');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Only check device status if NOT in PIN flow to avoid disrupting the device
       try {
         const status = await invoke('get_device_status', { deviceId });
         console.log('📱 Device status:', status);
@@ -148,18 +159,10 @@ export const PinPassphraseDialog = ({
           }
         }
       } catch (err) {
-        console.log('⚠️ Could not check device status, checking PIN flow status:', err);
+        console.log('⚠️ Could not check device status:', err);
       }
       
-      // Check if device is already in PIN flow
-      const isInPinFlow = await invoke('check_device_in_pin_flow', { deviceId });
-      if (isInPinFlow) {
-        console.log('🔐 Device already in PIN flow, ready for PIN entry');
-        setDeviceReadyStatus('Device ready - PIN matrix should be visible on device');
-        setStep('pin-entry');
-        setIsLoading(false);
-        return;
-      }
+      // Device needs PIN to be triggered
       
       // Device needs PIN but hasn't been triggered yet - trigger it now
       console.log('🔐 Device needs PIN, triggering PIN request...');
