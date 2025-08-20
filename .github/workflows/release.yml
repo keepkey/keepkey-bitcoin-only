@@ -344,6 +344,7 @@ jobs:
           name: ${{ matrix.name }}-artifacts-${{ github.run_number }}
           path: |
             projects/vault-v2/src-tauri/target/release/bundle/
+            projects/vault-v2/target/release/bundle/
           retention-days: 7
           if-no-files-found: warn
 
@@ -368,29 +369,83 @@ jobs:
               || echo "Failed to upload $filename"
           }
           
+          # Function to rename and upload DMG files (removes temporary prefix)
+          upload_dmg() {
+            local file="$1"
+            local filename=$(basename "$file")
+            # Remove temporary prefix like "rw.12345." from filename
+            local clean_name=$(echo "$filename" | sed 's/^rw\.[0-9]*\.//')
+            echo "Uploading $filename as $clean_name..."
+            
+            curl -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$file" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-release.outputs.release_id }}/assets?name=$clean_name" \
+              || echo "Failed to upload $clean_name"
+          }
+          
           # Find and upload files based on platform
           case "${{ matrix.name }}" in
             "macOS-universal")
+              # Check both possible DMG locations
+              echo "Looking for DMG files..."
+              
+              # Check the expected Tauri output location first
               for file in projects/vault-v2/src-tauri/target/release/bundle/dmg/*.dmg; do
-                [ -f "$file" ] && upload_asset "$file"
+                if [ -f "$file" ]; then
+                  echo "Found DMG in src-tauri path: $file"
+                  upload_asset "$file"
+                fi
               done
+              
+              # Check the alternative location (where they actually are)
+              for file in projects/vault-v2/target/release/bundle/macos/*.dmg; do
+                if [ -f "$file" ]; then
+                  echo "Found DMG in target path: $file"
+                  upload_dmg "$file"
+                fi
+              done
+              
+              # Also check for DMG files in the dmg folder
+              for file in projects/vault-v2/target/release/bundle/dmg/*.dmg; do
+                if [ -f "$file" ]; then
+                  echo "Found DMG in target/dmg path: $file"
+                  upload_dmg "$file"
+                fi
+              done
+              
+              # Upload tar.gz bundles from both possible locations
+              echo "Looking for tar.gz bundles..."
               for file in projects/vault-v2/src-tauri/target/release/bundle/macos/*.app.tar.gz; do
-                [ -f "$file" ] && upload_asset "$file"
+                if [ -f "$file" ]; then
+                  echo "Found tar.gz in src-tauri path: $file"
+                  upload_asset "$file"
+                fi
+              done
+              
+              for file in projects/vault-v2/target/release/bundle/macos/*.app.tar.gz; do
+                if [ -f "$file" ]; then
+                  echo "Found tar.gz in target path: $file"
+                  upload_asset "$file"
+                fi
               done
               ;;
             "Windows-x64")
-              for file in projects/vault-v2/src-tauri/target/release/bundle/nsis/*.exe; do
+              # Check both possible locations for Windows files
+              for file in projects/vault-v2/src-tauri/target/release/bundle/nsis/*.exe projects/vault-v2/target/release/bundle/nsis/*.exe; do
                 [ -f "$file" ] && upload_asset "$file"
               done
-              for file in projects/vault-v2/src-tauri/target/release/bundle/msi/*.msi; do
+              for file in projects/vault-v2/src-tauri/target/release/bundle/msi/*.msi projects/vault-v2/target/release/bundle/msi/*.msi; do
                 [ -f "$file" ] && upload_asset "$file"
               done
               ;;
             "Linux-AppImage")
-              for file in projects/vault-v2/src-tauri/target/release/bundle/appimage/*.AppImage; do
+              # Check both possible locations for Linux files
+              for file in projects/vault-v2/src-tauri/target/release/bundle/appimage/*.AppImage projects/vault-v2/target/release/bundle/appimage/*.AppImage; do
                 [ -f "$file" ] && upload_asset "$file"
               done
-              for file in projects/vault-v2/src-tauri/target/release/bundle/deb/*.deb; do
+              for file in projects/vault-v2/src-tauri/target/release/bundle/deb/*.deb projects/vault-v2/target/release/bundle/deb/*.deb; do
                 [ -f "$file" ] && upload_asset "$file"
               done
               ;;
@@ -452,9 +507,9 @@ jobs:
             
             ### Downloads
             
-            - **macOS**: Universal app (\`.dmg\`)
-            - **Windows**: x64 installer (\`.exe\`)
-            - **Linux**: AppImage (works on most distributions)
+            - **macOS**: Universal app (\`.dmg\` and \`.app.tar.gz\`)
+            - **Windows**: x64 installer (\`.exe\` and \`.msi\`)
+            - **Linux**: AppImage and \`.deb\` (works on most distributions)
             
             ${signingStatus}`;
             
