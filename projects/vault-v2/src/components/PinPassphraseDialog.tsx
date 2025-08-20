@@ -338,16 +338,20 @@ export const PinPassphraseDialog = ({
         
         // Set a timeout to complete if no passphrase request comes
         const timeoutId = setTimeout(() => {
-          // Only complete if we're still in pin-submitting state
-          // (not if we've already transitioned to passphrase-entry)
-          if (step === 'pin-submitting') {
-            console.log('✅ No passphrase request received, PIN unlock complete');
-            setStep('success');
-            setTimeout(() => {
-              if (onComplete) onComplete();
-              onClose();
-            }, 500);
-          }
+          // Use a ref or state callback to check current step
+          setStep(currentStep => {
+            // Only complete if we're still in pin-submitting state
+            // (not if we've already transitioned to passphrase-entry)
+            if (currentStep === 'pin-submitting') {
+              console.log('✅ No passphrase request received, PIN unlock complete');
+              setTimeout(() => {
+                if (onComplete) onComplete();
+                onClose();
+              }, 500);
+              return 'success';
+            }
+            return currentStep; // Don't change state if already transitioned
+          });
         }, 1000); // Wait 1 second for passphrase request
         
         // Store timeout ID so we can clear it if we transition to passphrase
