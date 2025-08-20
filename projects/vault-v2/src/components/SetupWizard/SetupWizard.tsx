@@ -162,6 +162,8 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
     deviceLabel?: string;
     pinSession?: any;
     recoverySettings?: any;
+    recoveryCompleted?: boolean;
+    skipPinSetup?: boolean;
   }>({});
   const [deviceId, setDeviceId] = useState(initialDeviceId);
   const justCompletedBootloaderUpdate = useRef(false);
@@ -283,6 +285,19 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
     justCompletedBootloaderUpdate.current = true;
   };
 
+  // If recovery completed, skip PIN setup step automatically
+  const effectiveAllSteps = (() => {
+    if (wizardData.recoveryCompleted) {
+      const filtered = ALL_STEPS.filter(s => s.id !== 'pin');
+      return filtered as typeof ALL_STEPS;
+    }
+    if (wizardData.skipPinSetup) {
+      const filtered = ALL_STEPS.filter(s => s.id !== 'pin');
+      return filtered as typeof ALL_STEPS;
+    }
+    return ALL_STEPS;
+  })();
+
   const StepComponent = effectiveAllSteps[currentStep].component;
   
   // Debug current step
@@ -346,19 +361,6 @@ export function SetupWizard({ deviceId: initialDeviceId, onClose, onComplete, on
     onFirmwareUpdateStart,
     onFirmwareUpdateComplete,
   };
-
-  // If recovery completed, skip PIN setup step automatically
-  const effectiveAllSteps = (() => {
-    if (wizardData.recoveryCompleted) {
-      const filtered = ALL_STEPS.filter(s => s.id !== 'pin');
-      return filtered as typeof ALL_STEPS;
-    }
-    if (wizardData.skipPinSetup) {
-      const filtered = ALL_STEPS.filter(s => s.id !== 'pin');
-      return filtered as typeof ALL_STEPS;
-    }
-    return ALL_STEPS;
-  })();
 
   return (
     <Box
