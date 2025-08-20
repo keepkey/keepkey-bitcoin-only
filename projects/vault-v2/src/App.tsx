@@ -13,7 +13,7 @@ import { DeviceUpdateManager } from './components/DeviceUpdateManager';
 import { useOnboardingState } from './hooks/useOnboardingState';
 import { VaultInterface } from './components/VaultInterface';
 import { useWallet } from './contexts/WalletContext';
-import { DialogProvider, useDialog } from './contexts/DialogContext';
+import { useDialog } from './contexts/DialogContext';
 import { useDeviceInteraction } from './hooks/useDeviceInteraction';
 import { OnboardingGateProvider, useOnboardingGate } from './contexts/OnboardingGateContext';
 
@@ -738,9 +738,7 @@ function App() {
 
     return (
         <OnboardingGateProvider>
-            <DialogProvider>
-                <AppContent />
-            </DialogProvider>
+            <AppContent />
         </OnboardingGateProvider>
     );
 }

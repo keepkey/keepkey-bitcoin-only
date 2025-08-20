@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, Suspense, startTransition } from 'react';
+import { assertSingleProviderMount, clearProviderMount } from './DialogSingletonGuard';
+import { tryClaimActiveMount, releaseActiveMount } from './DialogActivationGate';
 
 export type DialogPriority = 'low' | 'normal' | 'high' | 'critical';
 
@@ -50,6 +52,12 @@ const PRIORITY_ORDER: Record<DialogPriority, number> = {
 };
 
 export function DialogProvider({ children }: { children: React.ReactNode }) {
+  // Singleton provider protection - throw if multiple providers mount
+  useEffect(() => {
+    assertSingleProviderMount();
+    return () => clearProviderMount();
+  }, []);
+
   const [state, setState] = useState<DialogState>({
     queue: [],
     active: null,
@@ -57,6 +65,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   });
   
   const focusCount = useRef(0);
+  const inFlightIds = useRef<Set<string>>(new Set());
 
   // Process queue to determine which dialog should be active
   const processQueue = useCallback((queue: DialogConfig[]) => {
@@ -93,111 +102,94 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     return sorted[0];
   }, []);
 
-  // Show a dialog
+  // Show a dialog with atomic race-condition protection
   const show = useCallback((config: DialogConfig) => {
     console.log(`🎯 [DialogContext] show() called for dialog:`, config.id, config.priority);
     
-    // ABSOLUTE DUPLICATE PREVENTION: If ANY dialog with this ID exists ANYWHERE, DROP the request
-    if (state.active?.id === config.id || state.queue.some(d => d.id === config.id)) {
-      console.log(`🚫 [DialogContext] DROPPING DUPLICATE - Dialog "${config.id}" already exists (active or queued)`);
-      return; // JUST DROP IT!
+    // Single-flight guard to prevent same-tick races
+    if (inFlightIds.current.has(config.id)) {
+      console.log(`🚫 [DialogContext] in-flight duplicate blocked: ${config.id}`);
+      return;
     }
-    
-    console.log(`🎯 [DialogContext] Current queue before:`, state.queue.map(d => d.id));
-    console.log(`🎯 [DialogContext] Current active before:`, state.active?.id);
-    
-    // Special handling for PIN dialog and combined PIN/Passphrase dialog
-    const isPinDialog = config.id.includes('pin-unlock');
-    const isPinPassphraseDialog = config.id.includes('pin-passphrase');
-    
+    inFlightIds.current.add(config.id);
+
     // Use startTransition to avoid synchronous suspense issues with lazy components
     startTransition(() => {
-      setState((prevState) => {
-        // Check if dialog already exists in queue
-        const exists = prevState.queue.some(d => d.id === config.id);
-        if (exists) {
-          // Only log this warning once per dialog to reduce noise
-          // if (!(window as any).__dialogWarningLogged?.[config.id]) {
-          //   (window as any).__dialogWarningLogged = (window as any).__dialogWarningLogged || {};
-          //   (window as any).__dialogWarningLogged[config.id] = true;
-          //   console.warn(`🎯 [DialogContext] Dialog with id "${config.id}" already exists in queue`);
-          // }
-          // For passphrase dialogs, ensure they become active after PIN closes
-          // if (config.id.includes('passphrase') && !prevState.active) {
-          //   // PIN just closed, make passphrase active
-          //   return {
-          //     ...prevState,
-          //     active: prevState.queue.find(d => d.id === config.id) || null
-          //   };
-          // }
-          return prevState;
+      setState(prev => {
+        // 1) If already active with same id → no-op
+        if (prev.active?.id === config.id) {
+          inFlightIds.current.delete(config.id);
+          console.log(`🚫 [DialogContext] Dialog "${config.id}" already active`);
+          return prev;
         }
-        
-        // If this is a critical dialog, PIN dialog, or combined PIN/Passphrase dialog, remove lower priority dialogs
-        let newQueue = [...prevState.queue];
-        if (config.priority === 'critical' || isPinDialog || isPinPassphraseDialog) {
-          // Remove non-critical dialogs except for PIN and passphrase dialogs
-          newQueue = newQueue.filter((d, index, self) => {
-            // ✅ 1. Ensure uniqueness by ID
-            const isFirst = self.findIndex(x => x.id === d.id) === index;
-            if (!isFirst) return false;
 
-            // ✅ 2. Apply your existing priority/type logic
-            const dialogPriority = PRIORITY_ORDER[d.priority || 'normal'];
-            const configPriority = PRIORITY_ORDER[config.priority || 'normal'];
-            const isDialogPin = d.id.includes('pin-unlock');
-            // const isDialogPassphrase = d.id.includes('passphrase');
-            // const isDialogPinPassphrase = d.id.includes('pin-passphrase');
+        // 2) If already queued with same id → no-op
+        if (prev.queue.some(d => d.id === config.id)) {
+          inFlightIds.current.delete(config.id);
+          console.log(`🚫 [DialogContext] Dialog "${config.id}" already queued`);
+          return prev;
+        }
 
-            // Keep dialog if:
-            // 1. It's a PIN dialog (PIN dialogs are always kept)
-            // 2. It has equal or higher priority than the new dialog
-            return isDialogPin || dialogPriority >= configPriority;
+        // 3) Start from existing queue; if critical/pin, prune lower-priority
+        let newQueue = [...prev.queue];
+
+        const isPin = config.id.includes('pin-unlock');
+        const isPinPass = config.id.includes('pin-passphrase');
+        const cfgPri = PRIORITY_ORDER[config.priority || 'normal'];
+
+        if (config.priority === 'critical' || isPin || isPinPass) {
+          newQueue = newQueue.filter((d, idx, self) => {
+            // Ensure uniqueness among existing (defensive)
+            const first = self.findIndex(x => x.id === d.id) === idx;
+            if (!first) return false;
+
+            const dPri = PRIORITY_ORDER[d.priority || 'normal'];
+            const dIsPin = d.id.includes('pin-unlock');
+            return dIsPin || dPri >= cfgPri;
           });
           
           // Call onClose for removed dialogs
-          prevState.queue.forEach(dialog => {
+          prev.queue.forEach(dialog => {
             if (!newQueue.some(d => d.id === dialog.id) && dialog.onClose) {
               console.log(`🎯 [DialogContext] Closing lower priority dialog:`, dialog.id);
-              dialog.onClose?.();
+              setTimeout(() => dialog.onClose?.(), 0);
             }
           });
         }
-        
-        // Add the new dialog
+
+        // 4) Push new config
         newQueue.push(config);
-        
-        // Process queue with special PIN handling
+
+        // 5) Hard de-dupe *after* push (atomic) — keep the first occurrence
+        const seen = new Set<string>();
+        newQueue = newQueue.filter(d => {
+          if (seen.has(d.id)) return false;
+          seen.add(d.id);
+          return true;
+        });
+
+        // 6) Recompute active with your priority rules
         let newActive = processQueue(newQueue);
-        
-        // If a combined PIN/Passphrase dialog is in the queue, it should always be active
-        const pinPassphraseDialog = newQueue.find(d => d.id.includes('pin-passphrase'));
-        if (pinPassphraseDialog && (isPinPassphraseDialog || !prevState.active?.id.includes('pin-passphrase'))) {
-          newActive = pinPassphraseDialog;
-        }
-        // Otherwise, if a PIN dialog is in the queue and device is ready, it should always be active
-        else {
+
+        const pinPassDialog = newQueue.find(d => d.id.includes('pin-passphrase'));
+        if (pinPassDialog) {
+          newActive = pinPassDialog;
+        } else {
           const pinDialog = newQueue.find(d => d.id.includes('pin-unlock'));
-          if (pinDialog && (isPinDialog || !prevState.active?.id.includes('pin-unlock'))) {
-            newActive = pinDialog;
-          }
+          if (pinDialog) newActive = pinDialog;
         }
-        
+
         console.log(`🎯 [DialogContext] New queue:`, newQueue.map(d => d.id));
         console.log(`🎯 [DialogContext] New active:`, newActive?.id);
-        
-        // Call onOpen if this dialog becomes active
+
+        // 7) Fire onOpen if this one becomes active
         if (newActive?.id === config.id && config.onOpen) {
-          console.log(`🎯 [DialogContext] Calling onOpen for:`, config.id);
-          config.onOpen();
+          // fire after state commit
+          setTimeout(() => config.onOpen?.(), 0);
         }
-        
-        return {
-          ...prevState,
-          queue: newQueue,
-          active: newActive,
-          history: [...prevState.history, config.id],
-        };
+
+        inFlightIds.current.delete(config.id);
+        return { ...prev, queue: newQueue, active: newActive, history: [...prev.history, config.id] };
       });
     });
   }, [processQueue]);
@@ -269,21 +261,23 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Hide all dialogs except a specific one
+  // Hide all dialogs except a specific one - guarantees only one remains
   const hideAllExcept = useCallback((id: string) => {
     setState((prevState) => {
       const dialogToKeep = prevState.queue.find(d => d.id === id);
       if (!dialogToKeep) {
+        console.warn(`[DialogContext] hideAllExcept: dialog "${id}" not found`);
         return prevState;
       }
       
       // Call onClose for all other dialogs
       prevState.queue.forEach(dialog => {
         if (dialog.id !== id && dialog.onClose) {
-          dialog.onClose?.();
+          setTimeout(() => dialog.onClose?.(), 0);
         }
       });
       
+      // HARD guarantee: only the specified dialog remains
       return {
         ...prevState,
         queue: [dialogToKeep],
@@ -456,8 +450,25 @@ class DialogErrorBoundary extends React.Component<
   }
 }
 
-// Dialog renderer component with proper Suspense and error boundary handling
+// Dialog renderer component with activation gate and proper Suspense handling
 function DialogRenderer({ dialog, onClose }: { dialog: DialogConfig; onClose: () => void }) {
+  const claimed = useRef(false);
+
+  // Try to claim the active mount slot - prevents multiple dialogs in DOM
+  if (!claimed.current) {
+    claimed.current = tryClaimActiveMount(dialog.id);
+  }
+  
+  useEffect(() => {
+    return () => releaseActiveMount(dialog.id);
+  }, [dialog.id]);
+
+  // If another dialog is already mounted, refuse to render this one
+  if (!claimed.current) {
+    console.warn(`[DialogRenderer] Mount denied for "${dialog.id}" - another dialog already active`);
+    return null;
+  }
+
   const Component = dialog.component;
   
   const handleClose = useCallback(() => {
