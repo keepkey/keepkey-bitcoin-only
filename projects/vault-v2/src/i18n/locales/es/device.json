@@ -1,6 +1,203 @@
 {
   "status": {
     "connected": "Conectado",
-    "disconnected": "Desconectado"
+    "disconnected": "Desconectado",
+    "busy": "Ocupado",
+    "ready": "Listo",
+    "bootloader": "Modo Bootloader",
+    "initialized": "Inicializado",
+    "notInitialized": "No Inicializado",
+    "locked": "Bloqueado",
+    "unlocked": "Desbloqueado",
+    "needsBackup": "Necesita Respaldo",
+    "updating": "Actualizando",
+    "error": "Error"
+  },
+  "info": {
+    "deviceId": "ID del Dispositivo",
+    "firmwareVersion": "Versión del Firmware",
+    "bootloaderVersion": "Versión del Bootloader",
+    "model": "Modelo",
+    "label": "Etiqueta",
+    "serialNumber": "Número de Serie",
+    "initialized": "Inicializado",
+    "features": "Características",
+    "capabilities": "Capacidades"
+  },
+  "actions": {
+    "update": "Actualizar Dispositivo",
+    "updateFirmware": "Actualizar Firmware",
+    "updateBootloader": "Actualizar Bootloader",
+    "wipe": "Borrar Dispositivo",
+    "wiping": "Borrando...",
+    "recover": "Recuperar Dispositivo",
+    "initialize": "Inicializar Dispositivo",
+    "backup": "Respaldar Dispositivo",
+    "changePin": "Cambiar PIN",
+    "removePin": "Eliminar PIN",
+    "enablePassphrase": "Habilitar Frase de Contraseña",
+    "disablePassphrase": "Deshabilitar Frase de Contraseña",
+    "changeLabel": "Cambiar Etiqueta",
+    "applySettings": "Aplicar Configuración",
+    "cancel": "Cancelar Operación",
+    "createWallet": "Crear Billetera",
+    "verifySeed": "Verificar Semilla"
+  },
+  "messages": {
+    "confirmOnDevice": "Por favor confirme en su dispositivo",
+    "followDirections": "Siga las instrucciones en su dispositivo",
+    "enterPin": "Ingrese su PIN en el dispositivo",
+    "enterPassphrase": "Ingrese su frase de contraseña",
+    "holdButton": "Mantenga presionado el botón de su KeepKey",
+    "releaseButton": "Suelte el botón",
+    "deviceBusy": "El dispositivo está ocupado, por favor espere",
+    "connectDevice": "Por favor conecte su dispositivo KeepKey",
+    "disconnectDevice": "Por favor desconecte su dispositivo",
+    "checkDevice": "Verifique la pantalla de su dispositivo",
+    "loadingDevices": "Cargando dispositivos...",
+    "noDevicesConnected": "No hay dispositivos KeepKey conectados",
+    "connectToGetStarted": "Conecte su dispositivo KeepKey vía USB para comenzar",
+    "connectedDevices": "Dispositivos Conectados"
+  },
+  "troubleshooting": {
+    "title": "Solución de Problemas",
+    "subtitle": "¿Tiene problemas con su dispositivo?",
+    "notDetected": {
+      "title": "Dispositivo No Detectado",
+      "tips": [
+        "Asegúrese de que su KeepKey esté conectado vía USB",
+        "Pruebe con un puerto USB o cable diferente",
+        "Reinicie la aplicación KeepKey Desktop",
+        "Verifique si otras aplicaciones están usando el dispositivo"
+      ]
+    },
+    "connectionLost": {
+      "title": "Conexión Perdida",
+      "tips": [
+        "Verifique la conexión del cable USB",
+        "Asegúrese de que el dispositivo no esté siendo usado por otra aplicación",
+        "Intente desconectar y reconectar el dispositivo",
+        "Reinicie la aplicación si el problema persiste"
+      ]
+    },
+    "communicationFailed": {
+      "title": "Dispositivo detectado pero sin comunicación",
+      "description": "Su KeepKey fue detectado pero no podemos establecer comunicación. Esto generalmente se puede solucionar con pasos básicos de solución de problemas.",
+      "launchTroubleshooter": "Iniciar Solucionador de Problemas"
+    },
+    "connectionAttempts": {
+      "attempting": "Intentando conectar ({{attempt}}/{{max}})...",
+      "giveUp": "Abandonando después de {{max}} intentos – por favor reconecte su KeepKey."
+    },
+    "bootloaderMode": {
+      "title": "Dispositivo en Modo Bootloader",
+      "description": "Su dispositivo está en modo bootloader. Esto se usa para actualizaciones de firmware.",
+      "howToExit": "Para salir del modo bootloader, desconecte y reconecte su dispositivo"
+    },
+    "updateFailed": {
+      "title": "Actualización Fallida",
+      "tips": [
+        "Asegure una conexión USB estable durante la actualización",
+        "No desconecte el dispositivo durante la actualización",
+        "Intente entrar al modo bootloader manualmente",
+        "Contacte soporte si el problema persiste"
+      ]
+    },
+    "deviceInvalidState": {
+      "title": "Dispositivo en Estado Inválido",
+      "description": "Su KeepKey no está respondiendo correctamente.",
+      "explanation": "Esto puede ocurrir cuando el dispositivo está en un estado inesperado o si hubo un error de comunicación.",
+      "steps": {
+        "title": "Por favor siga estos pasos:",
+        "step1": "Desconecte su KeepKey del puerto USB",
+        "step2": "Espere 2-3 segundos",
+        "step3": "Reconecte su KeepKey normalmente"
+      },
+      "warning": "NO mantenga presionado ningún botón al reconectar",
+      "error": "Error: {{error}}",
+      "timeoutError": "Tiempo de espera agotado al obtener las características del dispositivo",
+      "persistentProblem": "Si el problema persiste después de reconectar, por favor cierre cualquier otra aplicación de billetera que pueda estar usando su KeepKey."
+    }
+  },
+  "bootloader": {
+    "title": "Modo Bootloader",
+    "description": "Su KeepKey está en modo bootloader",
+    "instructions": {
+      "title": "Cómo entrar al Modo Bootloader:",
+      "step1": "Desconecte su KeepKey",
+      "step2": "Mantenga presionado el botón de su KeepKey",
+      "step3": "Mientras mantiene el botón, reconecte su KeepKey",
+      "step4": "Continúe presionando hasta ver 'BOOTLOADER MODE' en la pantalla",
+      "step5": "Suelte el botón"
+    },
+    "update": {
+      "title": "Actualización Disponible",
+      "description": "Una actualización de bootloader está disponible para su dispositivo",
+      "warning": "No desconecte su dispositivo durante la actualización"
+    }
+  },
+  "firmware": {
+    "title": "Actualización de Firmware",
+    "checking": "Buscando actualizaciones de firmware...",
+    "available": "Actualización de firmware disponible",
+    "current": "Versión Actual",
+    "latest": "Última Versión",
+    "upToDate": "Su firmware está actualizado",
+    "downloading": "Descargando firmware...",
+    "installing": "Instalando firmware...",
+    "verifying": "Verificando firmware...",
+    "success": "Firmware actualizado exitosamente",
+    "failed": "Actualización de firmware fallida",
+    "warning": "Advertencia: No desconecte su dispositivo durante el proceso de actualización"
+  },
+  "initialization": {
+    "title": "Inicializar Dispositivo",
+    "description": "Configure su KeepKey por primera vez",
+    "options": {
+      "create": "Crear Nueva Billetera",
+      "recover": "Recuperar Billetera Existente",
+      "import": "Importar Frase Semilla"
+    },
+    "inProgress": "Inicializando dispositivo...",
+    "success": "Dispositivo inicializado exitosamente",
+    "failed": "Inicialización del dispositivo fallida"
+  },
+  "recovery": {
+    "title": "Recuperar Dispositivo",
+    "description": "Restaure su billetera usando su semilla de recuperación",
+    "wordCount": "Número de palabras",
+    "enterWord": "Ingrese palabra {{number}}",
+    "checkDevice": "Verifique su dispositivo para las posiciones de palabras",
+    "inProgress": "Recuperando billetera...",
+    "success": "Billetera recuperada exitosamente",
+    "failed": "Recuperación fallida"
+  },
+  "wipe": {
+    "title": "Borrar Dispositivo",
+    "warning": "Advertencia: ¡Esto eliminará todos los datos de su dispositivo!",
+    "confirm": "¿Está seguro de que desea borrar su dispositivo?",
+    "description": "Esta acción no se puede deshacer. Asegúrese de tener respaldada su semilla de recuperación.",
+    "inProgress": "Borrando dispositivo...",
+    "success": "Dispositivo borrado exitosamente",
+    "failed": "Fallo al borrar dispositivo"
+  },
+  "badges": {
+    "keepkey": "Dispositivo KeepKey",
+    "hardwareWallet": "Billetera de Hardware",
+    "secureElement": "Elemento Seguro",
+    "usbConnected": "USB Conectado",
+    "firmwareOutdated": "Firmware Desactualizado",
+    "backupNeeded": "Respaldo Necesario"
+  },
+  "updateStatus": {
+    "title": "Estado de Actualización:",
+    "bootloaderAvailable": "Actualización de bootloader disponible (v{{version}})",
+    "firmwareAvailable": "Actualización de firmware disponible (v{{version}})",
+    "needsInitialization": "El dispositivo necesita ser inicializado",
+    "upToDate": "El dispositivo está actualizado y listo"
+  },
+  "dangerZone": {
+    "title": "Zona de Peligro:",
+    "wipeDevice": "Borrar Dispositivo"
   }
 }

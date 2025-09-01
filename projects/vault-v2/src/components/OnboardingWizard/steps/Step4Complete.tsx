@@ -1,9 +1,13 @@
-import { Box, Card, HStack, Text, VStack, Icon } from "@chakra-ui/react";
+import { Box, Card, HStack, Text, VStack, Icon, Link } from "@chakra-ui/react";
 import { FaCheckCircle, FaRocket } from "react-icons/fa";
+import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 
 // Step components no longer need props - navigation handled by main wizard
 
 export function Step4Complete() {
+  const { t } = useTranslation(['onboarding']);
+
   return (
     <Box width="full" maxWidth="lg">
       <Card.Root bg="gray.900" borderColor="gray.700">
@@ -15,13 +19,13 @@ export function Step4Complete() {
             
             <VStack gap={2}>
               <Text fontSize="2xl" fontWeight="bold" color="green.400">
-                Setup Complete!
+                {t('onboarding:complete.title')}
               </Text>
               <Text color="gray.400" fontSize="lg">
-                You're all set to start using KeepKey Desktop.
+                {t('onboarding:complete.subtitle')}
               </Text>
               <Text color="gray.300">
-                Your preferences have been saved and you can now connect your KeepKey device.
+                {t('onboarding:complete.message')}
               </Text>
             </VStack>
             
@@ -30,24 +34,40 @@ export function Step4Complete() {
                 <Icon asChild color="yellow.400" boxSize={6}>
                   <FaRocket />
                 </Icon>
-                <Text color="white" fontWeight="bold" fontSize="lg">Next Steps</Text>
+                <Text color="white" fontWeight="bold" fontSize="lg">{t('onboarding:complete.nextSteps.title')}</Text>
               </HStack>
               <VStack gap={2}>
                 <Text color="green.200" fontSize="sm" fontWeight="medium">
-                  1. Connect your KeepKey device via USB
+                  {t('onboarding:complete.nextSteps.step1')}
                 </Text>
                 <Text color="green.200" fontSize="sm" fontWeight="medium">
-                  2. Follow the device setup prompts
+                  {t('onboarding:complete.nextSteps.step2')}
                 </Text>
                 <Text color="green.200" fontSize="sm" fontWeight="medium">
-                  3. Start managing your crypto assets securely
+                  {t('onboarding:complete.nextSteps.step3')}
                 </Text>
               </VStack>
             </Box>
             
             <Box textAlign="center" p={3} bg="gray.800" borderRadius="md" borderWidth="1px" borderColor="gray.600">
               <Text color="gray.400" fontSize="sm">
-                💡 Need help? Visit our support center or check the built-in tutorials
+                💡 Need help? Visit our support center or{" "}
+                <Link
+                  color="green.400"
+                  textDecoration="underline"
+                  cursor="pointer"
+                  onClick={async () => {
+                    try {
+                      await invoke('open_url', { url: 'https://keepkey.com/blog' });
+                    } catch (error) {
+                      console.error('Failed to open URL:', error);
+                      window.open('https://keepkey.com/blog', '_blank');
+                    }
+                  }}
+                  _hover={{ color: "green.300" }}
+                >
+                  check our tutorials
+                </Link>
               </Text>
             </Box>
           </VStack>

@@ -46,6 +46,17 @@ import deTransaction from './locales/de/transaction.json';
 import deDialogs from './locales/de/dialogs.json';
 import deSetup from './locales/de/setup.json';
 
+// Polish translations
+import plCommon from './locales/pl/common.json';
+import plOnboarding from './locales/pl/onboarding.json';
+import plSettings from './locales/pl/settings.json';
+import plErrors from './locales/pl/errors.json';
+import plDevice from './locales/pl/device.json';
+import plWallet from './locales/pl/wallet.json';
+import plTransaction from './locales/pl/transaction.json';
+import plDialogs from './locales/pl/dialogs.json';
+import plSetup from './locales/pl/setup.json';
+
 const resources = {
   en: {
     common: enCommon,
@@ -90,6 +101,17 @@ const resources = {
     transaction: deTransaction,
     dialogs: deDialogs,
     setup: deSetup,
+  },
+  pl: {
+    common: plCommon,
+    onboarding: plOnboarding,
+    settings: plSettings,
+    errors: plErrors,
+    device: plDevice,
+    wallet: plWallet,
+    transaction: plTransaction,
+    dialogs: plDialogs,
+    setup: plSetup,
   },
 };
 

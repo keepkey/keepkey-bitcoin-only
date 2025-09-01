@@ -184,15 +184,17 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     setSelectedDeviceId(deviceId)
     
     try {
-      // Directly call the bootloader update command with a target version
-      // Using "2.1.0" as the target version (from device_update.rs LATEST_BOOTLOADER_VERSION)
+      // Directly call the bootloader update command with the latest version reported by backend
       console.log('Calling update_device_bootloader with deviceId:', deviceId)
-      
+
+      // Prefer the backend-provided latest version; fallback to known good "2.1.4"
+      const latestVersion = (deviceStatus as any)?.bootloaderCheck?.latestVersion || '2.1.4'
+
       // Call the backend command to update the bootloader
       // This will internally create a high-priority blocking action
       const result = await invoke('update_device_bootloader', { 
         deviceId, 
-        targetVersion: "2.1.0" 
+        targetVersion: latestVersion 
       }) as boolean
       
       console.log('Bootloader update result:', result)
@@ -629,7 +631,6 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   _selected={{ bg: "gray.700", color: "white" }}
                   _hover={{ color: "white" }}
                 >
-                  <FaBitcoin size={16} />
                   Bitcoin
                 </Tabs.Trigger>
                 <Tabs.Trigger 
@@ -640,8 +641,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                   _selected={{ bg: "gray.700", color: "white" }}
                   _hover={{ color: "white" }}
                 >
-                  <LuCpu size={16} />
-                  KeepKey
+                KeepKey
                 </Tabs.Trigger>
                 <Tabs.Trigger 
                   value="logs"

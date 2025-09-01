@@ -21,7 +21,130 @@
     "bitcoin": "Bitcoin"
   },
   "send": {
-    "title": "Enviar"
+    "title": "Enviar",
+    "titleBitcoin": "Enviar Bitcoin",
+    "subtitle": "Enviar fondos desde tu billetera",
+    "selectAsset": "Seleccionar Activo",
+    "recipient": "Dirección del Destinatario",
+    "recipientPlaceholder": "Ingresa dirección de Bitcoin",
+    "amount": "Cantidad",
+    "amountPlaceholder": "Ingresa cantidad",
+    "max": "Máx",
+    "fee": "Comisión de Red",
+    "total": "Total",
+    "memo": "Memo (opcional)",
+    "review": "Revisar Transacción",
+    "reviewDetails": "Revisar Detalles",
+    "confirm": "Confirmar y Enviar",
+    "sign": "Firmar Transacción",
+    "signPreparing": "Preparando...",
+    "signTransaction": "Firmar Transacción",
+    "sending": "Enviando transacción...",
+    "broadcasting": "Transmitiendo...",
+    "broadcasted": "Transacción transmitida",
+    "broadcastSuccess": "¡Transacción transmitida exitosamente! ✅",
+    "transactionComplete": "Transacción Completa",
+    "transactionSigned": "¡Transacción firmada exitosamente!",
+    "transactionSignedMessage": "Tu transacción ha sido firmada exitosamente",
+    "failed": "Transacción fallida",
+    "failedToBuild": "Error al construir transacción",
+    "failedToSign": "Error al firmar transacción",
+    "failedToBroadcast": "Error al transmitir transacción",
+    "noTransactionToSign": "No hay transacción para firmar",
+    "noSignedTransaction": "No hay transacción firmada para transmitir",
+    "insufficient": "Saldo insuficiente",
+    "invalidAddress": "Dirección de Bitcoin inválida",
+    "invalidAddressFormat": "Formato de dirección de Bitcoin inválido",
+    "enterValidRecipientAndAmount": "Por favor ingresa una dirección de destinatario y cantidad válidas",
+    "amountMustBeGreater": "La cantidad debe ser mayor a 0",
+    "noKeepKeyConnected": "No hay dispositivo KeepKey conectado",
+    "noXpubsFound": "No se encontraron xpubs de Bitcoin. Por favor sincroniza tu billetera primero.",
+    "emptySignedTx": "Se recibió un hex de transacción firmada vacío o nulo",
+    "unableToLoadFeeRates": "No se pudieron cargar las tarifas actuales, usando estimaciones",
+    "failedToCopyTxid": "Error al copiar TXID al portapapeles",
+    "scanQrCode": "Escanear código QR",
+    "goBack": "Volver",
+    "back": "Atrás",
+    "availableBalance": "Saldo Disponible",
+    "estimatedFee": "Comisión Estimada",
+    "estimatedTotal": "Total Estimado",
+    "compose": "Componer",
+    "composeTransaction": "Componer Transacción",
+    "reviewingTransaction": "Revisando Transacción",
+    "signingTransaction": "Firmando Transacción",
+    "confirmOnDevice": "Por favor confirma la transacción en tu dispositivo KeepKey",
+    "complete": "Completar",
+    "building": "Construyendo...",
+    "buildingTransaction": "Construyendo transacción...",
+    "feeLevel": {
+      "slow": "Lento",
+      "normal": "Normal",
+      "medium": "Medio",
+      "fast": "Rápido",
+      "custom": "Personalizado"
+    },
+    "available": "Disponible",
+    "noBalanceWarning": "⚠️ Sin saldo disponible. Por favor deposita fondos en tu billetera.",
+    "loadingWallet": "Cargando Billetera...",
+    "validAddress": "✓ Dirección de Bitcoin válida",
+    "maxSendWarning": "💰 ENVÍO MÁXIMO: Enviará todos los fondos disponibles menos las comisiones de red",
+    "qrCodeNotImplemented": "El escaneo de código QR se implementará más adelante",
+    "insufficientBalanceDetailed": "Saldo insuficiente. Disponible: {{available}} {{currency}}",
+    "feeEstimate": {
+      "slow": "~60 min",
+      "medium": "~30 min",
+      "fast": "~10 min"
+    },
+    "summary": {
+      "title": "Resumen de Transacción",
+      "from": "Desde",
+      "to": "Hacia",
+      "amount": "Cantidad",
+      "fee": "Comisión",
+      "feeRate": "Tasa de Comisión",
+      "total": "Total",
+      "inputs": "Entradas",
+      "outputs": "Salidas"
+    },
+    "signedTransaction": {
+      "title": "Transacción Firmada",
+      "show": "Mostrar",
+      "hide": "Ocultar",
+      "copyHex": "Copiar Hex de Transacción",
+      "hexCopied": "¡Hex de transacción copiado!"
+    },
+    "broadcastResult": {
+      "success": "Transmisión de Transacción Exitosa",
+      "successMessage": "Tu transacción ha sido enviada a la red de Bitcoin",
+      "txid": "ID de Transacción",
+      "copyTxid": "Copiar TXID",
+      "viewOnMempool": "Ver en Mempool",
+      "sendAnother": "Enviar Otra Transacción",
+      "viewOnExplorer": "Ver en Explorador",
+      "confirmations": "Las confirmaciones comenzarán a aparecer pronto"
+    },
+    "errors": {
+      "generic": "Ocurrió un error",
+      "unknownBroadcast": "Error de transmisión desconocido"
+    },
+    "steps": {
+      "compose": {
+        "title": "Componer Transacción",
+        "number": "1"
+      },
+      "review": {
+        "title": "Revisar Detalles",
+        "number": "2"
+      },
+      "sign": {
+        "title": "Firmar Transacción",
+        "number": "3"
+      },
+      "complete": {
+        "title": "Transacción Completa",
+        "number": "4"
+      }
+    }
   },
   "receive": {
     "title": "Recibir",

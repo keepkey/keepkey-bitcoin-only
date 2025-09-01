@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use hidapi::{HidApi, HidDevice};
 use std::time::Duration;
 use thiserror::Error;
-use log::{debug, info, warn, error};
+use log::{debug, info, error};
 
 use super::Transport;
 

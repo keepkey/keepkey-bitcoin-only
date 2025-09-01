@@ -22,7 +22,7 @@ enum TransportType {
 }
 
 // Default timeouts and limits
-const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
+const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(120); // Increased to 2 minutes for user confirmation
 const QUEUE_CHANNEL_SIZE: usize = 100;
 const CACHE_MAX_ENTRIES: usize = 256;
 const CACHE_TTL: Duration = Duration::from_secs(30);
@@ -285,12 +285,9 @@ impl DeviceWorker {
         
         self.metrics.record_operation(queue_wait, device_rtt, total_time);
     
-    // Always drop transport after each command to avoid exclusive handle issues,
-    // it will be recreated lazily on the next command.
-    if self.transport.is_some() {
-        info!("🔌 Releasing transport handle for device {} after operation", self.device_id);
-    }
-    self.transport = None;
+    // Keep transport alive across commands for performance.
+    // It will be recreated on demand by ensure_transport() only after errors
+    // or explicitly during disruptive operations (e.g., firmware/bootloader updates)
     
     Ok(())
     }

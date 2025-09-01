@@ -50,7 +50,7 @@ export const PinCreationDialog: React.FC<PinCreationDialogProps> = ({
       }}
       size="full"
       placement="center"
-      motionPreset="slideInBottom"
+      motionPreset="slide-in-bottom"
     >
       <DialogContent
         bg="transparent"
@@ -66,7 +66,6 @@ export const PinCreationDialog: React.FC<PinCreationDialogProps> = ({
         <DialogCloseTrigger
           color="gray.400"
           _hover={{ color: "white", bg: "gray.700" }}
-          size="lg"
           top={4}
           right={4}
           zIndex={1}

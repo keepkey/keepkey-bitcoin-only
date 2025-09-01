@@ -2,20 +2,138 @@
   "language": {
     "title": "Selecciona tu idioma",
     "description": "Selecciona tu idioma preferido",
-    "fullDescription": "Elige tu idioma preferido para la aplicación KeepKey Desktop"
+    "fullDescription": "Elige tu idioma preferido para la aplicación KeepKey Desktop",
+    "changeAnytime": "Puedes cambiar esto en cualquier momento en configuración",
+    "appliedImmediately": "El idioma se aplicará inmediatamente"
   },
   "welcome": {
     "title": "Bienvenido a KeepKey",
-    "subtitle": "Tu viaje hacia la gestión segura de criptomonedas comienza aquí"
+    "subtitle": "Tu viaje hacia la gestión segura de criptomonedas comienza aquí",
+    "description": "KeepKey es tu puerta de acceso a la gestión segura de criptomonedas",
+    "getStarted": "Comenzar",
+    "learnMore": "Saber más",
+    "features": {
+      "secure": "Seguridad de nivel bancario",
+      "simple": "Fácil de usar",
+      "private": "Tus claves, tus criptomonedas"
+    }
+  },
+  "setup": {
+    "title": "Configura tu Dispositivo",
+    "subtitle": "Preparemos tu KeepKey",
+    "connectDevice": "Por favor conecta tu dispositivo KeepKey",
+    "detectingDevice": "Detectando dispositivo...",
+    "deviceFound": "¡Dispositivo encontrado!",
+    "deviceNotFound": "Dispositivo no encontrado",
+    "troubleshooting": "¿Problemas? Consulta nuestra guía de solución de problemas",
+    "skipSetup": "Saltar configuración",
+    "requirements": {
+      "title": "Antes de comenzar",
+      "device": "Dispositivo KeepKey",
+      "cable": "Cable USB",
+      "time": "5-10 minutos"
+    }
+  },
+  "app-settings": {
+    "title": "Configuración de la Aplicación",
+    "subtitle": "Configura las preferencias de tu aplicación",
+    "description": "Configura las preferencias de tu aplicación",
+    "fullDescription": "Personaliza cómo funciona KeepKey Desktop para ti",
+    "theme": {
+      "title": "Tema",
+      "label": "Elegir Tema",
+      "light": "Claro",
+      "dark": "Oscuro",
+      "system": "Por Defecto del Sistema",
+      "description": "El tema oscuro proporciona mejor visibilidad y reduce la fatiga ocular durante el uso prolongado",
+      "active": "Tema oscuro activo"
+    },
+    "analytics": {
+      "title": "Analíticas Anónimas",
+      "description": "Ayúdanos a mejorar compartiendo datos de uso anónimos",
+      "enable": "Habilitar Analíticas",
+      "disable": "No Gracias"
+    },
+    "notifications": {
+      "title": "Notificaciones",
+      "description": "Mantente informado sobre actualizaciones de seguridad importantes y cambios de estado del dispositivo",
+      "fullDescription": "Recibe notificaciones sobre actualizaciones y transacciones importantes",
+      "enable": "Habilitar Notificaciones",
+      "enabled": "Notificaciones habilitadas",
+      "disable": "Deshabilitar Notificaciones"
+    },
+    "defaultSettings": "La configuración predeterminada está optimizada para seguridad y usabilidad"
+  },
+  "pin": {
+    "title": "Seguridad",
+    "subtitle": "Configuración de Seguridad",
+    "description": "Configura tu PIN y ajustes de seguridad",
+    "fullDescription": "Aprende sobre la protección PIN y mejores prácticas de seguridad para tu dispositivo KeepKey",
+    "protectDevice": "Protege tu dispositivo con un PIN",
+    "pinProtection": {
+      "title": "Protección PIN",
+      "description": "Tu PIN protege tu dispositivo del acceso no autorizado. Elige un PIN que sea fácil de recordar para ti pero difícil de adivinar para otros",
+      "recommendation": "Se recomiendan 4-9 dígitos"
+    },
+    "recoveryPhrase": {
+      "title": "Frase de Recuperación",
+      "description": "Tu frase de recuperación es la copia de seguridad maestra de tu billetera. Manténla segura y nunca la compartas con nadie",
+      "instruction": "Escríbela de forma segura"
+    },
+    "setupInfo": "💡 Configurarás tu PIN directamente en tu dispositivo KeepKey cuando lo conectes"
+  },
+  "mnemonics": {
+    "title": "Recuperación",
+    "subtitle": "Frases de Recuperación", 
+    "description": "Entiende las frases de recuperación",
+    "fullDescription": "Entendiendo las frases de recuperación y mejores prácticas de respaldo",
+    "securityWarning": {
+      "title": "Advertencia de Seguridad",
+      "description": "Nunca compartas tu frase de recuperación con nadie. El personal de KeepKey nunca te la pedirá",
+      "strongWarning": "¡Cualquiera con tu frase de recuperación puede robar tus fondos!"
+    },
+    "whatIs": {
+      "title": "¿Qué es una Frase de Recuperación?",
+      "point1": "• Una copia de seguridad de 12 palabras de toda tu billetera",
+      "point2": "• La única forma de recuperar fondos si el dispositivo se pierde",
+      "point3": "• Debe escribirse y almacenarse de forma segura",
+      "point4": "• Generada por tu KeepKey durante la configuración"
+    },
+    "preparation": "📝 Ten papel y bolígrafo listos cuando inicialices tu dispositivo KeepKey"
+  },
+  "complete": {
+    "title": "¡Configuración Completa!",
+    "subtitle": "Estás listo para comenzar a usar KeepKey",
+    "description": "¡Ya estás listo!",
+    "fullDescription": "Tu KeepKey está listo para la gestión segura de criptomonedas",
+    "message": "Tus preferencias han sido guardadas y ahora puedes conectar tu dispositivo KeepKey",
+    "startUsing": "Comenzar a usar KeepKey",
+    "viewTutorial": "Ver Tutorial",
+    "nextSteps": {
+      "title": "Próximos Pasos",
+      "step1": "1. Conecta tu dispositivo KeepKey vía USB",
+      "step2": "2. Sigue las indicaciones de configuración del dispositivo", 
+      "step3": "3. Comienza a gestionar tus criptoactivos de forma segura"
+    },
+    "help": "💡 ¿Necesitas ayuda? Visita nuestro centro de soporte o revisa los tutoriales integrados",
+    "tips": {
+      "title": "Consejos Rápidos",
+      "backup": "Siempre respalda tu frase de recuperación",
+      "update": "Mantén tu firmware actualizado",
+      "verify": "Siempre verifica las direcciones en el dispositivo"
+    }
   },
   "steps": {
     "language": "Idioma",
-    "app-settings": "Configuración de la aplicación",
+    "app-settings": "Configuración de la Aplicación",
     "pin": "Seguridad",
     "mnemonics": "Recuperación",
     "complete": "Completar"
   },
-  "complete": {
-    "startUsing": "Comenzar a usar KeepKey"
+  "skip": {
+    "title": "¿Saltar Configuración?",
+    "description": "Siempre puedes completar la configuración más tarde desde ajustes",
+    "confirm": "Saltar Configuración",
+    "cancel": "Continuar Configuración"
   }
 }

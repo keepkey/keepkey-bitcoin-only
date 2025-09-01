@@ -28,7 +28,8 @@ impl<T: UsbContext> UsbTransport<T> {
             .get_mut()
             .map_err(|_| rusb::Error::Other)?;
         
-        locked_handle.reset()?;
+        // Skip reset to prevent macOS re-enumeration issues
+        // locked_handle.reset()?;
 
         // Detaching the kernel driver is required to access HID devices on Mac OS and Linux.
         match locked_handle.set_auto_detach_kernel_driver(true) {

@@ -98,6 +98,26 @@ async fn open_url(app_handle: tauri::AppHandle, url: String) -> Result<(), Strin
 async fn restart_backend_startup(app: tauri::AppHandle) -> Result<(), String> {
     println!("🔄 PERFORMING COMPREHENSIVE USB DRIVER-LEVEL BACKEND RESTART");
     
+    // Check onboarding status before restarting device operations
+    let onboarding_complete = match commands::is_onboarded().await {
+        Ok(onboarded) => onboarded,
+        Err(e) => {
+            println!("⚠️ Failed to check onboarding status during restart: {}", e);
+            false // Default to not onboarded if we can't check
+        }
+    };
+    
+    if !onboarding_complete {
+        println!("🚪 OnboardingGate: User not onboarded - blocking backend restart and device operations");
+        // Emit status indicating we're waiting for onboarding
+        let _ = app.emit("application:state", serde_json::json!({
+            "status": "Waiting for onboarding completion...",
+            "connected": false,
+            "features": null
+        }));
+        return Ok(());
+    }
+    
     // Emit restart status
     let _ = app.emit("application:state", serde_json::json!({
         "status": "Performing USB driver-level restart...",
@@ -204,6 +224,26 @@ async fn restart_backend_startup(app: tauri::AppHandle) -> Result<(), String> {
             "features": null
         }));
     }
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn exit_app_with_restart(app: tauri::AppHandle) -> Result<(), String> {
+    println!("🔄 EXIT APP WITH FULL BACKEND RESTART REQUESTED");
+    
+    // First perform a backend restart to clean up everything
+    if let Err(e) = restart_backend_startup(app.clone()).await {
+        println!("⚠️ Backend restart failed before exit: {}", e);
+    }
+    
+    // Small delay to ensure cleanup completes
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    
+    println!("👋 Exiting application...");
+    
+    // Exit the application
+    app.exit(0);
     
     Ok(())
 }
@@ -372,8 +412,10 @@ pub fn run() {
             vault_open_app,
             open_url,
             restart_backend_startup,
+            exit_app_with_restart,
             // Frontend readiness
             commands::frontend_ready,
+            commands::start_device_operations,
             // Device operations - unified queue interface
             device::queue::add_to_device_queue,
             commands::get_queue_status,
@@ -408,6 +450,7 @@ pub fn run() {
             commands::pin_cancel,
             commands::get_device_interaction_state,
             commands::reset_device_interaction_state,
+            commands::reset_device_queue,
             // PIN management commands
             commands::enable_pin_protection,
             commands::disable_pin_protection,

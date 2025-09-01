@@ -8,7 +8,8 @@ import type { DeviceStatus, DeviceFeatures } from '../types/device'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { useWallet } from '../contexts/WalletContext'
-import { useDeviceInvalidStateDialog } from '../contexts/DialogContext'
+import { useDeviceInvalidStateDialog, usePinPassphraseDialog } from '../contexts/DialogContext'
+import { useOnboardingGate } from '../contexts/OnboardingGateContext'
 
 interface DeviceUpdateManagerProps {
   // Optional callback when all updates/setup is complete
@@ -44,6 +45,10 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
   
   // Get device invalid state dialog hook
   const deviceInvalidStateDialog = useDeviceInvalidStateDialog()
+  const authDialog = usePinPassphraseDialog()
+  
+  // Get onboarding gate state
+  const { allowDeviceInteractions, onboardingInProgress } = useOnboardingGate()
 
   // Function to try getting device status via command when events fail
   const tryGetDeviceStatus = async (deviceId: string, attempt = 1) => {
@@ -190,7 +195,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
       }
-    } else if (status.needsFirmwareUpdate) {  // Removed the && status.firmwareCheck check to handle bootloader mode
+    } else if (status.needsFirmwareUpdate) {
       // Only update firmware if device is NOT initialized
       // Initialized devices can skip firmware updates
       const isInitialized = status.features?.initialized === true
@@ -215,7 +220,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
           isInBootloaderMode
         })
         
-        // CRITICAL: Check if device is in bootloader mode
+        // CRITICAL: Only show firmware update if actually in bootloader mode
         if (isInBootloaderMode && !status.needsBootloaderUpdate) {
           // Device is already in bootloader mode with correct bootloader version
           // Show firmware update dialog directly
@@ -480,7 +485,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
       //   }
       // })
 
-      // Listen for passphrase unlock needed events
+      // Listen for passphrase unlock needed events from backend
       const passphraseUnlockUnsubscribe = listen<{
         deviceId: string
         features: DeviceFeatures
@@ -488,38 +493,93 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         needsPassphraseUnlock: boolean
       }>('device:passphrase-unlock-needed', async (event) => {
         console.log('🔐 DeviceUpdateManager: Passphrase unlock needed event received:', event.payload)
-        const { status } = event.payload
+        const deviceId = event.payload.deviceId
         
-        // CRITICAL: Hide any invalid state dialogs first - passphrase has priority (comes first in KeepKey flow)
-        if (deviceInvalidStateDialog.isShowing(status.deviceId)) {
+        // CRITICAL: Hide any invalid state dialogs first - passphrase has priority
+        if (deviceInvalidStateDialog.isShowing(deviceId)) {
           console.log('🔐 Hiding invalid state dialog to show passphrase dialog')
-          deviceInvalidStateDialog.hide(status.deviceId)
+          deviceInvalidStateDialog.hide(deviceId)
         }
         
+        // Get the status from the event
+        const { status } = event.payload
+        console.log('🔐 DeviceUpdateManager: Device status when passphrase requested:', status)
+        
         // Show passphrase unlock - this should trigger the passphrase request flow
-        console.log('🔐 DeviceUpdateManager: Passphrase protection enabled, need to unlock first')
+        console.log('🔐 DeviceUpdateManager: Device needs passphrase')
         setDeviceStatus(status)
-        setConnectedDeviceId(status.deviceId)
+        setConnectedDeviceId(deviceId)
         setShowEnterBootloaderMode(false)
         setShowBootloaderUpdate(false)
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
         setShowPinUnlock(false)
         
-        // Trigger PIN request ONCE per device to start the authentication flow
-        // Check if we've already triggered for this device
-        if (!pinTriggeredForDevice.current.has(status.deviceId)) {
-          pinTriggeredForDevice.current.add(status.deviceId)
-          
-          try {
-            console.log('🔐 DeviceUpdateManager: Triggering authentication flow for passphrase-protected device (first time)')
-            await invoke('trigger_pin_request', { deviceId: status.deviceId })
-          } catch (error) {
-            // This is expected - the device will go into PIN/passphrase flow
-            console.log('🔐 DeviceUpdateManager: Authentication flow triggered (expected error):', error)
-          }
+        // Show the unified auth dialog for PIN and/or passphrase
+        // The dialog will handle checking if PIN is needed first
+        if (!authDialog.isShowing(deviceId)) {
+          console.log('🔐 DeviceUpdateManager: Showing unified auth dialog for device:', deviceId)
+          authDialog.show({
+            deviceId: deviceId,
+            operationType: 'unlock',
+            onComplete: () => {
+              console.log('🔐 DeviceUpdateManager: Device authenticated successfully')
+              // Device is now unlocked, refresh the portfolio
+              if (refreshPortfolio) {
+                refreshPortfolio()
+              }
+            }
+          })
         } else {
-          console.log('🔐 DeviceUpdateManager: Already triggered PIN for this device, skipping duplicate trigger')
+          console.log('🔐 DeviceUpdateManager: Auth dialog already showing for device:', deviceId)
+        }
+      })
+
+      // Listen for bootloader detection event
+      const bootloaderDetectedUnsubscribe = listen<{
+        deviceId: string
+        isBootloader: boolean
+        message: string
+      }>('device:bootloader-detected', (event) => {
+        console.log('🔧 Bootloader detected event received:', event.payload)
+        const { deviceId, isBootloader, message } = event.payload
+        
+        if (isBootloader) {
+          console.log('🔧 Device is in bootloader/updater mode - showing firmware update dialog')
+          
+          // Clear other dialogs
+          setShowEnterBootloaderMode(false)
+          setShowBootloaderUpdate(false)
+          setShowWalletCreation(false)
+          setShowPinUnlock(false)
+          
+          // Create a minimal device status for firmware update
+          const bootloaderStatus: DeviceStatus = {
+            deviceId: deviceId,
+            connected: true,
+            needsFirmwareUpdate: true,
+            needsBootloaderUpdate: false,
+            needsInitialization: false,
+            needsPinUnlock: false,
+            firmwareCheck: {
+              currentVersion: 'Unknown',
+              latestVersion: '7.10.0',
+              needsUpdate: true
+            },
+            features: {
+              bootloader_mode: true,
+              bootloaderMode: true,
+              initialized: false
+            } as DeviceFeatures
+          }
+          
+          setDeviceStatus(bootloaderStatus)
+          setConnectedDeviceId(deviceId)
+          setShowFirmwareUpdate(true)
+        } else {
+          // Guard: if backend sent non-bootloader event, ensure we don't show firmware dialog
+          console.log('🔧 Bootloader detection event indicates NOT in bootloader; suppress firmware dialog')
+          setShowFirmwareUpdate(false)
         }
       })
 
@@ -582,6 +642,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         // pinRequestTriggeredUnsubscribe is commented out to prevent duplicate PIN dialogs
         // ;(await pinRequestTriggeredUnsubscribe)()
         ;(await passphraseUnlockUnsubscribe)()
+        ;(await bootloaderDetectedUnsubscribe)()
         ;(await disconnectedUnsubscribe)()
         if (timeoutId) clearTimeout(timeoutId)
       }
@@ -718,6 +779,12 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
   const handlePinUnlockClose = () => {
     setShowPinUnlock(false)
     // Don't call onComplete - user cancelled PIN entry
+  }
+
+  // Don't render anything during onboarding - this prevents device dialogs from interrupting
+  if (onboardingInProgress) {
+    console.log('🚪 DeviceUpdateManager: Onboarding in progress - not rendering device dialogs')
+    return null
   }
 
   // If setup wizard is active, we should still render it even without deviceStatus

@@ -13,6 +13,7 @@ import { SiBitcoin } from 'react-icons/si';
 import { useWallet } from '../contexts/WalletContext';
 import { useTranslation } from 'react-i18next';
 import { useCurrencyFormatter } from '../utils/currency';
+import { invoke } from '@tauri-apps/api/core';
 
 interface PortfolioProps {
   onNavigate?: (action: 'send' | 'receive') => void;
@@ -24,8 +25,45 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
   const { formatCurrency, formatNumber } = useCurrencyFormatter();
   const [showStartButton, setShowStartButton] = React.useState(false);
   const [syncingTime, setSyncingTime] = React.useState(0);
+  const [hasTriggeredReset, setHasTriggeredReset] = React.useState(false);
 
   // console.log('portfolio: ', portfolio);
+
+  // Auto-restart backend when "No KeepKey device connected" error appears
+  React.useEffect(() => {
+    if (error && error.includes('No KeepKey device connected') && !hasTriggeredReset) {
+      console.log('🔄 No KeepKey device connected - scheduling automatic backend restart in 5 seconds...');
+      setHasTriggeredReset(true);
+      
+      const resetTimer = setTimeout(async () => {
+        try {
+          console.log('🚀 Auto-restarting backend due to no device connected...');
+          await invoke('restart_backend_startup');
+          console.log('✅ Backend restart initiated successfully');
+          
+          // Signal backend that frontend is ready after a short delay
+          setTimeout(async () => {
+            try {
+              await invoke('frontend_ready');
+              console.log('✅ Frontend ready signal sent');
+            } catch (err) {
+              console.log('frontend_ready command failed:', err);
+            }
+          }, 1000);
+          
+          // Reset the flag after some time to allow future resets if needed
+          setTimeout(() => {
+            setHasTriggeredReset(false);
+          }, 30000); // Reset flag after 30 seconds
+        } catch (err) {
+          console.error('Failed to auto-restart backend:', err);
+          setHasTriggeredReset(false); // Reset on error to allow retry
+        }
+      }, 5000); // Wait 5 seconds before restarting
+      
+      return () => clearTimeout(resetTimer);
+    }
+  }, [error, hasTriggeredReset]);
 
   // Timer to show the start button after 15 seconds
   React.useEffect(() => {
@@ -111,6 +149,14 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNavigate }) => {
           border="1px solid rgba(255, 255, 255, 0.1)"
         >
           <Text color="red.400" textAlign="center">{error}</Text>
+          {error.includes('No KeepKey device connected') && (
+            <VStack gap={2}>
+              <Spinner size="sm" color="blue.400" />
+              <Text color="gray.400" fontSize="sm">
+                Restarting connection in a few seconds...
+              </Text>
+            </VStack>
+          )}
         </VStack>
       </Box>
     );

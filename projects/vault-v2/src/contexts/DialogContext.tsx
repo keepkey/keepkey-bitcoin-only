@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, Suspense, startTransition } from 'react';
+import { assertSingleProviderMount, clearProviderMount } from './DialogSingletonGuard';
+import { tryClaimActiveMount, releaseActiveMount } from './DialogActivationGate';
 
 export type DialogPriority = 'low' | 'normal' | 'high' | 'critical';
 
@@ -50,6 +52,12 @@ const PRIORITY_ORDER: Record<DialogPriority, number> = {
 };
 
 export function DialogProvider({ children }: { children: React.ReactNode }) {
+  // Singleton provider protection - throw if multiple providers mount
+  useEffect(() => {
+    assertSingleProviderMount();
+    return () => clearProviderMount();
+  }, []);
+
   const [state, setState] = useState<DialogState>({
     queue: [],
     active: null,
@@ -57,6 +65,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   });
   
   const focusCount = useRef(0);
+  const inFlightIds = useRef<Set<string>>(new Set());
 
   // Process queue to determine which dialog should be active
   const processQueue = useCallback((queue: DialogConfig[]) => {
@@ -65,6 +74,12 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Check for critical security dialogs that must be shown immediately
+    // Combined PIN/Passphrase dialog has highest priority when present
+    const pinPassphraseDialog = queue.find(d => d.id.includes('pin-passphrase'));
+    if (pinPassphraseDialog) {
+      return pinPassphraseDialog;
+    }
+    
     // PIN dialog has highest priority when present
     const pinDialog = queue.find(d => d.id.includes('pin-unlock'));
     if (pinDialog) {
@@ -87,86 +102,94 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     return sorted[0];
   }, []);
 
-  // Show a dialog
+  // Show a dialog with atomic race-condition protection
   const show = useCallback((config: DialogConfig) => {
     console.log(`🎯 [DialogContext] show() called for dialog:`, config.id, config.priority);
-    console.log(`🎯 [DialogContext] Current queue before:`, state.queue.map(d => d.id));
-    console.log(`🎯 [DialogContext] Current active before:`, state.active?.id);
     
-    // Special handling for PIN dialog - it should always take priority when device is ready
-    const isPinDialog = config.id.includes('pin-unlock');
-    
+    // Single-flight guard to prevent same-tick races
+    if (inFlightIds.current.has(config.id)) {
+      console.log(`🚫 [DialogContext] in-flight duplicate blocked: ${config.id}`);
+      return;
+    }
+    inFlightIds.current.add(config.id);
+
     // Use startTransition to avoid synchronous suspense issues with lazy components
     startTransition(() => {
-      setState((prevState) => {
-        // Check if dialog already exists in queue
-        const exists = prevState.queue.some(d => d.id === config.id);
-        if (exists) {
-          console.warn(`🎯 [DialogContext] Dialog with id "${config.id}" already exists in queue`);
-          // For passphrase dialogs, ensure they become active after PIN closes
-          if (config.id.includes('passphrase') && !prevState.active) {
-            // PIN just closed, make passphrase active
-            return {
-              ...prevState,
-              active: prevState.queue.find(d => d.id === config.id)
-            };
-          }
-          return prevState;
+      setState(prev => {
+        // 1) If already active with same id → no-op
+        if (prev.active?.id === config.id) {
+          inFlightIds.current.delete(config.id);
+          console.log(`🚫 [DialogContext] Dialog "${config.id}" already active`);
+          return prev;
         }
-        
-        // If this is a critical dialog or PIN dialog, remove lower priority dialogs
-        let newQueue = [...prevState.queue];
-        if (config.priority === 'critical' || isPinDialog) {
-          // Remove non-critical dialogs except for PIN and passphrase dialogs
-          newQueue = newQueue.filter(d => {
-            const dialogPriority = PRIORITY_ORDER[d.priority || 'normal'];
-            const configPriority = PRIORITY_ORDER[config.priority || 'normal'];
-            const isDialogPin = d.id.includes('pin-unlock');
-            const isDialogPassphrase = d.id.includes('passphrase');
-            
-            // Keep dialog if:
-            // 1. It's a PIN dialog (PIN dialogs are always kept)
-            // 2. It's a passphrase dialog (passphrase follows PIN)
-            // 3. It has equal or higher priority than the new dialog
-            return isDialogPin || isDialogPassphrase || dialogPriority >= configPriority;
+
+        // 2) If already queued with same id → no-op
+        if (prev.queue.some(d => d.id === config.id)) {
+          inFlightIds.current.delete(config.id);
+          console.log(`🚫 [DialogContext] Dialog "${config.id}" already queued`);
+          return prev;
+        }
+
+        // 3) Start from existing queue; if critical/pin, prune lower-priority
+        let newQueue = [...prev.queue];
+
+        const isPin = config.id.includes('pin-unlock');
+        const isPinPass = config.id.includes('pin-passphrase');
+        const cfgPri = PRIORITY_ORDER[config.priority || 'normal'];
+
+        if (config.priority === 'critical' || isPin || isPinPass) {
+          newQueue = newQueue.filter((d, idx, self) => {
+            // Ensure uniqueness among existing (defensive)
+            const first = self.findIndex(x => x.id === d.id) === idx;
+            if (!first) return false;
+
+            const dPri = PRIORITY_ORDER[d.priority || 'normal'];
+            const dIsPin = d.id.includes('pin-unlock');
+            return dIsPin || dPri >= cfgPri;
           });
           
           // Call onClose for removed dialogs
-          prevState.queue.forEach(dialog => {
+          prev.queue.forEach(dialog => {
             if (!newQueue.some(d => d.id === dialog.id) && dialog.onClose) {
               console.log(`🎯 [DialogContext] Closing lower priority dialog:`, dialog.id);
-              dialog.onClose();
+              setTimeout(() => dialog.onClose?.(), 0);
             }
           });
         }
-        
-        // Add the new dialog
+
+        // 4) Push new config
         newQueue.push(config);
-        
-        // Process queue with special PIN handling
+
+        // 5) Hard de-dupe *after* push (atomic) — keep the first occurrence
+        const seen = new Set<string>();
+        newQueue = newQueue.filter(d => {
+          if (seen.has(d.id)) return false;
+          seen.add(d.id);
+          return true;
+        });
+
+        // 6) Recompute active with your priority rules
         let newActive = processQueue(newQueue);
-        
-        // If a PIN dialog is in the queue and device is ready, it should always be active
-        const pinDialog = newQueue.find(d => d.id.includes('pin-unlock'));
-        if (pinDialog && (isPinDialog || !prevState.active?.id.includes('pin-unlock'))) {
-          newActive = pinDialog;
+
+        const pinPassDialog = newQueue.find(d => d.id.includes('pin-passphrase'));
+        if (pinPassDialog) {
+          newActive = pinPassDialog;
+        } else {
+          const pinDialog = newQueue.find(d => d.id.includes('pin-unlock'));
+          if (pinDialog) newActive = pinDialog;
         }
-        
+
         console.log(`🎯 [DialogContext] New queue:`, newQueue.map(d => d.id));
         console.log(`🎯 [DialogContext] New active:`, newActive?.id);
-        
-        // Call onOpen if this dialog becomes active
+
+        // 7) Fire onOpen if this one becomes active
         if (newActive?.id === config.id && config.onOpen) {
-          console.log(`🎯 [DialogContext] Calling onOpen for:`, config.id);
-          config.onOpen();
+          // fire after state commit
+          setTimeout(() => config.onOpen?.(), 0);
         }
-        
-        return {
-          ...prevState,
-          queue: newQueue,
-          active: newActive,
-          history: [...prevState.history, config.id],
-        };
+
+        inFlightIds.current.delete(config.id);
+        return { ...prev, queue: newQueue, active: newActive, history: [...prev.history, config.id] };
       });
     });
   }, [processQueue]);
@@ -205,14 +228,14 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       if (dialog?.onClose) {
         // Use setTimeout to ensure state update happens first
         setTimeout(() => {
-          dialog.onClose();
+          dialog.onClose?.();
         }, 0);
       }
       
       // If active dialog changed, call onOpen for new active
       if (wasActive && newActive && newActive.onOpen) {
         setTimeout(() => {
-          newActive.onOpen();
+          newActive.onOpen?.();
         }, 0);
       }
       
@@ -226,7 +249,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       // Call onClose for all dialogs
       prevState.queue.forEach(dialog => {
         if (dialog.onClose) {
-          dialog.onClose();
+          dialog.onClose?.();
         }
       });
       
@@ -238,21 +261,23 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Hide all dialogs except a specific one
+  // Hide all dialogs except a specific one - guarantees only one remains
   const hideAllExcept = useCallback((id: string) => {
     setState((prevState) => {
       const dialogToKeep = prevState.queue.find(d => d.id === id);
       if (!dialogToKeep) {
+        console.warn(`[DialogContext] hideAllExcept: dialog "${id}" not found`);
         return prevState;
       }
       
       // Call onClose for all other dialogs
       prevState.queue.forEach(dialog => {
         if (dialog.id !== id && dialog.onClose) {
-          dialog.onClose();
+          setTimeout(() => dialog.onClose?.(), 0);
         }
       });
       
+      // HARD guarantee: only the specified dialog remains
       return {
         ...prevState,
         queue: [dialogToKeep],
@@ -266,10 +291,10 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     return state.queue;
   }, [state.queue]);
 
-  // Check if a dialog is showing
+  // Check if a dialog is showing (active OR queued)
   const isShowing = useCallback((id: string) => {
-    return state.active?.id === id;
-  }, [state.active]);
+    return state.active?.id === id || state.queue.some(d => d.id === id);
+  }, [state.active, state.queue]);
 
   // Request app focus (for critical dialogs)
   const requestAppFocus = useCallback(async () => {
@@ -340,7 +365,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               left: 0, 
               right: 0, 
               bottom: 0, 
-              zIndex: state.active.id.includes('pin-unlock') ? 99999 : 9999,
+              zIndex: state.active.id.includes('pin-passphrase') ? 100000 : state.active.id.includes('pin-unlock') ? 99999 : 9999,
               backgroundColor: 'rgba(0, 0, 0, 0.8)',
               display: 'flex',
               alignItems: 'center',
@@ -425,8 +450,25 @@ class DialogErrorBoundary extends React.Component<
   }
 }
 
-// Dialog renderer component with proper Suspense and error boundary handling
+// Dialog renderer component with activation gate and proper Suspense handling
 function DialogRenderer({ dialog, onClose }: { dialog: DialogConfig; onClose: () => void }) {
+  const claimed = useRef(false);
+
+  // Try to claim the active mount slot - prevents multiple dialogs in DOM
+  if (!claimed.current) {
+    claimed.current = tryClaimActiveMount(dialog.id);
+  }
+  
+  useEffect(() => {
+    return () => releaseActiveMount(dialog.id);
+  }, [dialog.id]);
+
+  // If another dialog is already mounted, refuse to render this one
+  if (!claimed.current) {
+    console.warn(`[DialogRenderer] Mount denied for "${dialog.id}" - another dialog already active`);
+    return null;
+  }
+
   const Component = dialog.component;
   
   const handleClose = useCallback(() => {
@@ -874,5 +916,52 @@ export function usePinSetupDialog() {
     },
     hide: (deviceId: string) => hide(`pin-setup-${deviceId}`),
     isShowing: (deviceId: string) => isShowing(`pin-setup-${deviceId}`),
+  };
+}
+
+// Pre-configured dialog for combined PIN and Passphrase entry
+export function usePinPassphraseDialog() {
+  const { show, hide, isShowing } = useDialog();
+  return {
+    show: (props: {
+      deviceId: string;
+      requestId?: string;
+      operationType?: string;
+      onComplete?: () => void;
+      onCancel?: () => void;
+      onDialogClose?: () => void;
+    }) => {
+      const dialogId = `pin-passphrase-${props.deviceId}`;
+      console.log(`🔐 [PinPassphraseDialog] show() called for device:`, props.deviceId);
+      
+      show({
+        id: dialogId,
+        component: React.lazy(() => import('../components/PinPassphraseDialog').then(m => ({ default: m.PinPassphraseDialog }))),
+        props: {
+          isOpen: true,
+          deviceId: props.deviceId,
+          requestId: props.requestId,
+          operationType: props.operationType,
+          onComplete: () => {
+            console.log(`🔐 [PinPassphraseDialog] Authentication completed successfully`);
+            if (props.onComplete) props.onComplete();
+            hide(dialogId);
+          },
+          onCancel: () => {
+            console.log(`🔐 [PinPassphraseDialog] Authentication cancelled`);
+            if (props.onCancel) props.onCancel();
+          },
+          onClose: () => {
+            console.log(`🔐 [PinPassphraseDialog] Dialog closed`);
+            if (props.onDialogClose) props.onDialogClose();
+            hide(dialogId);
+          }
+        },
+        priority: 'critical', // Highest priority for authentication flow
+        persistent: true, // User must complete or explicitly close
+      });
+    },
+    hide: (deviceId: string) => hide(`pin-passphrase-${deviceId}`),
+    isShowing: (deviceId: string) => isShowing(`pin-passphrase-${deviceId}`),
   };
 }

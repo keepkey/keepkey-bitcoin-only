@@ -1,19 +1,22 @@
 import { VStack, Text, Button, Box, Icon, HStack } from "@chakra-ui/react";
 import { FaPlus, FaKey } from "react-icons/fa";
+import { useTypedTranslation } from "../../../hooks/useTypedTranslation";
 
 interface Step1CreateOrRecoverProps {
   onFlowTypeSelect: (type: 'create' | 'recover') => void;
 }
 
 export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverProps) {
+  const { t } = useTypedTranslation('setup');
+  
   return (
     <VStack gap={{ base: 4, md: 6, lg: 8 }} w="100%">
       <VStack gap={2}>
         <Text fontSize={{ base: "xl", md: "2xl" }} fontWeight="bold" color="white" textAlign="center">
-          Choose Setup Method
+          {t('setupMethod.title')}
         </Text>
         <Text fontSize={{ base: "sm", md: "md" }} color="gray.400" textAlign="center">
-          Create a new wallet or restore an existing one
+          {t('setupMethod.subtitle')}
         </Text>
       </VStack>
 
@@ -53,10 +56,10 @@ export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverP
             </Box>
             <VStack gap={2}>
               <Text fontSize={{ base: "lg", md: "xl" }} fontWeight="bold" color="white">
-                Create New Wallet
+                {t('setupMethod.createWallet.title')}
               </Text>
               <Text fontSize={{ base: "xs", md: "sm" }} color="gray.400" textAlign="center">
-                Generate a new recovery phrase and set up a fresh wallet
+                {t('setupMethod.createWallet.description')}
               </Text>
             </VStack>
             <Button
@@ -68,7 +71,7 @@ export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverP
                 onFlowTypeSelect('create');
               }}
             >
-              Create New
+              {t('setupMethod.createWallet.button')}
             </Button>
           </VStack>
         </Box>
@@ -103,10 +106,10 @@ export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverP
             </Box>
             <VStack gap={2}>
               <Text fontSize={{ base: "lg", md: "xl" }} fontWeight="bold" color="white">
-                Recover Wallet
+                {t('setupMethod.recoverWallet.title')}
               </Text>
               <Text fontSize={{ base: "xs", md: "sm" }} color="gray.400" textAlign="center">
-                Restore your wallet using an existing recovery phrase
+                {t('setupMethod.recoverWallet.description')}
               </Text>
             </VStack>
             <Button
@@ -118,7 +121,7 @@ export function Step1CreateOrRecover({ onFlowTypeSelect }: Step1CreateOrRecoverP
                 onFlowTypeSelect('recover');
               }}
             >
-              Recover
+              {t('setupMethod.recoverWallet.button')}
             </Button>
           </VStack>
         </Box>

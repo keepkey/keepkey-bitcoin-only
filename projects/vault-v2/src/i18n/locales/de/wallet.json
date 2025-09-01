@@ -22,14 +22,129 @@
   },
   "send": {
     "title": "Senden",
-    "recipient": "Empfänger",
+    "titleBitcoin": "Bitcoin Senden",
+    "subtitle": "Geld aus Ihrer Wallet senden",
+    "selectAsset": "Asset Auswählen",
+    "recipient": "Empfängeradresse",
+    "recipientPlaceholder": "Bitcoin-Adresse eingeben",
     "amount": "Betrag",
-    "fee": "Gebühr",
+    "amountPlaceholder": "Betrag eingeben",
+    "max": "Max",
+    "fee": "Netzwerkgebühr",
     "total": "Gesamt",
-    "confirm": "Senden bestätigen",
-    "sending": "Wird gesendet...",
-    "success": "Transaktion erfolgreich gesendet",
-    "error": "Fehler beim Senden"
+    "memo": "Memo (optional)",
+    "review": "Transaktion Überprüfen",
+    "reviewDetails": "Details Überprüfen",
+    "confirm": "Bestätigen und Senden",
+    "sign": "Transaktion Signieren",
+    "signPreparing": "Vorbereitung...",
+    "signTransaction": "Transaktion Signieren",
+    "sending": "Transaktion wird gesendet...",
+    "broadcasting": "Übertragung...",
+    "broadcasted": "Transaktion übertragen",
+    "broadcastSuccess": "Transaktion erfolgreich übertragen! ✅",
+    "transactionComplete": "Transaktion Abgeschlossen",
+    "transactionSigned": "Transaktion erfolgreich signiert!",
+    "transactionSignedMessage": "Ihre Transaktion wurde erfolgreich signiert",
+    "failed": "Transaktion fehlgeschlagen",
+    "failedToBuild": "Fehler beim Erstellen der Transaktion",
+    "failedToSign": "Fehler beim Signieren der Transaktion",
+    "failedToBroadcast": "Fehler beim Übertragen der Transaktion",
+    "noTransactionToSign": "Keine Transaktion zum Signieren",
+    "noSignedTransaction": "Keine signierte Transaktion zum Übertragen",
+    "insufficient": "Unzureichendes Guthaben",
+    "invalidAddress": "Ungültige Bitcoin-Adresse",
+    "invalidAddressFormat": "Ungültiges Bitcoin-Adressformat",
+    "enterValidRecipientAndAmount": "Bitte geben Sie eine gültige Empfängeradresse und einen Betrag ein",
+    "amountMustBeGreater": "Betrag muss größer als 0 sein",
+    "noKeepKeyConnected": "Kein KeepKey-Gerät verbunden",
+    "noXpubsFound": "Keine Bitcoin-xpubs gefunden. Bitte synchronisieren Sie zuerst Ihre Wallet.",
+    "emptySignedTx": "Leere oder null signierte Transaktions-Hex empfangen",
+    "unableToLoadFeeRates": "Aktuelle Gebühren konnten nicht geladen werden, verwende Schätzungen",
+    "failedToCopyTxid": "Fehler beim Kopieren der TXID in die Zwischenablage",
+    "scanQrCode": "QR-Code scannen",
+    "goBack": "Zurück",
+    "back": "Zurück",
+    "availableBalance": "Verfügbares Guthaben",
+    "estimatedFee": "Geschätzte Gebühr",
+    "estimatedTotal": "Geschätzter Gesamtbetrag",
+    "compose": "Erstellen",
+    "composeTransaction": "Transaktion Erstellen",
+    "reviewingTransaction": "Transaktion Überprüfen",
+    "signingTransaction": "Transaktion Signieren",
+    "confirmOnDevice": "Bitte bestätigen Sie die Transaktion auf Ihrem KeepKey-Gerät",
+    "complete": "Abschließen",
+    "building": "Erstelle...",
+    "buildingTransaction": "Transaktion wird erstellt...",
+    "feeLevel": {
+      "slow": "Langsam",
+      "normal": "Normal",
+      "medium": "Mittel",
+      "fast": "Schnell",
+      "custom": "Benutzerdefiniert"
+    },
+    "available": "Verfügbar",
+    "noBalanceWarning": "⚠️ Kein verfügbares Guthaben. Bitte laden Sie Ihre Wallet auf.",
+    "loadingWallet": "Wallet wird geladen...",
+    "validAddress": "✓ Gültige Bitcoin-Adresse",
+    "maxSendWarning": "💰 MAX SENDEN: Sendet alle verfügbaren Mittel abzüglich Netzwerkgebühren",
+    "qrCodeNotImplemented": "QR-Code-Scannen wird später implementiert",
+    "insufficientBalanceDetailed": "Unzureichendes Guthaben. Verfügbar: {{available}} {{currency}}",
+    "feeEstimate": {
+      "slow": "~60 min",
+      "medium": "~30 min",
+      "fast": "~10 min"
+    },
+    "summary": {
+      "title": "Transaktionsübersicht",
+      "from": "Von",
+      "to": "An",
+      "amount": "Betrag",
+      "fee": "Gebühr",
+      "feeRate": "Gebührensatz",
+      "total": "Gesamt",
+      "inputs": "Eingänge",
+      "outputs": "Ausgänge"
+    },
+    "signedTransaction": {
+      "title": "Signierte Transaktion",
+      "show": "Anzeigen",
+      "hide": "Verbergen",
+      "copyHex": "Transaktions-Hex kopieren",
+      "hexCopied": "Transaktions-Hex kopiert!"
+    },
+    "broadcastResult": {
+      "success": "Transaktionsübertragung Erfolgreich",
+      "successMessage": "Ihre Transaktion wurde an das Bitcoin-Netzwerk übermittelt",
+      "txid": "Transaktions-ID",
+      "copyTxid": "TXID Kopieren",
+      "viewOnMempool": "In Mempool Anzeigen",
+      "sendAnother": "Weitere Transaktion Senden",
+      "viewOnExplorer": "Im Explorer Anzeigen",
+      "confirmations": "Bestätigungen werden in Kürze erscheinen"
+    },
+    "errors": {
+      "generic": "Ein Fehler ist aufgetreten",
+      "unknownBroadcast": "Unbekannter Übertragungsfehler"
+    },
+    "steps": {
+      "compose": {
+        "title": "Transaktion Erstellen",
+        "number": "1"
+      },
+      "review": {
+        "title": "Details Überprüfen",
+        "number": "2"
+      },
+      "sign": {
+        "title": "Transaktion Signieren",
+        "number": "3"
+      },
+      "complete": {
+        "title": "Transaktion Abgeschlossen",
+        "number": "4"
+      }
+    }
   },
   "receive": {
     "title": "Empfangen",

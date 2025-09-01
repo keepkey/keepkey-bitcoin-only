@@ -103,11 +103,41 @@ pub async fn add_to_device_queue(
     }
     
     // ------------------------------------------------------------------
+    // Check if device has an active passphrase request - BLOCK OTHER REQUESTS
+    // ------------------------------------------------------------------
+    let has_active_passphrase = {
+        let passphrase_state = PASSPHRASE_REQUEST_STATE.read().await;
+        passphrase_state.get(&request.device_id).map_or(false, |state| state.is_active)
+    };
+    
+    if has_active_passphrase {
+        // Don't interrupt passphrase flow with ANY device operations
+        match &request.request {
+            DeviceRequest::GetXpub { .. } | 
+            DeviceRequest::GetAddress { .. } | 
+            DeviceRequest::SignTransaction { .. } | 
+            DeviceRequest::GetFeatures => {
+                println!("🚫 BLOCKING request during passphrase flow - device is awaiting passphrase");
+                return Err("PASSPHRASE_REQUIRED".to_string());  // Return same error so frontend knows
+            },
+            DeviceRequest::SendRaw { .. } => {
+                // Allow SendRaw as it might be the PassphraseAck
+            }
+        }
+    }
+    
+    // ------------------------------------------------------------------
     // Pre-flight status check – ensure the device can service this request
     // ------------------------------------------------------------------
-    // Skip GetFeatures if device is in PIN flow to avoid interrupting the PIN screen
-    let raw_features_opt = if crate::commands::is_device_in_pin_flow(&request.device_id) {
-        println!("⚠️ Skipping GetFeatures check - device is in PIN flow");
+    
+    // Skip GetFeatures if device is in PIN flow OR has active passphrase request to avoid disrupting
+    let raw_features_opt = if crate::commands::is_device_in_pin_flow(&request.device_id) || has_active_passphrase {
+        if crate::commands::is_device_in_pin_flow(&request.device_id) {
+            println!("⚠️ Skipping GetFeatures check - device is in PIN flow");
+        }
+        if has_active_passphrase {
+            println!("⚠️ Skipping GetFeatures check - device has active passphrase request");
+        }
         // Check cache for last known features
         let cache = DEVICE_STATE_CACHE.read().await;
         cache.get(&request.device_id).and_then(|state| state.last_features.clone())
@@ -185,16 +215,21 @@ pub async fn add_to_device_queue(
         return Err("Device is currently in PIN creation flow. Please complete PIN setup before making other requests.".to_string());
     }
 
-    // Only block requests if we have confirmed the device needs updates
+    // Only block requests if device needs bootloader update or initialization
+    // Firmware updates should NOT block GetXpub or other basic operations
     // Don't block if we simply can't determine the state (OOB bootloader case)
-    if raw_features_opt.is_some() && (status.needs_bootloader_update || status.needs_firmware_update || status.needs_initialization) {
+    if raw_features_opt.is_some() && (status.needs_bootloader_update || status.needs_initialization) {
         let mut reasons = Vec::new();
         if status.needs_bootloader_update { reasons.push("bootloader update"); }
-        if status.needs_firmware_update { reasons.push("firmware update"); }
         if status.needs_initialization   { reasons.push("initialization"); }
         let reason_str = reasons.join(", ");
         println!("🚫 Rejecting {request_type} request – device requires {reason_str}");
         return Err(format!("Device cannot process requests until {} is completed.", reason_str));
+    }
+    
+    // Log a warning for firmware updates but don't block operations
+    if raw_features_opt.is_some() && status.needs_firmware_update {
+        println!("⚠️ Device needs firmware update but allowing {request_type} request to proceed");
     }
 
     // Automatically trigger PIN entry for authenticated requests if device needs PIN unlock (except GetFeatures)

@@ -1,5 +1,5 @@
 use super::Transport;
-use core::{cmp::min, iter::repeat, time::Duration};
+use core::time::Duration;
 use rusb::{ConfigDescriptor, Device, DeviceHandle, UsbContext};
 use std::{
     sync::{Arc, Mutex},
@@ -71,7 +71,7 @@ impl<T: UsbContext> WebUsbTransport<T> {
         let interface_descriptor = interface_descriptors.next().ok_or(rusb::Error::NotFound)?;
         locked_handle.set_alternate_setting(interface.number(), 0)?;
 
-        let mut endpoint_descriptors = interface_descriptor.endpoint_descriptors();
+        let endpoint_descriptors = interface_descriptor.endpoint_descriptors();
         let endpoints: Vec<_> = endpoint_descriptors.collect();
         
         println!("🔧 WebUSB: Found {} endpoints in interface", endpoints.len());

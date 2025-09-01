@@ -607,7 +607,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                         variant="outline"
                         colorScheme="blue"
                         onClick={refreshReceiveIndex}
-                        isLoading={!indexLoaded}
+                        loading={!indexLoaded}
                         loadingText="..."
                         minW="60px"
                         title="Click to refresh receive index"
@@ -622,7 +622,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                         variant="outline"
                         colorScheme="green"
                         onClick={refreshChangeIndex}
-                        isLoading={!changeIndexLoaded}
+                        loading={!changeIndexLoaded}
                         loadingText="..."
                         minW="60px"
                         title="Click to refresh change index"
@@ -644,7 +644,7 @@ const Receive: React.FC<ReceiveProps> = ({ onBack }) => {
                 <Button
                   colorScheme="blue"
                   size="lg"
-                  onClick={generateAddress}
+                  onClick={() => generateAddress()}
                   disabled={loading || !btcAsset}
                   minW="200px"
                 >

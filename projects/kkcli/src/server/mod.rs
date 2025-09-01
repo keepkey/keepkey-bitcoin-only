@@ -56,7 +56,7 @@ pub struct ServerState {
 
 // Constants
 pub(crate) const DEVICE_IDS: &[(u16, u16)] = &[(0x2b24, 0x0001), (0x2b24, 0x0002)];
-pub(crate) const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const DEVICE_OPERATION_TIMEOUT: Duration = Duration::from_secs(120); // Increased to 2 minutes for user confirmation
 
 // API Documentation
 #[derive(OpenApi)]

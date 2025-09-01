@@ -821,7 +821,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
         >
           <HStack gap={2}>
             {loading ? <Spinner size="sm" /> : <FaEye />}
-            <Text>{loading ? 'Building...' : 'Review Transaction'}</Text>
+            <Text>{loading ? t('send.building') : t('send.review')}</Text>
           </HStack>
         </Button>
       </VStack>
@@ -834,29 +834,29 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
     return (
       <VStack gap={6}>
         <Box bg="gray.800" p={6} borderRadius="lg" w="100%">
-          <Heading size="md" color="white" mb={4}>Transaction Details</Heading>
+          <Heading size="md" color="white" mb={4}>{t('send.summary.title')}</Heading>
           <VStack gap={4} align="stretch">
             <HStack justify="space-between">
-              <Text color="gray.400">To:</Text>
+              <Text color="gray.400">{t('send.summary.to')}:</Text>
               <Code fontSize="sm" colorScheme="blue">{transactionReview.to}</Code>
             </HStack>
             <HStack justify="space-between">
-              <Text color="gray.400">Amount:</Text>
+              <Text color="gray.400">{t('send.summary.amount')}:</Text>
               <Text color="white" fontWeight="bold">{transactionReview.amount}</Text>
             </HStack>
             <HStack justify="space-between">
-              <Text color="gray.400">Fee Rate:</Text>
+              <Text color="gray.400">{t('send.summary.feeRate')}:</Text>
               <Text color="white">{transactionReview.feeRate} sat/vB</Text>
             </HStack>
             <HStack justify="space-between">
-              <Text color="gray.400">Est. Fee:</Text>
+              <Text color="gray.400">{t('send.estimatedFee')}:</Text>
               <VStack align="end" gap={0}>
                 <Text color="white">{transactionReview.fee.toFixed(8)} BTC</Text>
                 <Text color="gray.500" fontSize="xs">≈ ${convertBtcToUsd(transactionReview.fee).toFixed(2)} USD</Text>
               </VStack>
             </HStack>
             <HStack justify="space-between" borderTop="1px solid" borderColor="gray.600" pt={2}>
-              <Text color="gray.400" fontWeight="bold">Total:</Text>
+              <Text color="gray.400" fontWeight="bold">{t('send.summary.total')}:</Text>
               <VStack align="end" gap={0}>
                 <Text color="orange.300" fontWeight="bold">{transactionReview.total.toFixed(8)} BTC</Text>
                 <Text color="gray.500" fontSize="xs">≈ ${convertBtcToUsd(transactionReview.total).toFixed(2)} USD</Text>
@@ -875,7 +875,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
           >
             <HStack gap={2}>
               {loading ? <Spinner size="sm" /> : <FaSignature />}
-              <Text>{loading ? 'Preparing...' : 'Sign Transaction'}</Text>
+              <Text>{loading ? t('send.signPreparing') : t('send.signTransaction')}</Text>
             </HStack>
           </Button>
           <Button
@@ -883,7 +883,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
             color="gray.400"
             onClick={handleStepBack}
           >
-            Back to Edit
+            {t('send.back')}
           </Button>
         </VStack>
 
@@ -904,9 +904,9 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
             <Box color="blue.400" fontSize="4xl">
               <FaSignature />
             </Box>
-            <Heading size="md" color="white">Signing Transaction</Heading>
+            <Heading size="md" color="white">{t('send.signingTransaction')}</Heading>
             <Text color="gray.400" textAlign="center">
-              Please confirm the transaction on your KeepKey device
+              {t('send.confirmOnDevice')}
             </Text>
             <Spinner size="lg" color="blue.400" />
           </VStack>
@@ -929,9 +929,9 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
             <Box color="green.400" fontSize="3xl">
               <FaCheck />
             </Box>
-            <Heading size="md" color="white">Transaction Signed!</Heading>
+            <Heading size="md" color="white">{t('send.transactionSigned')}</Heading>
             <Text color="gray.400" textAlign="center" fontSize="sm">
-              Your transaction has been successfully signed
+              {t('send.transactionSignedMessage')}
             </Text>
 
             {signedTransaction && (
@@ -944,7 +944,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
                   _hover={{ color: "white" }}
                 >
                   <HStack gap={2}>
-                    <Text>{isShowingHex ? 'Hide' : 'Show'} Signed Transaction</Text>
+                    <Text>{isShowingHex ? t('send.signedTransaction.hide') : t('send.signedTransaction.show')} {t('send.signedTransaction.title')}</Text>
                     {isShowingHex ? <FaChevronUp /> : <FaChevronDown />}
                   </HStack>
                 </Button>
@@ -966,10 +966,10 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
           <Box bg="green.900" p={4} borderRadius="lg" border="1px solid" borderColor="green.600" w="100%">
             <VStack gap={3}>
               <Text color="green.200" fontSize="sm" fontWeight="bold">
-                🎉 Transaction Broadcast Successfully!
+                {t('send.broadcastResult.success')}
               </Text>
               <VStack gap={2} w="100%">
-                <Text color="gray.300" fontSize="xs">Transaction ID:</Text>
+                <Text color="gray.300" fontSize="xs">{t('send.broadcastResult.txid')}:</Text>
                 <Box bg="gray.800" p={2} borderRadius="md" w="100%">
                   <Code fontSize="xs" wordBreak="break-all" color="green.300" bg="transparent">
                     {txid}
@@ -983,7 +983,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
                     onClick={copyTxidToClipboard}
                     flex="1"
                   >
-                    📋 Copy TXID
+                    📋 {t('send.broadcastResult.copyTxid')}
                   </Button>
                   <Button
                     size="sm"
@@ -1001,7 +1001,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
                     }}
                     flex="1"
                   >
-                    🔗 View on Mempool
+                    🔗 {t('send.broadcastResult.viewOnMempool')}
                   </Button>
                 </HStack>
               </VStack>
@@ -1051,7 +1051,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
           >
             <HStack gap={2}>
               <FaPaperPlane />
-              <Text>Send Another Transaction</Text>
+              <Text>{t('send.broadcastResult.sendAnother')}</Text>
             </HStack>
           </Button>
         )}
@@ -1095,7 +1095,7 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
                 <SiBitcoin />
               </Box>
               <Heading size="lg" color="white">
-                Send Bitcoin
+                {t('send.titleBitcoin')}
               </Heading>
             </Flex>
             <Box w="40px" /> {/* Spacer for centering */}
@@ -1122,10 +1122,10 @@ console.debug('[Send] deviceId from device.unique_id:', deviceId);
                     {getStepNumber(currentStep) > index + 1 ? <FaCheck /> : index + 1}
                   </Box>
                   <Text fontSize="xs" color="gray.400" textAlign="center">
-                    {step === 'compose' && 'Compose'}
-                    {step === 'review' && 'Review'}
-                    {step === 'sign' && 'Sign'}
-                    {step === 'complete' && 'Complete'}
+                    {step === 'compose' && t('send.compose')}
+                    {step === 'review' && t('send.review')}
+                    {step === 'sign' && t('send.sign')}
+                    {step === 'complete' && t('send.complete')}
                   </Text>
                 </VStack>
               ))}

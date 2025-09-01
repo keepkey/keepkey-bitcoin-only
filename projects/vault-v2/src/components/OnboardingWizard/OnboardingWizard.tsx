@@ -7,15 +7,17 @@ import {
   Flex,
   Icon,
 } from "@chakra-ui/react";
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { FaCheckCircle } from "react-icons/fa";
 import { invoke } from "@tauri-apps/api/core";
 import { useDialog } from "../../contexts/DialogContext";
 import { useTranslation } from "react-i18next";
+// Safe import with conditional usage
+import { OnboardingGateContext } from "../../contexts/OnboardingGateContext";
+import { useOnboardingState } from "../../hooks/useOnboardingState";
 
 // Import individual steps
 import { Step0Language } from "./steps/Step0Language";
-import { Step1AppSettings } from "./steps/Step1AppSettings";
 import { Step2Pin } from "./steps/Step2Pin";
 import { Step3Mnemonics } from "./steps/Step3Mnemonics";
 import { Step4Complete } from "./steps/Step4Complete";
@@ -38,12 +40,6 @@ const STEPS: Step[] = [
     label: "Language",
     description: "Select your preferred language",
     component: Step0Language,
-  },
-  {
-    id: "app-settings",
-    label: "App Settings",
-    description: "Configure your application preferences",
-    component: Step1AppSettings,
   },
   {
     id: "pin",
@@ -70,6 +66,14 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
   const highlightColor = "green.500";
   const { hide } = useDialog();
   const { t } = useTranslation(['onboarding', 'common']);
+  
+  // Safely access OnboardingGateContext - it might not be available if rendered outside provider
+  const onboardingGateContext = useContext(OnboardingGateContext);
+  const setOnboardingComplete = onboardingGateContext?.setOnboardingComplete || (() => {
+    console.log('OnboardingGateContext not available - using fallback');
+  });
+  
+  const { clearCache } = useOnboardingState();
 
   // Override STEPS with translated values
   const translatedSteps = STEPS.map(step => ({
@@ -100,6 +104,24 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
       await invoke("set_onboarding_completed");
       console.log("set_onboarding_completed completed successfully");
 
+      // Clear the onboarding state cache to ensure shouldShowOnboarding updates immediately
+      console.log("🚪 OnboardingWizard: Clearing onboarding state cache");
+      clearCache();
+
+      // Enable device interactions through the onboarding gate
+      console.log("🚪 OnboardingWizard: Enabling device interactions");
+      setOnboardingComplete(true);
+
+      // Start device operations on the backend
+      try {
+        console.log("🚪 OnboardingWizard: Starting device operations on backend");
+        await invoke("start_device_operations");
+        console.log("🚪 OnboardingWizard: Device operations started successfully");
+      } catch (error) {
+        console.error("🚪 OnboardingWizard: Failed to start device operations:", error);
+        // Don't fail the onboarding completion for this error
+      }
+
       // Call the completion callback if provided
       if (onComplete) {
         console.log("Calling onComplete callback");
@@ -117,6 +139,29 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
         hide('onboarding');
         console.log('Forced onboarding dialog closure via DialogContext');
       }, 100);
+
+      // Auto-restart backend after 10 seconds to ensure smooth transition
+      console.log("Scheduling automatic backend restart in 10 seconds...");
+      setTimeout(async () => {
+        try {
+          console.log("Auto-restarting backend after onboarding completion...");
+          await invoke('restart_backend_startup');
+          console.log("Backend restart initiated successfully after onboarding");
+          
+          // Signal backend that frontend is ready
+          setTimeout(async () => {
+            try {
+              console.log('🎯 Signaling backend that frontend is ready after onboarding restart...');
+              await invoke('frontend_ready');
+              console.log('✅ Frontend ready signal sent successfully');
+            } catch (error) {
+              console.log('frontend_ready command failed:', error);
+            }
+          }, 1000);
+        } catch (error) {
+          console.error("Failed to auto-restart backend after onboarding:", error);
+        }
+      }, 10000);
     } catch (error) {
       console.error("Failed to mark onboarding as completed:", error);
       // Try to get debug info on failure

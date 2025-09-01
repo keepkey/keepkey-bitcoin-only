@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Text,
@@ -10,6 +10,8 @@ import {
 } from '@chakra-ui/react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { usePinPassphraseDialog } from '../contexts/DialogContext';
+import { useWallet } from '../contexts/WalletContext';
 
 interface PassphraseSettingsProps {
   deviceId: string;
@@ -25,6 +27,11 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
   const [isEnabled, setIsEnabled] = useState(initialEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const authDialog = usePinPassphraseDialog();
+  const unlistenersRef = useRef<UnlistenFn[]>([]);
+  const { reinitialize } = useWallet();
+  
+  console.log('[PassphraseSettings] Component rendered - deviceId:', deviceId, 'isEnabled:', isEnabled, 'isUpdating:', isUpdating);
 
   // Debug log the initial prop value
   console.log(`[PassphraseSettings] Component mounted/updated - deviceId: ${deviceId}, initialEnabled prop: ${initialEnabled}`);
@@ -70,15 +77,26 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
 
     // Listen for PIN requests for settings changes
     const setupPinListener = async () => {
+      console.log('[PassphraseSettings] Setting up PIN listener for device:', deviceId);
       const unlisten = await listen<{
         device_id: string;
         request_id: string;
         kind: string;
       }>('device:awaiting_pin', (event) => {
+        console.log('[PassphraseSettings] device:awaiting_pin event received:', event.payload);
         if (event.payload.device_id === deviceId && event.payload.kind === 'settings') {
+          console.log('[PassphraseSettings] Event matches our device and is for settings!');
           setStatusMessage('Please enter your PIN to change passphrase settings.');
-          // Note: The PIN dialog should be handled by a global component
-          // that listens for these events
+          // Show the PIN dialog
+          console.log('[PassphraseSettings] Showing PIN dialog for settings change');
+          authDialog.show({
+            deviceId: deviceId,
+            operationType: 'settings',
+            onComplete: () => {
+              console.log('[PassphraseSettings] PIN entry completed');
+              setStatusMessage('PIN accepted, applying changes...');
+            },
+          });
         }
       });
       unlisteners.push(unlisten);
@@ -89,11 +107,47 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       const unlisten = await listen<{
         device_id: string;
         reason: string;
-      }>('device:needs_reconnect', (event) => {
+      }>('device:needs_reconnect', async (event) => {
         if (event.payload.device_id === deviceId) {
           const reason = event.payload.reason;
           if (reason.includes('Passphrase')) {
-            setStatusMessage('Please unplug and reconnect your KeepKey to apply the passphrase changes.');
+            console.log('[PassphraseSettings] Passphrase change confirmed by device, triggering backend restart');
+            setStatusMessage('Passphrase settings applied! Restarting...');
+            
+            // Trigger backend restart and frontend state clearing
+            try {
+              // Restart backend like logo press does
+              await invoke('restart_backend_startup');
+              console.log('[PassphraseSettings] Backend restart initiated successfully');
+              
+              // Re-initialize wallet to clear frontend state
+              reinitialize();
+              
+              // Signal backend that frontend is ready again
+              setTimeout(async () => {
+                try {
+                  console.log('[PassphraseSettings] Re-signaling backend that frontend is ready after restart...');
+                  await invoke('frontend_ready');
+                  console.log('[PassphraseSettings] Frontend ready signal sent successfully after restart');
+                  
+                  // Update status message
+                  if (reason.includes('PassphraseEnabled')) {
+                    setStatusMessage('Passphrase protection enabled successfully!');
+                  } else if (reason.includes('PassphraseDisabled')) {
+                    setStatusMessage('Passphrase protection disabled successfully!');
+                  }
+                  
+                  // Clear status message after 3 seconds
+                  setTimeout(() => setStatusMessage(null), 3000);
+                } catch (error) {
+                  console.log('[PassphraseSettings] frontend_ready command failed after restart:', error);
+                }
+              }, 500);
+            } catch (error) {
+              console.error('[PassphraseSettings] Failed to restart backend after settings change:', error);
+              setStatusMessage('Please unplug and reconnect your KeepKey to apply the passphrase changes.');
+            }
+            
             setIsUpdating(false);
           }
         }
@@ -120,6 +174,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       unlisteners.push(unlisten);
     };
 
+
     // Setup all listeners
     setupPinListener();
     setupReconnectListener();
@@ -137,9 +192,15 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
     const newState = !isEnabled;
     setIsUpdating(true);
     
+    // Add a debug log to confirm we're entering the function
+    console.log('[PassphraseSettings] handleTogglePassphrase called, newState:', newState);
+    
     if (newState) {
       // Show info about the flow
       setStatusMessage('Press and hold the button on your KeepKey to confirm enabling passphrase protection.');
+      
+      // Just a small delay to ensure any listeners are ready
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
     
     try {
@@ -158,12 +219,39 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       }
       
       // Send the enable/disable command to the device using the v2 command
-      await invoke('enable_passphrase_protection_v2', {
+      console.log('[PassphraseSettings] Calling enable_passphrase_protection_v2');
+      const response = await invoke('enable_passphrase_protection_v2', {
         deviceId,
         enabled: newState,
       });
+      console.log('[PassphraseSettings] Backend response:', response);
       
-      // Update local state
+      // Check device state immediately after the command
+      const deviceState = await invoke<string>('get_device_interaction_state', { deviceId });
+      console.log('[PassphraseSettings] Device state after command:', deviceState);
+      
+      // If device is awaiting PIN, show the dialog immediately
+      if (deviceState.includes('AwaitingPIN')) {
+        console.log('[PassphraseSettings] Device is awaiting PIN, showing dialog immediately');
+        setStatusMessage('Please enter your PIN to change passphrase settings.');
+        authDialog.show({
+          deviceId: deviceId,
+          operationType: 'settings',
+          onComplete: async () => {
+            console.log('[PassphraseSettings] PIN entry completed');
+            setStatusMessage('PIN accepted, applying changes...');
+            // Update local state after PIN is accepted
+            setIsEnabled(newState);
+            
+            // After PIN is accepted and device confirms, we need to restart backend
+            // This will be handled by the device:settings_applied event listener
+          },
+        });
+        // Don't update state yet - wait for PIN completion
+        return;
+      }
+      
+      // Update local state only if no PIN is needed
       setIsEnabled(newState);
       
       // Check if device is in PIN/interaction state before notifying parent
@@ -190,12 +278,14 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       
       setIsUpdating(false);
     } catch (err) {
-      console.error('Failed to update passphrase protection:', err);
+      console.error('[PassphraseSettings] Failed to update passphrase protection:', err);
       
       setStatusMessage(`Error: ${err instanceof Error ? err.message : 'Failed to update passphrase protection'}`);
       setTimeout(() => setStatusMessage(null), 5000);
       
       setIsUpdating(false);
+      // Revert the switch on error (if we updated it prematurely)
+      setIsEnabled(!newState);
     }
   };
 

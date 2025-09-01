@@ -1,0 +1,119 @@
+{
+  "device": {
+    "notConnected": "No KeepKey device connected. Please connect your device and try again",
+    "notDetected": "No KeepKey Detected",
+    "connectionFailed": "Failed to connect to device",
+    "connectionLost": "Connection to device lost",
+    "busy": "Device is busy, please wait",
+    "locked": "Device is locked. Please enter your PIN and try again",
+    "bootloaderMode": "Device is in bootloader mode",
+    "notInitialized": "Device is not initialized",
+    "alreadyInitialized": "Device is already initialized",
+    "timeout": "Device operation timed out",
+    "cancelled": "Operation cancelled by user",
+    "invalidResponse": "Invalid response from device",
+    "unknownError": "Unknown device error occurred",
+    "firmwareRequired": "Firmware update required",
+    "unsupportedFirmware": "Unsupported firmware version"
+  },
+  "pin": {
+    "empty": "PIN cannot be empty",
+    "tooShort": "PIN must be at least {{min}} digits",
+    "tooLong": "PIN cannot be longer than {{max}} digits",
+    "invalid": "Invalid PIN",
+    "invalidPosition": "Invalid PIN position: must be 1-9",
+    "mismatch": "PINs do not match",
+    "incorrect": "Incorrect PIN. {{attempts}} attempts remaining",
+    "maxAttempts": "Maximum PIN attempts exceeded",
+    "creationFailed": "Failed to start PIN creation",
+    "changeFailed": "Failed to change PIN",
+    "removeFailed": "Failed to remove PIN"
+  },
+  "passphrase": {
+    "empty": "Passphrase cannot be empty",
+    "tooLong": "Passphrase is too long",
+    "mismatch": "Passphrases do not match",
+    "invalid": "Invalid passphrase",
+    "enableFailed": "Failed to enable passphrase",
+    "disableFailed": "Failed to disable passphrase"
+  },
+  "wallet": {
+    "creationFailed": "Failed to create wallet",
+    "recoveryFailed": "Failed to recover wallet",
+    "seedInvalid": "Invalid recovery seed phrase",
+    "seedMismatch": "Seed phrase verification failed",
+    "backupFailed": "Failed to backup wallet",
+    "labelTooLong": "Wallet label is too long",
+    "noFunds": "Insufficient funds",
+    "notFound": "Wallet not found"
+  },
+  "transaction": {
+    "failed": "Transaction failed",
+    "rejected": "Transaction rejected",
+    "insufficientFunds": "Insufficient funds for transaction",
+    "invalidAddress": "Invalid recipient address",
+    "invalidAmount": "Invalid transaction amount",
+    "amountTooSmall": "Amount is below minimum",
+    "amountTooLarge": "Amount exceeds balance",
+    "feeTooHigh": "Transaction fee is too high",
+    "feeTooLow": "Transaction fee is too low",
+    "broadcastFailed": "Failed to broadcast transaction",
+    "signFailed": "Failed to sign transaction",
+    "timeout": "Transaction timed out",
+    "duplicate": "Duplicate transaction detected"
+  },
+  "network": {
+    "offline": "No internet connection",
+    "timeout": "Network request timed out",
+    "serverError": "Server error. Please try again later",
+    "unavailable": "Service temporarily unavailable",
+    "rateLimit": "Too many requests. Please slow down",
+    "connectionFailed": "Failed to connect to server",
+    "invalidResponse": "Invalid server response",
+    "syncFailed": "Failed to sync with network"
+  },
+  "validation": {
+    "required": "This field is required",
+    "invalidEmail": "Invalid email address",
+    "invalidUrl": "Invalid URL",
+    "invalidNumber": "Must be a valid number",
+    "minLength": "Must be at least {{min}} characters",
+    "maxLength": "Must be no more than {{max}} characters",
+    "minValue": "Must be at least {{min}}",
+    "maxValue": "Must be no more than {{max}}",
+    "pattern": "Invalid format",
+    "unique": "This value already exists"
+  },
+  "file": {
+    "notFound": "File not found",
+    "tooLarge": "File size exceeds limit",
+    "invalidFormat": "Invalid file format",
+    "readFailed": "Failed to read file",
+    "writeFailed": "Failed to write file",
+    "uploadFailed": "File upload failed",
+    "downloadFailed": "File download failed"
+  },
+  "permission": {
+    "denied": "Permission denied",
+    "cameraRequired": "Camera permission required",
+    "storageRequired": "Storage permission required",
+    "notificationRequired": "Notification permission required"
+  },
+  "update": {
+    "failed": "Update failed",
+    "downloadFailed": "Failed to download update",
+    "installFailed": "Failed to install update",
+    "verificationFailed": "Update verification failed",
+    "incompatible": "Update is incompatible with your system"
+  },
+  "generic": {
+    "unknown": "An unknown error occurred",
+    "unexpected": "An unexpected error occurred",
+    "tryAgain": "Something went wrong. Please try again",
+    "contactSupport": "If the problem persists, please contact support",
+    "operationFailed": "Operation failed",
+    "notImplemented": "This feature is not yet implemented",
+    "deprecated": "This feature is deprecated",
+    "maintenance": "System is under maintenance"
+  }
+}

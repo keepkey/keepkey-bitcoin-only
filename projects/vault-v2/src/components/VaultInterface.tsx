@@ -10,7 +10,6 @@ import { AppsView, BrowserView, PairingsView, VaultView, AssetView } from './vie
 import { WalletProvider, useWallet } from '../contexts/WalletContext';
 import Send from './Send';
 import Receive from './Receive';
-import { useDialog } from '../contexts/DialogContext';
 import packageJson from '../../package.json';
 // import { AppHeader } from './AppHeader';
 
@@ -28,14 +27,11 @@ export const VaultInterface = () => {
   const { open: isSettingsOpen, onOpen: openSettings, onClose: closeSettings } = useDisclosure();
   const [isRecoveryWizardOpen, setIsRecoveryWizardOpen] = useState(false);
   const { refreshPortfolio } = useWallet();
-  const { hideAll } = useDialog();
   const { t } = useTranslation(['common', 'navigation']);
 
-  // Clear any stuck dialogs when component mounts
-  useEffect(() => {
-    console.log('🏦 VaultInterface mounted - clearing any stuck dialogs');
-    hideAll();
-  }, [hideAll]);
+  // Note: We don't clear dialogs on mount anymore as this was interfering with
+  // legitimate dialogs like the firmware update wizard that may be opened
+  // when transitioning to the VaultInterface view
 
   const handleViewChange = async (view: ViewType) => {
     try {

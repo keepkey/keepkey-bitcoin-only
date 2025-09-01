@@ -203,7 +203,6 @@ pub struct InitializationCheck {
 
 /// Unified device queue command - all device operations go through this
 #[tauri::command]
-#[allow(dead_code)]
 pub async fn reset_device_queue(
     device_id: String,
     queue_manager: State<'_, DeviceQueueManager>,
@@ -409,16 +408,24 @@ pub async fn get_device_status(
     
     println!("Getting device status for: {}", device_id);
     
-    // Check if device is in PIN flow or awaiting PIN/Button - if so, we should not send any commands
+    // Check if device is in PIN flow or awaiting PIN/Button/Passphrase - if so, we should not send any commands
     let device_interaction_state = {
         let sessions = crate::device::interaction_state::DEVICE_SESSIONS.read().await;
         sessions.get(&device_id).map(|s| s.state.clone())
     };
     
+    // Also check if there's an active passphrase request
+    let has_active_passphrase = {
+        let passphrase_state = crate::device::PASSPHRASE_REQUEST_STATE.read().await;
+        passphrase_state.get(&device_id).map_or(false, |state| state.is_active)
+    };
+    
     let should_use_cache = is_device_in_pin_flow(&device_id) || 
+        has_active_passphrase ||
         matches!(device_interaction_state, 
             Some(crate::device::interaction_state::DeviceInteractionState::AwaitingPIN { .. }) |
-            Some(crate::device::interaction_state::DeviceInteractionState::AwaitingButton { .. })
+            Some(crate::device::interaction_state::DeviceInteractionState::AwaitingButton { .. }) |
+            Some(crate::device::interaction_state::DeviceInteractionState::AwaitingPassphrase { .. })
         );
     
     if should_use_cache {
@@ -472,6 +479,49 @@ pub async fn get_device_status(
             }
         };
         
+        // CRITICAL: Check if device is now in PIN flow or passphrase flow after any previous operations
+        // This can happen if another operation triggered a PinMatrixRequest or PassphraseRequest
+        let has_active_passphrase = {
+            let passphrase_state = crate::device::PASSPHRASE_REQUEST_STATE.read().await;
+            passphrase_state.get(&device_id).map_or(false, |state| state.is_active)
+        };
+        
+        if is_device_in_pin_flow(&device_id) {
+            println!("🔒 Device {} entered PIN flow - using minimal status without fetching features", device_id);
+            // Return a minimal status indicating device needs PIN
+            let status = DeviceStatus {
+                device_id: device_id.clone(),
+                connected: true,
+                needs_pin_unlock: true,
+                needs_firmware_update: false,
+                needs_bootloader_update: false,
+                needs_initialization: false,
+                features: None,
+                bootloader_check: None,
+                firmware_check: None,
+                initialization_check: None,
+            };
+            return Ok(Some(status));
+        }
+        
+        if has_active_passphrase {
+            println!("🔐 Device {} has active passphrase request - using minimal status without fetching features", device_id);
+            // Return a minimal status indicating device is ready but needs passphrase
+            let status = DeviceStatus {
+                device_id: device_id.clone(),
+                connected: true,
+                needs_pin_unlock: false, // PIN is already unlocked if we're at passphrase stage
+                needs_firmware_update: false,
+                needs_bootloader_update: false,
+                needs_initialization: false,
+                features: None,
+                bootloader_check: None,
+                firmware_check: None,
+                initialization_check: None,
+            };
+            return Ok(Some(status));
+        }
+        
         // Fetch device features through the queue with retry logic
         let features = {
             let mut last_error = None;
@@ -495,6 +545,46 @@ pub async fn get_device_status(
             let max_attempts = if just_updated_bootloader { 10 } else { 3 };
             
             for attempt in 1..=max_attempts {
+                // IMPORTANT: Check PIN flow AND passphrase state before EACH attempt
+                let has_active_passphrase = {
+                    let passphrase_state = crate::device::PASSPHRASE_REQUEST_STATE.read().await;
+                    passphrase_state.get(&device_id).map_or(false, |state| state.is_active)
+                };
+                
+                if is_device_in_pin_flow(&device_id) {
+                    println!("🔒 Device {} entered PIN flow during feature fetch - aborting", device_id);
+                    // Return minimal status for PIN locked device
+                    return Ok(Some(DeviceStatus {
+                        device_id: device_id.clone(),
+                        connected: true,
+                        needs_pin_unlock: true,
+                        needs_firmware_update: false,
+                        needs_bootloader_update: false,
+                        needs_initialization: false,
+                        features: None,
+                        bootloader_check: None,
+                        firmware_check: None,
+                        initialization_check: None,
+                    }));
+                }
+                
+                if has_active_passphrase {
+                    println!("🔐 Device {} has active passphrase request during feature fetch - aborting", device_id);
+                    // Return minimal status for device awaiting passphrase
+                    return Ok(Some(DeviceStatus {
+                        device_id: device_id.clone(),
+                        connected: true,
+                        needs_pin_unlock: false,
+                        needs_firmware_update: false,
+                        needs_bootloader_update: false,
+                        needs_initialization: false,
+                        features: None,
+                        bootloader_check: None,
+                        firmware_check: None,
+                        initialization_check: None,
+                    }));
+                }
+                
                 println!("🔄 Attempting to get features for device {} (attempt {}/{})", device_id, attempt, max_attempts);
                 
                 match tokio::time::timeout(
@@ -1362,8 +1452,9 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
                 // Use explicit bootloader version if available
                 bl_version.clone()
             } else {
-                // For modern firmware without explicit bootloader version, assume it's recent enough
-                "2.1.4".to_string() // Assume recent bootloader if not specified
+                // For modern firmware without explicit bootloader version, we cannot assume it's up to date
+                // Treat as unknown so the UI can prompt for verification/update
+                "Unknown bootloader".to_string()
             }
         };
         
@@ -1373,7 +1464,7 @@ pub fn evaluate_device_status(device_id: String, features: Option<&DeviceFeature
             // Modern bootloaders (2.1.4) don't need bootloader updates - they need firmware updates
             current_bootloader_version.starts_with("1.")
         } else if current_bootloader_version == "Unknown bootloader" {
-            false // Can't determine, assume no update needed
+            true // Unknown bootloader version: require update to ensure device is on a safe version
         } else {
             match semver::Version::parse(&current_bootloader_version) {
                 Ok(current_ver) => {
@@ -1768,7 +1859,27 @@ pub async fn test_status_emission(app: tauri::AppHandle) -> Result<String, Strin
 /// Signal that the frontend is ready to receive events
 #[tauri::command]
 pub async fn frontend_ready(app: AppHandle) -> Result<(), String> {
-    println!("🎯 Frontend ready signal received - enabling event emission");
+    println!("🎯 Frontend ready signal received - checking onboarding status");
+    
+    // Check if user is onboarded before enabling device operations
+    let onboarding_complete = match is_onboarded().await {
+        Ok(onboarded) => onboarded,
+        Err(e) => {
+            println!("⚠️ Failed to check onboarding status: {}", e);
+            false // Default to not onboarded if we can't check
+        }
+    };
+    
+    if !onboarding_complete {
+        println!("🚪 OnboardingGate: User not onboarded - blocking device operations");
+        println!("🚪 OnboardingGate: Frontend ready signal acknowledged but device scanning blocked");
+        // Still mark frontend as ready for UI events, but don't start device operations
+        let mut state = FRONTEND_READY_STATE.write().await;
+        state.is_ready = true;
+        return Ok(());
+    }
+    
+    println!("🎯 Frontend ready signal received - user is onboarded, enabling event emission and device operations");
     
     let mut state = FRONTEND_READY_STATE.write().await;
     state.is_ready = true;
@@ -1789,6 +1900,51 @@ pub async fn frontend_ready(app: AppHandle) -> Result<(), String> {
         println!("✅ No queued events to flush");
     }
     
+    Ok(())
+}
+
+/// Start device operations after onboarding is complete
+#[tauri::command]
+pub async fn start_device_operations(app: AppHandle) -> Result<(), String> {
+    println!("🚪 OnboardingGate: Starting device operations after onboarding completion");
+    
+    // Verify onboarding is actually complete
+    let onboarding_complete = match is_onboarded().await {
+        Ok(onboarded) => onboarded,
+        Err(e) => {
+            println!("⚠️ Failed to verify onboarding status: {}", e);
+            return Err(format!("Failed to verify onboarding status: {}", e));
+        }
+    };
+    
+    if !onboarding_complete {
+        return Err("Cannot start device operations - onboarding not complete".to_string());
+    }
+    
+    // Emit scanning status
+    if let Err(e) = app.emit("status:update", serde_json::json!({
+        "status": "Scanning for devices..."
+    })) {
+        println!("⚠️ Failed to emit scanning status: {}", e);
+    }
+    
+    // The event controller will now detect and process devices since onboarding is complete
+    // Just emit a trigger to force immediate check rather than waiting for next interval
+    let devices = keepkey_rust::features::list_connected_devices();
+    let device_count = devices.len();
+    println!("🔍 Found {} device(s) ready for processing after onboarding completion", device_count);
+    
+    if device_count == 0 {
+        if let Err(e) = app.emit("status:update", serde_json::json!({
+            "status": "No devices found. Please connect your KeepKey."
+        })) {
+            println!("⚠️ Failed to emit no devices status: {}", e);
+        }
+    }
+    
+    // The event controller will handle the rest of the device processing automatically
+    
+    println!("✅ Device operations started successfully");
     Ok(())
 }
 
@@ -3059,7 +3215,16 @@ pub struct SeedVerificationSession {
     pub pin_verified: bool,
 }
 
-// Global recovery sessions
+// Device alias information with TTL
+#[derive(Debug, Clone)]
+struct DeviceAliasInfo {
+    canonical_id: String,
+    created_at: std::time::Instant,
+    last_seen: std::time::Instant,
+    source: String, // "serial_reuse", "recovery", "bus_addr_change", etc.
+}
+
+// Global recovery sessions and device aliases
 lazy_static::lazy_static! {
     static ref RECOVERY_SESSIONS: Mutex<HashMap<String, RecoverySession>> = 
         Mutex::new(HashMap::new());
@@ -3067,7 +3232,8 @@ lazy_static::lazy_static! {
         Mutex::new(HashMap::new());
     static ref RECOVERY_DEVICE_FLOWS: Mutex<std::collections::HashSet<String>> =
         Mutex::new(std::collections::HashSet::new());
-    static ref RECOVERY_DEVICE_ALIASES: Mutex<HashMap<String, String>> = 
+    // General device alias map with TTL - replaces RECOVERY_DEVICE_ALIASES
+    static ref DEVICE_ALIASES: Mutex<HashMap<String, DeviceAliasInfo>> = 
         Mutex::new(HashMap::new());
 }
 
@@ -3141,16 +3307,20 @@ pub async fn start_device_recovery(
         if let Some(handle) = manager.get(&device_id) {
             handle.clone()
         } else {
-            // Find the device by ID
+            // Find the device by ID (use canonical resolution)
             let devices = keepkey_rust::features::list_connected_devices();
+            let canonical_id = get_canonical_device_id(&device_id);
             let device_info = devices
                 .iter()
-                .find(|d| d.unique_id == device_id)
+                .find(|d| {
+                    let d_canonical = get_canonical_device_id(&d.unique_id);
+                    d_canonical == canonical_id
+                })
                 .ok_or_else(|| {
                     // Clean up session on device not found
                     let mut sessions = RECOVERY_SESSIONS.lock().unwrap_or_else(|_| panic!("Failed to lock recovery sessions"));
                     sessions.remove(&session_id);
-                    format!("Device {} not found", device_id)
+                    format!("Device {} (canonical: {}) not found", device_id, canonical_id)
                 })?;
             
             // Spawn a new device worker
@@ -3645,16 +3815,20 @@ pub async fn start_seed_verification(
         if let Some(handle) = manager.get(&device_id) {
             handle.clone()
         } else {
-            // Find the device by ID
+            // Find the device by ID (use canonical resolution)
             let devices = keepkey_rust::features::list_connected_devices();
+            let canonical_id = get_canonical_device_id(&device_id);
             let device_info = devices
                 .iter()
-                .find(|d| d.unique_id == device_id)
+                .find(|d| {
+                    let d_canonical = get_canonical_device_id(&d.unique_id);
+                    d_canonical == canonical_id
+                })
                 .ok_or_else(|| {
                     // Clean up session on device not found
                     let mut sessions = VERIFICATION_SESSIONS.lock().unwrap_or_else(|_| panic!("Failed to lock verification sessions"));
                     sessions.remove(&session_id);
-                    format!("Device {} not found", device_id)
+                    format!("Device {} (canonical: {}) not found", device_id, canonical_id)
                 })?;
             
             // Spawn a new device worker
@@ -3849,28 +4023,61 @@ pub fn unmark_device_in_recovery_flow(device_id: &str) -> Result<(), String> {
     log::info!("Device {} removed from recovery flow", device_id);
     
     // Also clean up any aliases
-    if let Ok(mut aliases) = RECOVERY_DEVICE_ALIASES.lock() {
-        aliases.retain(|_, v| v != device_id);
+    if let Ok(mut aliases) = DEVICE_ALIASES.lock() {
+        aliases.retain(|_, info| info.canonical_id != *device_id);
     }
     
     Ok(())
 }
 
-/// Add device ID alias for recovery flow
-pub fn add_recovery_device_alias(alias_id: &str, canonical_id: &str) -> Result<(), String> {
-    let mut aliases = RECOVERY_DEVICE_ALIASES.lock()
-        .map_err(|_| "Failed to lock recovery device aliases".to_string())?;
-    aliases.insert(alias_id.to_string(), canonical_id.to_string());
-    log::info!("Added recovery device alias: {} -> {}", alias_id, canonical_id);
+/// Add device ID alias with source tracking
+pub fn add_device_alias(alias_id: &str, canonical_id: &str, source: &str) -> Result<(), String> {
+    let mut aliases = DEVICE_ALIASES.lock()
+        .map_err(|_| "Failed to lock device aliases".to_string())?;
+    
+    let now = std::time::Instant::now();
+    aliases.insert(alias_id.to_string(), DeviceAliasInfo {
+        canonical_id: canonical_id.to_string(),
+        created_at: now,
+        last_seen: now,
+        source: source.to_string(),
+    });
+    
+    log::info!("[ALIAS] Added device alias: {} -> {} (source: {})", alias_id, canonical_id, source);
+    
+    // Clean up old aliases (TTL = 90 seconds on Windows, 60 on others)
+    #[cfg(target_os = "windows")]
+    let ttl_secs = 90;
+    #[cfg(not(target_os = "windows"))]
+    let ttl_secs = 60;
+    
+    aliases.retain(|alias, info| {
+        let age = now.duration_since(info.created_at).as_secs();
+        if age > ttl_secs {
+            log::info!("[ALIAS] Removing expired alias: {} -> {} (age: {}s)", alias, info.canonical_id, age);
+            false
+        } else {
+            true
+        }
+    });
+    
     Ok(())
+}
+
+/// Add device ID alias for recovery flow (compatibility wrapper)
+pub fn add_recovery_device_alias(alias_id: &str, canonical_id: &str) -> Result<(), String> {
+    add_device_alias(alias_id, canonical_id, "recovery")
 }
 
 /// Get canonical device ID from alias
 pub fn get_canonical_device_id(device_id: &str) -> String {
-    if let Ok(aliases) = RECOVERY_DEVICE_ALIASES.lock() {
-        if let Some(canonical) = aliases.get(device_id) {
-            log::info!("Resolved device alias {} to canonical ID {}", device_id, canonical);
-            return canonical.clone();
+    if let Ok(mut aliases) = DEVICE_ALIASES.lock() {
+        if let Some(info) = aliases.get_mut(device_id) {
+            // Update last seen time when alias is used
+            info.last_seen = std::time::Instant::now();
+            log::info!("[ALIAS] Resolved device alias {} to canonical ID {} (source: {})", 
+                     device_id, info.canonical_id, info.source);
+            return info.canonical_id.clone();
         }
     }
     device_id.to_string()
@@ -3878,15 +4085,12 @@ pub fn get_canonical_device_id(device_id: &str) -> String {
 
 /// Check if two device IDs might be the same device
 pub fn are_devices_potentially_same(id1: &str, id2: &str) -> bool {
-    // Check if they're already the same
-    if id1 == id2 {
-        return true;
-    }
-    
-    // Check if one is an alias of the other
+    // Always use canonical IDs for comparison
     let canonical1 = get_canonical_device_id(id1);
     let canonical2 = get_canonical_device_id(id2);
+    
     if canonical1 == canonical2 {
+        log::debug!("[ALIAS] Devices {} and {} are the same (canonical: {})", id1, id2, canonical1);
         return true;
     }
     
@@ -4318,17 +4522,31 @@ pub async fn trigger_pin_request(
         Ok(keepkey_rust::messages::Message::PinMatrixRequest(_)) => {
             log::info!("Successfully triggered PIN request for device: {}", device_id);
             
-            // Emit PIN request event to frontend
-            let pin_event_payload = serde_json::json!({
-                "deviceId": device_id,
-                "requestType": "GetAddress",
-                "needsPinEntry": true
-            });
+            // CRITICAL: Ensure device is marked as in PIN flow
+            // This prevents other operations from disrupting the PIN display
+            if !is_device_in_pin_flow(&device_id) {
+                mark_device_in_pin_flow(&device_id)?;
+            }
             
-            if let Err(e) = app.emit("device:pin-request-triggered", &pin_event_payload) {
-                log::error!("Failed to emit PIN request event: {}", e);
+            // Only emit PIN request event if no dialog is already handling this device
+            // This prevents duplicate dialog creation when PIN is triggered from within an existing dialog
+            let should_emit_event = true; // For now, always emit - the frontend prevents duplicates
+            
+            if should_emit_event {
+                // Emit PIN request event to frontend
+                let pin_event_payload = serde_json::json!({
+                    "deviceId": device_id,
+                    "requestType": "GetAddress",
+                    "needsPinEntry": true
+                });
+                
+                if let Err(e) = app.emit("device:pin-request-triggered", &pin_event_payload) {
+                    log::error!("Failed to emit PIN request event: {}", e);
+                } else {
+                    log::info!("📡 Emitted device:pin-request-triggered event for device: {}", device_id);
+                }
             } else {
-                log::info!("📡 Emitted device:pin-request-triggered event for device: {}", device_id);
+                log::info!("📡 Skipping device:pin-request-triggered event - dialog already handling device");
             }
             
             // Keep device marked as in PIN flow - will be unmarked when PIN is completed

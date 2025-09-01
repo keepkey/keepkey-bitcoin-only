@@ -116,7 +116,10 @@
     "on": "Encendido",
     "off": "Apagado",
     "step": "Paso",
-    "of": "de"
+    "of": "de",
+    "recommended": "Recomendado",
+    "compatible": "Compatible",
+    "legacy": "Legado"
   },
   "messages": {
     "loading": "Por favor espera mientras cargamos tus datos",

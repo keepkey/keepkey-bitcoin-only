@@ -4,6 +4,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
+use crate::commands;
 
 pub struct EventController {
     cancellation_token: CancellationToken,
@@ -74,12 +75,26 @@ impl EventController {
                         break;
                     }
                     _ = interval.tick() => {
+                        // Check onboarding status before processing devices
+                        let onboarding_complete = match commands::is_onboarded().await {
+                            Ok(onboarded) => onboarded,
+                            Err(e) => {
+                                println!("⚠️ Event controller: Failed to check onboarding status: {}", e);
+                                false // Default to not onboarded if we can't check
+                            }
+                        };
+                        
                         // Get current devices using high-level API
                         let current_devices = keepkey_rust::features::list_connected_devices();
                         
                         // Check for newly connected devices
                         for device in &current_devices {
-                            if !last_devices.iter().any(|d| d.unique_id == device.unique_id) {
+                            // Use canonical ID comparison to avoid duplicate connections
+                            let device_canonical = crate::commands::get_canonical_device_id(&device.unique_id);
+                            if !last_devices.iter().any(|d| {
+                                let d_canonical = crate::commands::get_canonical_device_id(&d.unique_id);
+                                d_canonical == device_canonical
+                            }) {
                                 // Check if this is a duplicate of an already connected device
                                 let is_duplicate = current_devices.iter().any(|other| {
                                     other.unique_id != device.unique_id && 
@@ -97,6 +112,20 @@ impl EventController {
                                          device.manufacturer.as_deref().unwrap_or("Unknown"), 
                                          device.product.as_deref().unwrap_or("Unknown"));
                                 
+                                // If onboarding is not complete, just acknowledge the device but don't process it
+                                if !onboarding_complete {
+                                    println!("🚪 OnboardingGate: Device detected but onboarding not complete - deferring device processing");
+                                    
+                                    // Emit a minimal status to show device is detected but waiting for onboarding
+                                    let waiting_payload = serde_json::json!({
+                                        "status": "Device detected - complete onboarding to continue"
+                                    });
+                                    if let Err(e) = app_handle.emit("status:update", waiting_payload) {
+                                        println!("❌ Failed to emit onboarding waiting status: {}", e);
+                                    }
+                                    continue; // Skip all device processing
+                                }
+                                
                                 // Check if this might be a recovery device reconnecting with a different ID
                                 if let Some(state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {
                                     let queue_manager_arc = state.inner().clone();
@@ -108,7 +137,7 @@ impl EventController {
                                            crate::commands::is_device_in_recovery_flow(existing_id) {
                                             println!("🔄 Device {} appears to be recovery device {} reconnecting", 
                                                     device.unique_id, existing_id);
-                                            let _ = crate::commands::add_recovery_device_alias(&device.unique_id, existing_id);
+                                            let _ = crate::commands::add_device_alias(&device.unique_id, existing_id, "recovery_reconnect");
                                             
                                             // Emit special reconnection event
                                             let _ = app_handle.emit("device:recovery-reconnected", serde_json::json!({
@@ -140,8 +169,8 @@ impl EventController {
                                 let app_for_task = app_handle.clone();
                                 let device_for_task = device.clone();
                                 tokio::spawn(async move {
-                                    // Give device a moment to settle after connection
-                                    tokio::time::sleep(Duration::from_millis(500)).await;
+                                    // Give device time to settle after connection (USB stack warm-up)
+                                    tokio::time::sleep(Duration::from_millis(1500)).await;
                                     println!("📡 Fetching device features for: {}", device_for_task.unique_id);
                                     
                                     // Emit getting features status
@@ -310,26 +339,10 @@ impl EventController {
                                             
                                             // Check for timeout errors specifically
                                             if e.contains("Timeout while fetching device features") {
-                                                println!("⏱️ Device timeout detected - device may be in invalid state");
-                                                println!("❌ OOPS this should never happen - device communication failed!");
-                                                
-                                                // Log detailed error for debugging
-                                                eprintln!("ERROR: Device timeout indicates invalid state - this should be prevented!");
-                                                eprintln!("Device ID: {}", device_for_task.unique_id);
-                                                eprintln!("Error: {}", e);
-                                                
-                                                // Emit device invalid state event for UI to handle
-                                                let invalid_state_payload = serde_json::json!({
-                                                    "deviceId": device_for_task.unique_id,
-                                                    "error": e,
-                                                    "errorType": "DEVICE_TIMEOUT",
-                                                    "status": "invalid_state"
-                                                });
-                                                let _ = app_for_task.emit("device:invalid-state", &invalid_state_payload);
-                                                
-                                                // Also emit status update
+                                                // Timeouts can occur during normal USB warm-up; do not mark invalid.
+                                                println!("⏱️ Device feature fetch timed out - will retry on next scan");
                                                 let _ = app_for_task.emit("status:update", serde_json::json!({
-                                                    "status": "Device timeout - please reconnect"
+                                                    "status": "Device detected - establishing connection..."
                                                 }));
                                             }
                                             // Check if this is a device access error
@@ -374,8 +387,13 @@ impl EventController {
                         
                         // Check for disconnected devices
                         for device in &last_devices {
-                            if !current_devices.iter().any(|d| d.unique_id == device.unique_id) {
-                                println!("🔌❌ Device disconnected: {}", device.unique_id);
+                            // Use canonical ID comparison
+                            let device_canonical = crate::commands::get_canonical_device_id(&device.unique_id);
+                            if !current_devices.iter().any(|d| {
+                                let d_canonical = crate::commands::get_canonical_device_id(&d.unique_id);
+                                d_canonical == device_canonical
+                            }) {
+                                println!("🔌❌ Device potentially disconnected: {} (canonical: {})", device.unique_id, device_canonical);
                                 
                                 // Check if device is in recovery flow before cleaning up
                                 let is_in_recovery = crate::commands::is_device_in_recovery_flow(&device.unique_id);
@@ -386,30 +404,88 @@ impl EventController {
                                     continue;
                                 }
                                 
-                                // Emit device disconnected status
-                                println!("📡 Emitting status: Device disconnected");
-                                if let Err(e) = app_handle.emit("status:update", serde_json::json!({
-                                    "status": "Device disconnected"
-                                })) {
-                                    println!("❌ Failed to emit disconnect status: {}", e);
-                                }
-                                
-                                // Clean up device queue for disconnected device
-                                if let Some(state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {
-                                    let device_id = device.unique_id.clone();
-                                    // Clone the underlying Arc so it outlives this scope
-                                    let queue_manager_arc = state.inner().clone();
+                                // Windows disconnect debounce
+                                #[cfg(target_os = "windows")]
+                                {
+                                    println!("🪟 Windows disconnect debounce - waiting 300ms to confirm...");
+                                    let check_id = device.unique_id.clone();
+                                    let app_for_debounce = app_handle.clone();
                                     tokio::spawn(async move {
-                                        println!("♻️ Cleaning up device queue for disconnected device: {}", device_id);
-                                        let mut manager = queue_manager_arc.lock().await;
-                                        if let Some(handle) = manager.remove(&device_id) {
-                                            let _ = handle.shutdown().await;
-                                            println!("✅ Device queue cleaned up for: {}", device_id);
+                                        tokio::time::sleep(Duration::from_millis(300)).await;
+                                        
+                                        // Check if device really disconnected or just reconnected with new ID
+                                        let still_gone = !keepkey_rust::features::list_connected_devices()
+                                            .iter()
+                                            .any(|d| crate::commands::are_devices_potentially_same(&d.unique_id, &check_id));
+                                        
+                                        if still_gone {
+                                            println!("✅ Device {} confirmed disconnected after debounce", check_id);
+                                            
+                                            // Emit device disconnected status
+                                            println!("📡 Emitting status: Device disconnected");
+                                            if let Err(e) = app_for_debounce.emit("status:update", serde_json::json!({
+                                                "status": "Device disconnected"
+                                            })) {
+                                                println!("❌ Failed to emit disconnect status: {}", e);
+                                            }
+                                            
+                                            // TEMPORARILY DISABLED: Clean up device queue for disconnected device
+                                            // This is causing crashes due to improper USB resource cleanup
+                                            // TODO: Fix USB transport Drop implementation before re-enabling
+                                            /*
+                                            if let Some(state) = app_for_debounce.try_state::<crate::commands::DeviceQueueManager>() {
+                                                let queue_manager_arc = state.inner().clone();
+                                                println!("♻️ Cleaning up device queue for disconnected device: {}", check_id);
+                                                let mut manager = queue_manager_arc.lock().await;
+                                                if let Some(handle) = manager.remove(&check_id) {
+                                                    let _ = handle.shutdown().await;
+                                                    println!("✅ Device queue cleaned up for: {}", check_id);
+                                                }
+                                            }
+                                            */
+                                            println!("⚠️ Skipping device queue cleanup to prevent USB crashes");
+                                            
+                                            let _ = app_for_debounce.emit("device:disconnected", &check_id);
+                                        } else {
+                                            println!("⚡ Device {} reconnected with different ID during debounce period", check_id);
                                         }
                                     });
+                                    continue; // Don't process disconnect immediately on Windows
                                 }
                                 
-                                let _ = app_handle.emit("device:disconnected", &device.unique_id);
+                                // Non-Windows: immediate disconnect handling
+                                #[cfg(not(target_os = "windows"))]
+                                {
+                                    // Emit device disconnected status
+                                    println!("📡 Emitting status: Device disconnected");
+                                    if let Err(e) = app_handle.emit("status:update", serde_json::json!({
+                                        "status": "Device disconnected"
+                                    })) {
+                                        println!("❌ Failed to emit disconnect status: {}", e);
+                                    }
+                                    
+                                    // TEMPORARILY DISABLED: Clean up device queue for disconnected device
+                                    // This is causing crashes due to improper USB resource cleanup
+                                    // TODO: Fix USB transport Drop implementation before re-enabling
+                                    /*
+                                    if let Some(state) = app_handle.try_state::<crate::commands::DeviceQueueManager>() {
+                                        let device_id = device.unique_id.clone();
+                                        // Clone the underlying Arc so it outlives this scope
+                                        let queue_manager_arc = state.inner().clone();
+                                        tokio::spawn(async move {
+                                            println!("♻️ Cleaning up device queue for disconnected device: {}", device_id);
+                                            let mut manager = queue_manager_arc.lock().await;
+                                            if let Some(handle) = manager.remove(&device_id) {
+                                                let _ = handle.shutdown().await;
+                                                println!("✅ Device queue cleaned up for: {}", device_id);
+                                            }
+                                        });
+                                    }
+                                    */
+                                    println!("⚠️ Skipping device queue cleanup to prevent USB crashes");
+                                    
+                                    let _ = app_handle.emit("device:disconnected", &device.unique_id);
+                                }
                             }
                         }
                         
@@ -517,7 +593,7 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
                 return Err("Device entered PIN flow during feature fetch".to_string());
             }
             
-            match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
+            match tokio::time::timeout(Duration::from_secs(15), queue_handle.get_features()).await {
                 Ok(Ok(raw_features)) => {
                     println!("✅ Successfully got features for device {} on attempt {}", device.unique_id, attempt);
                     // Convert features to our DeviceFeatures format
@@ -564,13 +640,46 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
             
             // Wait before retrying (exponential backoff)
             if attempt < 3 {
-                let delay_ms = 500 * attempt as u64; // 500ms, 1000ms
+                let delay_ms = 1000 * attempt as u64; // 1000ms, 2000ms
                 println!("⏳ Waiting {}ms before retry for device {}", delay_ms, device.unique_id);
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             }
         }
         
-        // All attempts failed
+        // All attempts failed - check if this might be a device in bootloader/updater mode
+        println!("❌ Failed to get features for {}: {:?}", device.unique_id, last_error);
+        
+        // When we fail to get features, it COULD be bootloader mode (bootloaders often don't respond)
+        // But plain timeouts can also happen in wallet mode. Use stricter heuristics before emitting.
+        if last_error.as_ref().map_or(false, |e| {
+            let is_timeout = e.contains("Timeout");
+            let is_unknown = e.contains("Unknown message") || e.contains("Unexpected response");
+            let is_comm_fail = e.contains("communication failed");
+            // Only consider bootloader if it's NOT a simple timeout alone.
+            // Prefer cases where device explicitly rejects or gives unknown/unsupported replies.
+            is_unknown || is_comm_fail
+        }) {
+            
+            println!("⏱️ Device timeout detected - device may be in invalid state");
+            println!("🔧 Device {} likely in bootloader/updater mode - triggering update flow", device.unique_id);
+            
+            // Emit an event to trigger the firmware update dialog
+            let bootloader_event = serde_json::json!({
+                "deviceId": device.unique_id,
+                "isBootloader": true,
+                "message": "Device appears to be in bootloader mode and needs firmware update"
+            });
+            
+            if let Err(e) = app_handle.emit("device:bootloader-detected", &bootloader_event) {
+                println!("❌ Failed to emit bootloader detection event: {}", e);
+            } else {
+                println!("📡 Emitted device:bootloader-detected event for update flow");
+            }
+            
+            // Return a specific error that indicates bootloader mode
+            return Err("DEVICE_IN_BOOTLOADER_MODE".to_string());
+        }
+        
         match last_error {
             Some(err) => Err(err),
             None => Err(format!("All feature fetch attempts failed for device {}", device.unique_id))

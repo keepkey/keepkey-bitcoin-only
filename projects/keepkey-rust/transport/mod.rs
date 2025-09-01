@@ -3,7 +3,6 @@ pub mod usb;
 pub mod webusb;
 pub mod hid;
 
-pub use protocol_adapter::*;
 pub use usb::*;
 pub use webusb::*;
 pub use hid::*;

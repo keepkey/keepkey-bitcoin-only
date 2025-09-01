@@ -2,45 +2,202 @@
   "status": {
     "connected": "Connecté",
     "disconnected": "Déconnecté",
-    "locked": "Verrouillé",
-    "unlocked": "Déverrouillé",
     "busy": "Occupé",
     "ready": "Prêt",
+    "bootloader": "Mode Bootloader",
+    "initialized": "Initialisé",
+    "notInitialized": "Non Initialisé",
+    "locked": "Verrouillé",
+    "unlocked": "Déverrouillé",
+    "needsBackup": "Sauvegarde Nécessaire",
     "updating": "Mise à jour en cours",
     "error": "Erreur"
   },
   "info": {
+    "deviceId": "ID de l'Appareil",
+    "firmwareVersion": "Version du Firmware",
+    "bootloaderVersion": "Version du Bootloader",
     "model": "Modèle",
-    "firmware": "Firmware",
-    "serial": "Numéro de série",
     "label": "Étiquette",
+    "serialNumber": "Numéro de Série",
     "initialized": "Initialisé",
-    "features": "Fonctionnalités"
+    "features": "Fonctionnalités",
+    "capabilities": "Capacités"
   },
   "actions": {
-    "connect": "Connecter l'appareil",
-    "disconnect": "Déconnecter",
-    "unlock": "Déverrouiller",
-    "lock": "Verrouiller",
-    "wipe": "Effacer l'appareil",
-    "recover": "Récupérer l'appareil",
-    "update": "Mettre à jour le firmware",
-    "initialize": "Initialiser"
+    "update": "Mettre à Jour l'Appareil",
+    "updateFirmware": "Mettre à Jour le Firmware",
+    "updateBootloader": "Mettre à Jour le Bootloader",
+    "wipe": "Effacer l'Appareil",
+    "wiping": "Effacement...",
+    "recover": "Récupérer l'Appareil",
+    "initialize": "Initialiser l'Appareil",
+    "backup": "Sauvegarder l'Appareil",
+    "changePin": "Changer le PIN",
+    "removePin": "Supprimer le PIN",
+    "enablePassphrase": "Activer la Phrase de Passe",
+    "disablePassphrase": "Désactiver la Phrase de Passe",
+    "changeLabel": "Changer l'Étiquette",
+    "applySettings": "Appliquer les Paramètres",
+    "cancel": "Annuler l'Opération",
+    "createWallet": "Créer un Portefeuille",
+    "verifySeed": "Vérifier la Graine"
   },
   "messages": {
     "confirmOnDevice": "Veuillez confirmer sur votre appareil",
+    "followDirections": "Suivez les instructions sur votre appareil",
     "enterPin": "Entrez votre PIN sur l'appareil",
-    "followInstructions": "Suivez les instructions sur l'appareil",
-    "doNotDisconnect": "Ne déconnectez pas l'appareil",
-    "updateAvailable": "Une mise à jour du firmware est disponible",
-    "backupDevice": "Sauvegardez votre appareil avant de continuer"
+    "enterPassphrase": "Entrez votre phrase de passe",
+    "holdButton": "Maintenez le bouton de votre KeepKey",
+    "releaseButton": "Relâchez le bouton",
+    "deviceBusy": "L'appareil est occupé, veuillez patienter",
+    "connectDevice": "Veuillez connecter votre appareil KeepKey",
+    "disconnectDevice": "Veuillez déconnecter votre appareil",
+    "checkDevice": "Vérifiez l'écran de votre appareil",
+    "loadingDevices": "Chargement des appareils...",
+    "noDevicesConnected": "Aucun appareil KeepKey connecté",
+    "connectToGetStarted": "Connectez votre appareil KeepKey via USB pour commencer",
+    "connectedDevices": "Appareils Connectés"
   },
-  "errors": {
-    "notDetected": "Appareil non détecté",
-    "connectionFailed": "Échec de la connexion",
-    "actionCancelled": "Action annulée sur l'appareil",
-    "timeout": "Délai d'attente de l'appareil expiré",
-    "busy": "L'appareil est occupé avec une autre opération",
-    "updateFailed": "Échec de la mise à jour du firmware"
+  "troubleshooting": {
+    "title": "Dépannage",
+    "subtitle": "Vous avez des problèmes avec votre appareil ?",
+    "notDetected": {
+      "title": "Appareil Non Détecté",
+      "tips": [
+        "Assurez-vous que votre KeepKey est branché via USB",
+        "Essayez un autre port USB ou câble",
+        "Redémarrez l'application KeepKey Desktop",
+        "Vérifiez si d'autres applications utilisent l'appareil"
+      ]
+    },
+    "connectionLost": {
+      "title": "Connexion Perdue",
+      "tips": [
+        "Vérifiez votre connexion par câble USB",
+        "Assurez-vous que l'appareil n'est pas utilisé par une autre application",
+        "Essayez de débrancher et rebrancher l'appareil",
+        "Redémarrez l'application si le problème persiste"
+      ]
+    },
+    "communicationFailed": {
+      "title": "Appareil détecté mais pas de communication",
+      "description": "Votre KeepKey a été détecté mais nous ne pouvons pas établir de communication. Cela peut généralement être résolu avec des étapes de dépannage de base.",
+      "launchTroubleshooter": "Lancer le Dépanneur"
+    },
+    "connectionAttempts": {
+      "attempting": "Tentative de connexion ({{attempt}}/{{max}})...",
+      "giveUp": "Abandon après {{max}} tentatives – veuillez reconnecter votre KeepKey."
+    },
+    "bootloaderMode": {
+      "title": "Appareil en Mode Bootloader",
+      "description": "Votre appareil est en mode bootloader. Ceci est utilisé pour les mises à jour du firmware.",
+      "howToExit": "Pour quitter le mode bootloader, débranchez et rebranchez votre appareil"
+    },
+    "updateFailed": {
+      "title": "Échec de la Mise à Jour",
+      "tips": [
+        "Assurez une connexion USB stable pendant la mise à jour",
+        "Ne déconnectez pas l'appareil pendant la mise à jour",
+        "Essayez d'entrer manuellement en mode bootloader",
+        "Contactez le support si le problème persiste"
+      ]
+    },
+    "deviceInvalidState": {
+      "title": "Appareil dans un État Invalide",
+      "description": "Votre KeepKey ne répond pas correctement.",
+      "explanation": "Cela peut se produire lorsque l'appareil est dans un état inattendu ou s'il y a eu une erreur de communication.",
+      "steps": {
+        "title": "Veuillez suivre ces étapes :",
+        "step1": "Débranchez votre KeepKey du port USB",
+        "step2": "Attendez 2-3 secondes",
+        "step3": "Reconnectez votre KeepKey normalement"
+      },
+      "warning": "NE maintenez PAS de boutons lors de la reconnexion",
+      "error": "Erreur : {{error}}",
+      "timeoutError": "Délai d'attente dépassé lors de la récupération des caractéristiques de l'appareil",
+      "persistentProblem": "Si le problème persiste après la reconnexion, veuillez fermer toute autre application de portefeuille qui pourrait utiliser votre KeepKey."
+    }
+  },
+  "bootloader": {
+    "title": "Mode Bootloader",
+    "description": "Votre KeepKey est en mode bootloader",
+    "instructions": {
+      "title": "Comment entrer en Mode Bootloader :",
+      "step1": "Déconnectez votre KeepKey",
+      "step2": "Maintenez le bouton de votre KeepKey enfoncé",
+      "step3": "Tout en maintenant le bouton, reconnectez votre KeepKey",
+      "step4": "Continuez à maintenir jusqu'à voir 'BOOTLOADER MODE' sur l'écran",
+      "step5": "Relâchez le bouton"
+    },
+    "update": {
+      "title": "Mise à Jour Disponible",
+      "description": "Une mise à jour du bootloader est disponible pour votre appareil",
+      "warning": "Ne déconnectez pas votre appareil pendant la mise à jour"
+    }
+  },
+  "firmware": {
+    "title": "Mise à Jour du Firmware",
+    "checking": "Recherche de mises à jour du firmware...",
+    "available": "Mise à jour du firmware disponible",
+    "current": "Version Actuelle",
+    "latest": "Dernière Version",
+    "upToDate": "Votre firmware est à jour",
+    "downloading": "Téléchargement du firmware...",
+    "installing": "Installation du firmware...",
+    "verifying": "Vérification du firmware...",
+    "success": "Firmware mis à jour avec succès",
+    "failed": "Échec de la mise à jour du firmware",
+    "warning": "Avertissement : Ne déconnectez pas votre appareil pendant le processus de mise à jour"
+  },
+  "initialization": {
+    "title": "Initialiser l'Appareil",
+    "description": "Configurez votre KeepKey pour la première fois",
+    "options": {
+      "create": "Créer un Nouveau Portefeuille",
+      "recover": "Récupérer un Portefeuille Existant",
+      "import": "Importer une Phrase de Graine"
+    },
+    "inProgress": "Initialisation de l'appareil...",
+    "success": "Appareil initialisé avec succès",
+    "failed": "Échec de l'initialisation de l'appareil"
+  },
+  "recovery": {
+    "title": "Récupérer l'Appareil",
+    "description": "Restaurez votre portefeuille en utilisant votre graine de récupération",
+    "wordCount": "Nombre de mots",
+    "enterWord": "Entrez le mot {{number}}",
+    "checkDevice": "Vérifiez votre appareil pour les positions des mots",
+    "inProgress": "Récupération du portefeuille...",
+    "success": "Portefeuille récupéré avec succès",
+    "failed": "Échec de la récupération"
+  },
+  "wipe": {
+    "title": "Effacer l'Appareil",
+    "warning": "Avertissement : Cela supprimera toutes les données de votre appareil !",
+    "confirm": "Êtes-vous sûr de vouloir effacer votre appareil ?",
+    "description": "Cette action ne peut pas être annulée. Assurez-vous d'avoir sauvegardé votre graine de récupération.",
+    "inProgress": "Effacement de l'appareil...",
+    "success": "Appareil effacé avec succès",
+    "failed": "Échec de l'effacement de l'appareil"
+  },
+  "badges": {
+    "keepkey": "Appareil KeepKey",
+    "hardwareWallet": "Portefeuille Matériel",
+    "secureElement": "Élément Sécurisé",
+    "usbConnected": "USB Connecté",
+    "firmwareOutdated": "Firmware Obsolète",
+    "backupNeeded": "Sauvegarde Nécessaire"
+  },
+  "updateStatus": {
+    "title": "État de la Mise à Jour :",
+    "bootloaderAvailable": "Mise à jour du bootloader disponible (v{{version}})",
+    "firmwareAvailable": "Mise à jour du firmware disponible (v{{version}})",
+    "needsInitialization": "L'appareil doit être initialisé",
+    "upToDate": "L'appareil est à jour et prêt"
+  },
+  "dangerZone": {
+    "title": "Zone de Danger :",
+    "wipeDevice": "Effacer l'Appareil"
   }
 }

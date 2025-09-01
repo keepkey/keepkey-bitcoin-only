@@ -1,0 +1,124 @@
+{
+  "types": {
+    "send": "Send",
+    "receive": "Receive",
+    "swap": "Swap",
+    "contract": "Contract",
+    "unknown": "Unknown"
+  },
+  "status": {
+    "pending": "Pending",
+    "confirming": "Confirming",
+    "confirmed": "Confirmed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "replaced": "Replaced",
+    "dropped": "Dropped"
+  },
+  "details": {
+    "title": "Transaction Details",
+    "hash": "Transaction Hash",
+    "blockNumber": "Block Number",
+    "blockHash": "Block Hash",
+    "from": "From",
+    "to": "To",
+    "value": "Value",
+    "fee": "Transaction Fee",
+    "gasPrice": "Gas Price",
+    "gasLimit": "Gas Limit",
+    "gasUsed": "Gas Used",
+    "nonce": "Nonce",
+    "confirmations": "Confirmations",
+    "timestamp": "Timestamp",
+    "memo": "Memo",
+    "note": "Note"
+  },
+  "actions": {
+    "viewDetails": "View Details",
+    "viewOnExplorer": "View on Explorer",
+    "copyHash": "Copy Transaction Hash",
+    "copyAddress": "Copy Address",
+    "speedUp": "Speed Up",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "resend": "Resend"
+  },
+  "messages": {
+    "broadcasting": "Broadcasting transaction...",
+    "broadcasted": "Transaction broadcasted successfully",
+    "waitingConfirmation": "Waiting for confirmation...",
+    "confirmed": "Transaction confirmed",
+    "failed": "Transaction failed",
+    "cancelled": "Transaction cancelled",
+    "speedUp": "Transaction speed increased",
+    "replaced": "Transaction has been replaced",
+    "notFound": "Transaction not found"
+  },
+  "fee": {
+    "title": "Transaction Fee",
+    "estimated": "Estimated Fee",
+    "actual": "Actual Fee",
+    "priority": {
+      "low": "Low Priority",
+      "medium": "Medium Priority",
+      "high": "High Priority",
+      "custom": "Custom"
+    },
+    "speed": {
+      "slow": "Slow (~30 min)",
+      "normal": "Normal (~10 min)",
+      "fast": "Fast (~2 min)",
+      "instant": "Instant"
+    },
+    "satPerByte": "sat/vB",
+    "total": "Total Fee",
+    "tooLow": "Fee too low, transaction may not confirm",
+    "tooHigh": "Fee seems high, consider lowering"
+  },
+  "confirmation": {
+    "title": "Confirm Transaction",
+    "review": "Review Details",
+    "warning": "Please review carefully before confirming",
+    "summary": {
+      "sending": "You are sending",
+      "to": "To address",
+      "fee": "Network fee",
+      "total": "Total amount"
+    },
+    "device": {
+      "title": "Confirm on Device",
+      "instruction": "Please review and confirm the transaction on your KeepKey",
+      "verifyAddress": "Verify the recipient address matches",
+      "verifyAmount": "Verify the amount is correct",
+      "press": "Press the button to confirm"
+    }
+  },
+  "history": {
+    "title": "Transaction History",
+    "empty": "No transactions yet",
+    "loading": "Loading transactions...",
+    "loadMore": "Load More",
+    "filters": {
+      "all": "All Transactions",
+      "sent": "Sent",
+      "received": "Received",
+      "pending": "Pending",
+      "failed": "Failed"
+    },
+    "sort": {
+      "recent": "Most Recent",
+      "oldest": "Oldest First",
+      "highest": "Highest Amount",
+      "lowest": "Lowest Amount"
+    }
+  },
+  "signing": {
+    "title": "Sign Transaction",
+    "inProgress": "Signing transaction...",
+    "confirmOnDevice": "Confirm on your device",
+    "success": "Transaction signed successfully",
+    "failed": "Failed to sign transaction",
+    "rejected": "Transaction rejected on device",
+    "timeout": "Signing timed out"
+  }
+}
