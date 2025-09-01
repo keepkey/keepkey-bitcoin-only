@@ -11,6 +11,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { usePinPassphraseDialog } from '../contexts/DialogContext';
+import { useWallet } from '../contexts/WalletContext';
 
 interface PassphraseSettingsProps {
   deviceId: string;
@@ -28,6 +29,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const authDialog = usePinPassphraseDialog();
   const unlistenersRef = useRef<UnlistenFn[]>([]);
+  const { reinitialize } = useWallet();
   
   console.log('[PassphraseSettings] Component rendered - deviceId:', deviceId, 'isEnabled:', isEnabled, 'isUpdating:', isUpdating);
 
@@ -105,11 +107,47 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       const unlisten = await listen<{
         device_id: string;
         reason: string;
-      }>('device:needs_reconnect', (event) => {
+      }>('device:needs_reconnect', async (event) => {
         if (event.payload.device_id === deviceId) {
           const reason = event.payload.reason;
           if (reason.includes('Passphrase')) {
-            setStatusMessage('Please unplug and reconnect your KeepKey to apply the passphrase changes.');
+            console.log('[PassphraseSettings] Passphrase change confirmed by device, triggering backend restart');
+            setStatusMessage('Passphrase settings applied! Restarting...');
+            
+            // Trigger backend restart and frontend state clearing
+            try {
+              // Restart backend like logo press does
+              await invoke('restart_backend_startup');
+              console.log('[PassphraseSettings] Backend restart initiated successfully');
+              
+              // Re-initialize wallet to clear frontend state
+              reinitialize();
+              
+              // Signal backend that frontend is ready again
+              setTimeout(async () => {
+                try {
+                  console.log('[PassphraseSettings] Re-signaling backend that frontend is ready after restart...');
+                  await invoke('frontend_ready');
+                  console.log('[PassphraseSettings] Frontend ready signal sent successfully after restart');
+                  
+                  // Update status message
+                  if (reason.includes('PassphraseEnabled')) {
+                    setStatusMessage('Passphrase protection enabled successfully!');
+                  } else if (reason.includes('PassphraseDisabled')) {
+                    setStatusMessage('Passphrase protection disabled successfully!');
+                  }
+                  
+                  // Clear status message after 3 seconds
+                  setTimeout(() => setStatusMessage(null), 3000);
+                } catch (error) {
+                  console.log('[PassphraseSettings] frontend_ready command failed after restart:', error);
+                }
+              }, 500);
+            } catch (error) {
+              console.error('[PassphraseSettings] Failed to restart backend after settings change:', error);
+              setStatusMessage('Please unplug and reconnect your KeepKey to apply the passphrase changes.');
+            }
+            
             setIsUpdating(false);
           }
         }
@@ -135,6 +173,7 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
       });
       unlisteners.push(unlisten);
     };
+
 
     // Setup all listeners
     setupPinListener();
@@ -198,11 +237,14 @@ export const PassphraseSettings: React.FC<PassphraseSettingsProps> = ({
         authDialog.show({
           deviceId: deviceId,
           operationType: 'settings',
-          onComplete: () => {
+          onComplete: async () => {
             console.log('[PassphraseSettings] PIN entry completed');
             setStatusMessage('PIN accepted, applying changes...');
             // Update local state after PIN is accepted
             setIsEnabled(newState);
+            
+            // After PIN is accepted and device confirms, we need to restart backend
+            // This will be handled by the device:settings_applied event listener
           },
         });
         // Don't update state yet - wait for PIN completion
