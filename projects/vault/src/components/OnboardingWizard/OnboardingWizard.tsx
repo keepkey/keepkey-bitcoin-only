@@ -101,6 +101,29 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
         hide('onboarding');
         console.log('Forced onboarding dialog closure via DialogContext');
       }, 100);
+
+      // Auto-restart backend after 10 seconds to ensure smooth transition
+      console.log("Scheduling automatic backend restart in 10 seconds...");
+      setTimeout(async () => {
+        try {
+          console.log("Auto-restarting backend after onboarding completion...");
+          await invoke('restart_backend_startup');
+          console.log("Backend restart initiated successfully after onboarding");
+          
+          // Signal backend that frontend is ready
+          setTimeout(async () => {
+            try {
+              console.log('🎯 Signaling backend that frontend is ready after onboarding restart...');
+              await invoke('frontend_ready');
+              console.log('✅ Frontend ready signal sent successfully');
+            } catch (error) {
+              console.log('frontend_ready command failed:', error);
+            }
+          }, 1000);
+        } catch (error) {
+          console.error("Failed to auto-restart backend after onboarding:", error);
+        }
+      }, 10000);
     } catch (error) {
       console.error("Failed to mark onboarding as completed:", error);
       // Try to get debug info on failure
