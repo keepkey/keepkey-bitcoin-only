@@ -1,5 +1,6 @@
-import { Box, Card, HStack, Text, VStack, Icon } from "@chakra-ui/react";
+import { Box, Card, HStack, Text, VStack, Icon, Link } from "@chakra-ui/react";
 import { FaCheckCircle, FaRocket } from "react-icons/fa";
+import { invoke } from "@tauri-apps/api/core";
 
 // Step components no longer need props - navigation handled by main wizard
 
@@ -47,7 +48,23 @@ export function Step4Complete() {
             
             <Box textAlign="center" p={3} bg="gray.800" borderRadius="md" borderWidth="1px" borderColor="gray.600">
               <Text color="gray.400" fontSize="sm">
-                💡 Need help? Visit our support center or check the built-in tutorials
+                💡 Need help? Visit our support center or{" "}
+                <Link
+                  color="green.400"
+                  textDecoration="underline"
+                  cursor="pointer"
+                  onClick={async () => {
+                    try {
+                      await invoke('open_url', { url: 'https://keepkey.com/blog' });
+                    } catch (error) {
+                      console.error('Failed to open URL:', error);
+                      window.open('https://keepkey.com/blog', '_blank');
+                    }
+                  }}
+                  _hover={{ color: "green.300" }}
+                >
+                  check our tutorials
+                </Link>
               </Text>
             </Box>
           </VStack>

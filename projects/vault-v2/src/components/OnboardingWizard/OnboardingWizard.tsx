@@ -18,7 +18,6 @@ import { useOnboardingState } from "../../hooks/useOnboardingState";
 
 // Import individual steps
 import { Step0Language } from "./steps/Step0Language";
-import { Step1AppSettings } from "./steps/Step1AppSettings";
 import { Step2Pin } from "./steps/Step2Pin";
 import { Step3Mnemonics } from "./steps/Step3Mnemonics";
 import { Step4Complete } from "./steps/Step4Complete";
@@ -41,12 +40,6 @@ const STEPS: Step[] = [
     label: "Language",
     description: "Select your preferred language",
     component: Step0Language,
-  },
-  {
-    id: "app-settings",
-    label: "App Settings",
-    description: "Configure your application preferences",
-    component: Step1AppSettings,
   },
   {
     id: "pin",

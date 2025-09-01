@@ -35,36 +35,6 @@
       "time": "5-10 minutes"
     }
   },
-  "app-settings": {
-    "title": "App Settings",
-    "subtitle": "Configure your application preferences",
-    "description": "Configure your application preferences",
-    "fullDescription": "Customize how KeepKey Desktop works for you",
-    "theme": {
-      "title": "Theme",
-      "label": "Choose Theme",
-      "light": "Light",
-      "dark": "Dark",
-      "system": "System Default",
-      "description": "Dark theme provides better visibility and reduces eye strain during extended use",
-      "active": "Dark theme active"
-    },
-    "analytics": {
-      "title": "Anonymous Analytics",
-      "description": "Help us improve by sharing anonymous usage data",
-      "enable": "Enable Analytics",
-      "disable": "No Thanks"
-    },
-    "notifications": {
-      "title": "Notifications",
-      "description": "Stay informed about important security updates and device status changes",
-      "fullDescription": "Get notified about important updates and transactions",
-      "enable": "Enable Notifications",
-      "enabled": "Notifications enabled",
-      "disable": "Disable Notifications"
-    },
-    "defaultSettings": "Default settings are optimized for security and usability"
-  },
   "pin": {
     "title": "Security",
     "subtitle": "Security Setup",
@@ -116,7 +86,7 @@
       "step2": "2. Follow the device setup prompts", 
       "step3": "3. Start managing your crypto assets securely"
     },
-    "help": "💡 Need help? Visit our support center or check the built-in tutorials",
+    "help": "💡 Need help? Visit our support center or check our tutorials",
     "tips": {
       "title": "Quick Tips",
       "backup": "Always backup your recovery phrase",
@@ -126,7 +96,6 @@
   },
   "steps": {
     "language": "Language",
-    "app-settings": "App Settings",
     "pin": "Security",
     "mnemonics": "Recovery",
     "complete": "Complete"
