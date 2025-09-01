@@ -7,13 +7,13 @@ import {
   Flex,
   Icon,
 } from "@chakra-ui/react";
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { FaCheckCircle } from "react-icons/fa";
 import { invoke } from "@tauri-apps/api/core";
 import { useDialog } from "../../contexts/DialogContext";
 import { useTranslation } from "react-i18next";
 // Safe import with conditional usage
-import { useOnboardingGate } from "../../contexts/OnboardingGateContext";
+import { OnboardingGateContext } from "../../contexts/OnboardingGateContext";
 import { useOnboardingState } from "../../hooks/useOnboardingState";
 
 // Import individual steps
@@ -73,7 +73,13 @@ export function OnboardingWizard({ onClose, onComplete }: OnboardingWizardProps)
   const highlightColor = "green.500";
   const { hide } = useDialog();
   const { t } = useTranslation(['onboarding', 'common']);
-  const { setOnboardingComplete } = useOnboardingGate();
+  
+  // Safely access OnboardingGateContext - it might not be available if rendered outside provider
+  const onboardingGateContext = useContext(OnboardingGateContext);
+  const setOnboardingComplete = onboardingGateContext?.setOnboardingComplete || (() => {
+    console.log('OnboardingGateContext not available - using fallback');
+  });
+  
   const { clearCache } = useOnboardingState();
 
   // Override STEPS with translated values

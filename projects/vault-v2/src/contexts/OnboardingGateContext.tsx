@@ -30,7 +30,7 @@ interface OnboardingGateContextType {
   onboardingInProgress: boolean;
 }
 
-const OnboardingGateContext = createContext<OnboardingGateContextType | undefined>(undefined);
+export const OnboardingGateContext = createContext<OnboardingGateContextType | undefined>(undefined);
 
 interface OnboardingGateProviderProps {
   children: ReactNode;
