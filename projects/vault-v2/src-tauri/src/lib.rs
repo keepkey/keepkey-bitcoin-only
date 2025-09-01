@@ -228,6 +228,26 @@ async fn restart_backend_startup(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn exit_app_with_restart(app: tauri::AppHandle) -> Result<(), String> {
+    println!("🔄 EXIT APP WITH FULL BACKEND RESTART REQUESTED");
+    
+    // First perform a backend restart to clean up everything
+    if let Err(e) = restart_backend_startup(app.clone()).await {
+        println!("⚠️ Backend restart failed before exit: {}", e);
+    }
+    
+    // Small delay to ensure cleanup completes
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    
+    println!("👋 Exiting application...");
+    
+    // Exit the application
+    app.exit(0);
+    
+    Ok(())
+}
+
 // Helper function to perform USB device reset at driver level
 async fn perform_usb_device_reset(device_id: &str) -> Result<(), String> {
     // Since rusb is not directly available in this crate, we'll use a system-level approach
@@ -392,6 +412,7 @@ pub fn run() {
             vault_open_app,
             open_url,
             restart_backend_startup,
+            exit_app_with_restart,
             // Frontend readiness
             commands::frontend_ready,
             commands::start_device_operations,

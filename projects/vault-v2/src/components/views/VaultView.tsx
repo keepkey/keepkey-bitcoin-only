@@ -5,6 +5,7 @@ import { Portfolio } from '../Portfolio';
 import { KeepKeyUILogo } from '../logo/keepkey-ui';
 import { useWallet } from '../../contexts/WalletContext';
 import { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 
 interface VaultViewProps {
   onNavigate?: (action: 'send' | 'receive') => void;
@@ -37,7 +38,29 @@ const syncSpin = keyframes`
 
 export const VaultView = ({ onNavigate }: VaultViewProps) => {
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
   const { portfolio, fetchedXpubs, loading, refreshPortfolio } = useWallet();
+
+  // Handle KeepKey logo click to exit app with full backend restart
+  const handleKeepKeyLogoClick = async () => {
+    console.log('Keep key logo click');
+    if (isExiting) {
+      console.log('isExiting');
+      return;
+    } // Prevent multiple clicks
+    
+    setIsExiting(true);
+    console.log('🔄 VaultView: KeepKey logo clicked, initiating full app exit with backend restart...');
+    
+    try {
+      // Call the backend command to exit with restart
+      await invoke('restart_backend_startup');
+      console.log('✅ VaultView: Exit command sent to backend');
+    } catch (error) {
+      console.error('❌ VaultView: Failed to exit app:', error);
+      setIsExiting(false);
+    }
+  };
 
   // Handle Bitcoin logo click to refresh portfolio using in-memory xpubs
   const handleBitcoinLogoClick = async () => {
@@ -108,7 +131,7 @@ export const VaultView = ({ onNavigate }: VaultViewProps) => {
         </HStack>
       </Box>
 
-      {/* KeepKey Logo Animation - Bottom Left */}
+      {/* KeepKey Logo Animation - Bottom Left (now clickable for exit) */}
       <Box
         position="absolute"
         bottom={2}
@@ -116,9 +139,25 @@ export const VaultView = ({ onNavigate }: VaultViewProps) => {
         zIndex={10}
         width="50px"
         height="50px"
-        animation={`${pulseGlow} 3s ease-in-out infinite`}
+        animation={isExiting ? undefined : `${pulseGlow} 3s ease-in-out infinite`}
+        cursor="pointer"
+        opacity={isExiting ? 0.5 : 1}
+        transition="all 0.2s ease"
+        _hover={{
+          transform: isExiting ? undefined : "scale(1.1)",
+          filter: isExiting ? undefined : "brightness(1.2)"
+        }}
+        _active={{
+          transform: isExiting ? undefined : "scale(0.95)"
+        }}
+        onClick={handleKeepKeyLogoClick}
+        title={isExiting ? "Exiting..." : "Click to exit and restart"}
       >
-        <KeepKeyUILogo />
+        {isExiting ? (
+          <Spinner size="md" color="gray.400" />
+        ) : (
+          <KeepKeyUILogo />
+        )}
       </Box>
 
       {/* Auto-loading status - Only show when portfolio is loading */}

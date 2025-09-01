@@ -169,8 +169,8 @@ impl EventController {
                                 let app_for_task = app_handle.clone();
                                 let device_for_task = device.clone();
                                 tokio::spawn(async move {
-                                    // Give device a moment to settle after connection
-                                    tokio::time::sleep(Duration::from_millis(500)).await;
+                                    // Give device time to settle after connection (USB stack warm-up)
+                                    tokio::time::sleep(Duration::from_millis(1500)).await;
                                     println!("📡 Fetching device features for: {}", device_for_task.unique_id);
                                     
                                     // Emit getting features status
@@ -339,26 +339,10 @@ impl EventController {
                                             
                                             // Check for timeout errors specifically
                                             if e.contains("Timeout while fetching device features") {
-                                                println!("⏱️ Device timeout detected - device may be in invalid state");
-                                                println!("❌ OOPS this should never happen - device communication failed!");
-                                                
-                                                // Log detailed error for debugging
-                                                eprintln!("ERROR: Device timeout indicates invalid state - this should be prevented!");
-                                                eprintln!("Device ID: {}", device_for_task.unique_id);
-                                                eprintln!("Error: {}", e);
-                                                
-                                                // Emit device invalid state event for UI to handle
-                                                let invalid_state_payload = serde_json::json!({
-                                                    "deviceId": device_for_task.unique_id,
-                                                    "error": e,
-                                                    "errorType": "DEVICE_TIMEOUT",
-                                                    "status": "invalid_state"
-                                                });
-                                                let _ = app_for_task.emit("device:invalid-state", &invalid_state_payload);
-                                                
-                                                // Also emit status update
+                                                // Timeouts can occur during normal USB warm-up; do not mark invalid.
+                                                println!("⏱️ Device feature fetch timed out - will retry on next scan");
                                                 let _ = app_for_task.emit("status:update", serde_json::json!({
-                                                    "status": "Device timeout - please reconnect"
+                                                    "status": "Device detected - establishing connection..."
                                                 }));
                                             }
                                             // Check if this is a device access error
@@ -609,7 +593,7 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
                 return Err("Device entered PIN flow during feature fetch".to_string());
             }
             
-            match tokio::time::timeout(Duration::from_secs(5), queue_handle.get_features()).await {
+            match tokio::time::timeout(Duration::from_secs(15), queue_handle.get_features()).await {
                 Ok(Ok(raw_features)) => {
                     println!("✅ Successfully got features for device {} on attempt {}", device.unique_id, attempt);
                     // Convert features to our DeviceFeatures format
@@ -656,7 +640,7 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
             
             // Wait before retrying (exponential backoff)
             if attempt < 3 {
-                let delay_ms = 500 * attempt as u64; // 500ms, 1000ms
+                let delay_ms = 1000 * attempt as u64; // 1000ms, 2000ms
                 println!("⏳ Waiting {}ms before retry for device {}", delay_ms, device.unique_id);
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             }
