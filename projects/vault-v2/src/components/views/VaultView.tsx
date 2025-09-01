@@ -39,7 +39,7 @@ const syncSpin = keyframes`
 export const VaultView = ({ onNavigate }: VaultViewProps) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  const { portfolio, fetchedXpubs, loading, refreshPortfolio } = useWallet();
+  const { portfolio, fetchedXpubs, loading, refreshPortfolio, reinitialize } = useWallet();
 
   // Handle KeepKey logo click to exit app with full backend restart
   const handleKeepKeyLogoClick = async () => {
@@ -53,9 +53,16 @@ export const VaultView = ({ onNavigate }: VaultViewProps) => {
     console.log('🔄 VaultView: KeepKey logo clicked, initiating full app exit with backend restart...');
     
     try {
-      // Call the backend command to exit with restart
-      await invoke('restart_backend_startup');
-      console.log('✅ VaultView: Exit command sent to backend');
+      // Clear the frontend state first by reinitializing the wallet context
+      console.log('🧹 VaultView: Clearing frontend state...');
+      reinitialize();
+      
+      // Force a page reload to return to loading screen
+      console.log('🔄 VaultView: Reloading application...');
+      window.location.reload();
+      
+      // Note: The backend restart will happen automatically when the app reloads
+      // We don't need to call restart_backend_startup here since reload handles it
     } catch (error) {
       console.error('❌ VaultView: Failed to exit app:', error);
       setIsExiting(false);
