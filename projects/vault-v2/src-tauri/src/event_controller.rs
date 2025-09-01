@@ -662,7 +662,40 @@ async fn try_get_device_features(device: &FriendlyUsbDevice, app_handle: &AppHan
             }
         }
         
-        // All attempts failed
+        // All attempts failed - check if this might be a device in bootloader/updater mode
+        println!("❌ Failed to get features for {}: {:?}", device.unique_id, last_error);
+        
+        // When we fail to get features, it COULD be bootloader mode (bootloaders often don't respond)
+        // But plain timeouts can also happen in wallet mode. Use stricter heuristics before emitting.
+        if last_error.as_ref().map_or(false, |e| {
+            let is_timeout = e.contains("Timeout");
+            let is_unknown = e.contains("Unknown message") || e.contains("Unexpected response");
+            let is_comm_fail = e.contains("communication failed");
+            // Only consider bootloader if it's NOT a simple timeout alone.
+            // Prefer cases where device explicitly rejects or gives unknown/unsupported replies.
+            is_unknown || is_comm_fail
+        }) {
+            
+            println!("⏱️ Device timeout detected - device may be in invalid state");
+            println!("🔧 Device {} likely in bootloader/updater mode - triggering update flow", device.unique_id);
+            
+            // Emit an event to trigger the firmware update dialog
+            let bootloader_event = serde_json::json!({
+                "deviceId": device.unique_id,
+                "isBootloader": true,
+                "message": "Device appears to be in bootloader mode and needs firmware update"
+            });
+            
+            if let Err(e) = app_handle.emit("device:bootloader-detected", &bootloader_event) {
+                println!("❌ Failed to emit bootloader detection event: {}", e);
+            } else {
+                println!("📡 Emitted device:bootloader-detected event for update flow");
+            }
+            
+            // Return a specific error that indicates bootloader mode
+            return Err("DEVICE_IN_BOOTLOADER_MODE".to_string());
+        }
+        
         match last_error {
             Some(err) => Err(err),
             None => Err(format!("All feature fetch attempts failed for device {}", device.unique_id))

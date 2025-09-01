@@ -138,14 +138,20 @@ function App() {
                     console.log('📱 [App] Dialog cleanup timeout fired! Queue length:', queue.length);
                     console.log('📱 [App] Current queue contents:', queue.map(d => ({ id: d.id, priority: d.priority })));
                     
-                    // Check if any passphrase dialogs are in the queue
+                    // Check if any important dialogs are in the queue that shouldn't be cleared
                     const hasPassphraseDialog = queue.some(d => d.id.includes('passphrase'));
                     const hasPinDialog = queue.some(d => d.id.includes('pin'));
+                    const hasFirmwareDialog = queue.some(d => d.id.includes('firmware-update'));
+                    const hasBootloaderDialog = queue.some(d => d.id.includes('bootloader-update'));
                     
                     if (hasPassphraseDialog) {
                         console.log('📱 [App] ⚠️ Passphrase dialog detected - NOT clearing dialogs, blocking UI');
                     } else if (hasPinDialog) {
                         console.log('📱 [App] ⚠️ PIN dialog detected - NOT clearing dialogs, blocking UI');
+                    } else if (hasFirmwareDialog) {
+                        console.log('📱 [App] ⚠️ Firmware update dialog detected - NOT clearing dialogs');
+                    } else if (hasBootloaderDialog) {
+                        console.log('📱 [App] ⚠️ Bootloader update dialog detected - NOT clearing dialogs');
                     } else if (queue.length > 0) {
                         console.warn('📱 [App] 🧹 Clearing stuck dialogs before showing VaultInterface:', queue.map(d => d.id));
                         hideAll();

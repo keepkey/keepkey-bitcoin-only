@@ -535,8 +535,9 @@ pub async fn update_device_firmware(
     };
     
     // Check device features to ensure it's in bootloader mode (required for firmware updates)
-    match queue_handle.get_features().await {
-        Ok(features) => {
+    // Add a firm timeout so the frontend doesn't spin forever if device isn't ready
+    match tokio::time::timeout(std::time::Duration::from_secs(8), queue_handle.get_features()).await {
+        Ok(Ok(features)) => {
             if !features.bootloader_mode.unwrap_or(false) {
                 let error = "Device must be in bootloader mode for firmware update. Please hold the button while reconnecting to enter bootloader mode.".to_string();
                 
@@ -559,7 +560,7 @@ pub async fn update_device_firmware(
                 features.patch_version.unwrap_or(0)
             ));
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             let error_str = e.to_string();
             
             // Check if this looks like an OOB bootloader that doesn't understand GetFeatures
@@ -585,6 +586,17 @@ pub async fn update_device_firmware(
                 
                 return Err(error);
             }
+        }
+        Err(_elapsed) => {
+            let error = "Timed out checking device features before firmware update. Ensure the device is in bootloader mode (hold button while plugging in).".to_string();
+            let response_data = serde_json::json!({
+                "error": error,
+                "operation": "update_device_firmware"
+            });
+            if let Err(e) = log_device_response(&device_id, &request_id, false, &response_data, Some(&error)).await {
+                eprintln!("Failed to log firmware update timeout response: {}", e);
+            }
+            return Err(error);
         }
     }
     

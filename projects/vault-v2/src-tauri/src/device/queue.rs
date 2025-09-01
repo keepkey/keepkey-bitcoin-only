@@ -215,16 +215,21 @@ pub async fn add_to_device_queue(
         return Err("Device is currently in PIN creation flow. Please complete PIN setup before making other requests.".to_string());
     }
 
-    // Only block requests if we have confirmed the device needs updates
+    // Only block requests if device needs bootloader update or initialization
+    // Firmware updates should NOT block GetXpub or other basic operations
     // Don't block if we simply can't determine the state (OOB bootloader case)
-    if raw_features_opt.is_some() && (status.needs_bootloader_update || status.needs_firmware_update || status.needs_initialization) {
+    if raw_features_opt.is_some() && (status.needs_bootloader_update || status.needs_initialization) {
         let mut reasons = Vec::new();
         if status.needs_bootloader_update { reasons.push("bootloader update"); }
-        if status.needs_firmware_update { reasons.push("firmware update"); }
         if status.needs_initialization   { reasons.push("initialization"); }
         let reason_str = reasons.join(", ");
         println!("🚫 Rejecting {request_type} request – device requires {reason_str}");
         return Err(format!("Device cannot process requests until {} is completed.", reason_str));
+    }
+    
+    // Log a warning for firmware updates but don't block operations
+    if raw_features_opt.is_some() && status.needs_firmware_update {
+        println!("⚠️ Device needs firmware update but allowing {request_type} request to proceed");
     }
 
     // Automatically trigger PIN entry for authenticated requests if device needs PIN unlock (except GetFeatures)

@@ -195,7 +195,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         setShowFirmwareUpdate(false)
         setShowWalletCreation(false)
       }
-    } else if (status.needsFirmwareUpdate) {  // Removed the && status.firmwareCheck check to handle bootloader mode
+    } else if (status.needsFirmwareUpdate) {
       // Only update firmware if device is NOT initialized
       // Initialized devices can skip firmware updates
       const isInitialized = status.features?.initialized === true
@@ -220,7 +220,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
           isInBootloaderMode
         })
         
-        // CRITICAL: Check if device is in bootloader mode
+        // CRITICAL: Only show firmware update if actually in bootloader mode
         if (isInBootloaderMode && !status.needsBootloaderUpdate) {
           // Device is already in bootloader mode with correct bootloader version
           // Show firmware update dialog directly
@@ -535,6 +535,54 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         }
       })
 
+      // Listen for bootloader detection event
+      const bootloaderDetectedUnsubscribe = listen<{
+        deviceId: string
+        isBootloader: boolean
+        message: string
+      }>('device:bootloader-detected', (event) => {
+        console.log('🔧 Bootloader detected event received:', event.payload)
+        const { deviceId, isBootloader, message } = event.payload
+        
+        if (isBootloader) {
+          console.log('🔧 Device is in bootloader/updater mode - showing firmware update dialog')
+          
+          // Clear other dialogs
+          setShowEnterBootloaderMode(false)
+          setShowBootloaderUpdate(false)
+          setShowWalletCreation(false)
+          setShowPinUnlock(false)
+          
+          // Create a minimal device status for firmware update
+          const bootloaderStatus: DeviceStatus = {
+            deviceId: deviceId,
+            connected: true,
+            needsFirmwareUpdate: true,
+            needsBootloaderUpdate: false,
+            needsInitialization: false,
+            needsPinUnlock: false,
+            firmwareCheck: {
+              currentVersion: 'Unknown',
+              latestVersion: '7.10.0',
+              needsUpdate: true
+            },
+            features: {
+              bootloader_mode: true,
+              bootloaderMode: true,
+              initialized: false
+            } as DeviceFeatures
+          }
+          
+          setDeviceStatus(bootloaderStatus)
+          setConnectedDeviceId(deviceId)
+          setShowFirmwareUpdate(true)
+        } else {
+          // Guard: if backend sent non-bootloader event, ensure we don't show firmware dialog
+          console.log('🔧 Bootloader detection event indicates NOT in bootloader; suppress firmware dialog')
+          setShowFirmwareUpdate(false)
+        }
+      })
+
       // Listen for device disconnection
       const disconnectedUnsubscribe = listen<string>('device:disconnected', (event) => {
         const disconnectedDeviceId = event.payload;
@@ -594,6 +642,7 @@ export const DeviceUpdateManager = ({ onComplete, onSetupWizardActiveChange }: D
         // pinRequestTriggeredUnsubscribe is commented out to prevent duplicate PIN dialogs
         // ;(await pinRequestTriggeredUnsubscribe)()
         ;(await passphraseUnlockUnsubscribe)()
+        ;(await bootloaderDetectedUnsubscribe)()
         ;(await disconnectedUnsubscribe)()
         if (timeoutId) clearTimeout(timeoutId)
       }
