@@ -83,6 +83,7 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     visible: false
   })
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isOpeningDevTools, setIsOpeningDevTools] = useState(false)
   
   const firmwareWizard = useFirmwareUpdateWizard()
   const walletCreationWizard = useWalletCreationWizard()
@@ -288,6 +289,21 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
     } catch (error) {
       console.error('🚀 [SettingsDialog] Failed to open wallet creation wizard:', error)
       alert(`Failed to open wallet creation wizard: ${error}`)
+    }
+  }
+
+  const handleOpenDevTools = async () => {
+    setIsOpeningDevTools(true)
+    try {
+      await invoke('open_devtools')
+      showToast('DevTools access instructions shown in console', 'success')
+    } catch (error) {
+      console.error('Failed to open DevTools:', error)
+      showToast(`Failed to open DevTools: ${error}`, 'error')
+      // Show fallback instructions
+      alert(`DevTools Error: ${error}\n\nFallback methods:\n• Press F12\n• Press Ctrl+Shift+I (Windows/Linux) or Cmd+Alt+I (Mac)\n• Right-click anywhere and select "Inspect Element"`)
+    } finally {
+      setIsOpeningDevTools(false)
     }
   }
 
@@ -849,6 +865,22 @@ export const SettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
                       <HStack gap={1}>
                         <FaTrash />
                         <Text>Cleanup</Text>
+                      </HStack>
+                    </Button>
+                    <Button
+                      size="sm"
+                      colorScheme="purple"
+                      onClick={handleOpenDevTools}
+                      loading={isOpeningDevTools}
+                      disabled={isOpeningDevTools}
+                    >
+                      <HStack gap={1}>
+                        {isOpeningDevTools ? (
+                          <Spinner size="xs" />
+                        ) : (
+                          <FaCog />
+                        )}
+                        <Text>{isOpeningDevTools ? 'Opening...' : 'DevTools'}</Text>
                       </HStack>
                     </Button>
                   </HStack>
