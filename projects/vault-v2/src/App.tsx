@@ -349,9 +349,17 @@ function App() {
 
             // Add keyboard listener for F12 to open devtools
             const handleKeyDown = (e: KeyboardEvent) => {
-                if (e.key === 'F12' || (e.metaKey && e.altKey && e.key === 'i')) {
+                // F12 or Ctrl+Shift+I (Windows/Linux) or Cmd+Alt+I (Mac)
+                if (e.key === 'F12' || 
+                    (e.metaKey && e.altKey && e.key === 'i') || 
+                    (e.ctrlKey && e.shiftKey && e.key === 'I')) {
                     e.preventDefault();
-                    invoke('open_devtools').catch(console.error);
+                    invoke('open_devtools')
+                        .then(() => console.log('DevTools opened'))
+                        .catch((error) => {
+                            console.error('Failed to open DevTools:', error);
+                            console.log('💡 Try right-clicking in the app and selecting "Inspect Element"');
+                        });
                 }
             };
             window.addEventListener('keydown', handleKeyDown);

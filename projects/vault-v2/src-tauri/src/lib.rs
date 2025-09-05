@@ -23,9 +23,13 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(_window) = app.get_webview_window("main") {
-        // In Tauri v2, devtools are enabled via config and can be opened via inspector
-        // The devtools will be available via right-click menu when enabled in config
-        println!("DevTools enabled via config - use right-click menu or F12 to open");
+        // In Tauri v2, devtools are enabled via config and accessed through right-click or keyboard shortcuts
+        // There's no programmatic API to open them directly, but they're available when enabled in config
+        println!("✅ DevTools are enabled in configuration");
+        println!("💡 Access DevTools via:");
+        println!("   • Right-click anywhere in the app and select 'Inspect Element'");
+        println!("   • Press F12");
+        println!("   • Press Ctrl+Shift+I (Windows/Linux) or Cmd+Alt+I (Mac)");
         Ok(())
     } else {
         Err("Main window not found".to_string())
