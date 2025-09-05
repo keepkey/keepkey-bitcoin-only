@@ -1,0 +1,20 @@
+# Cargo configuration for cross-compilation
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+ar = "x86_64-w64-mingw32-ar"
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/SUBSYSTEM:WINDOWS"]
+
+# Optional: Use LLD linker for faster builds
+# [target.x86_64-pc-windows-gnu]
+# linker = "rust-lld"
+
+# Build optimizations
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Link-time optimization
+codegen-units = 1   # Better optimization, slower compile
+strip = true        # Strip symbols
+panic = "abort"     # Smaller binary

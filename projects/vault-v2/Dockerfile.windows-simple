@@ -1,0 +1,47 @@
+# Simplified Dockerfile for faster Windows .exe builds
+FROM rust:1.82
+
+# Install only essential tools for Windows cross-compilation
+RUN apt-get update && apt-get install -y \
+    gcc-mingw-w64-x86-64 \
+    g++-mingw-w64-x86-64 \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g bun \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Windows target
+RUN rustup target add x86_64-pc-windows-gnu
+
+# Configure cargo for cross-compilation
+RUN mkdir -p ~/.cargo && \
+    echo '[target.x86_64-pc-windows-gnu]' >> ~/.cargo/config.toml && \
+    echo 'linker = "x86_64-w64-mingw32-gcc"' >> ~/.cargo/config.toml
+
+WORKDIR /workspace
+
+# Copy entire project
+COPY . /workspace
+
+# Build frontend
+WORKDIR /workspace/projects/vault-v2
+RUN bun install && bun run build
+
+# Build Rust for Windows
+WORKDIR /workspace/projects/vault-v2/src-tauri
+
+ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc \
+    AR_x86_64_pc_windows_gnu=x86_64-w64-mingw32-ar \
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
+
+# Build the executable
+RUN cargo build --release --target x86_64-pc-windows-gnu
+
+# Copy to output
+RUN mkdir -p /output && \
+    cp target/x86_64-pc-windows-gnu/release/*.exe /output/ 2>/dev/null || \
+    cp target/x86_64-pc-windows-gnu/release/vault-v2.exe /output/ || \
+    echo "No exe found"
+
+CMD ["ls", "-la", "/output/"]

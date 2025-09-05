@@ -1,0 +1,31 @@
+services:
+  windows-builder:
+    build:
+      context: ../../  # Points to keepkey-bitcoin-only root for access to keepkey-rust
+      dockerfile: projects/vault-v2/Dockerfile.windows
+    container_name: vault-v2-windows-builder
+    volumes:
+      # Mount output directory to get the built .exe files
+      - ./dist-windows:/output
+      # Optional: Mount cargo cache to speed up rebuilds
+      - cargo-cache:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+    environment:
+      # Rust build optimizations
+      - CARGO_INCREMENTAL=0
+      - RUSTFLAGS=-C link-arg=-s  # Strip symbols for smaller binary
+      # Tauri build config
+      - TAURI_PRIVATE_KEY=${TAURI_PRIVATE_KEY}
+      - TAURI_KEY_PASSWORD=${TAURI_KEY_PASSWORD}
+    command: >
+      bash -c "
+        echo 'Build complete! Files available in:' &&
+        ls -la /output/ &&
+        echo '' &&
+        echo 'Installer files (if any):' &&
+        ls -la /output/installer/ 2>/dev/null || echo 'No installer files generated'
+      "
+
+volumes:
+  cargo-cache:
+  cargo-git:

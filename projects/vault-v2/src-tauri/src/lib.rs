@@ -322,8 +322,18 @@ async fn perform_usb_device_reset(device_id: &str) -> Result<(), String> {
     {
         // On Windows, device reset is more complex and usually requires
         // Windows Device Manager APIs or PowerShell commands
-        println!("    ⚠️ Windows USB reset requires manual device reconnection");
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        log::warn!("Windows USB reset: Manual device reconnection may be required");
+        log::debug!("Windows HID Context: Attempting device enumeration refresh");
+        
+        // Try to reset through PowerShell (best effort)
+        use std::process::Command;
+        let _ = Command::new("powershell")
+            .arg("-Command")
+            .arg("Get-PnpDevice -Class 'HIDClass' | Where-Object {$_.FriendlyName -like '*KeepKey*'} | Disable-PnpDevice -Confirm:$false; Start-Sleep -Milliseconds 500; Get-PnpDevice -Class 'HIDClass' | Where-Object {$_.FriendlyName -like '*KeepKey*'} | Enable-PnpDevice -Confirm:$false")
+            .output();
+        
+        log::info!("Windows: Attempted HID device reset via PowerShell");
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
     }
     
     // The main recovery mechanism is the event controller restart
@@ -335,16 +345,35 @@ async fn perform_usb_device_reset(device_id: &str) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize env_logger for production logging
+    // Initialize env_logger for production logging with enhanced Windows debugging
     // Set RUST_LOG environment variable to control log level
     // Examples: RUST_LOG=debug, RUST_LOG=vault_v2=debug, RUST_LOG=info
+    
+    // Enhanced logging for Windows debugging
+    #[cfg(target_os = "windows")]
+    let default_filter = "vault_v2=debug,keepkey_rust=debug,hidapi=debug";
+    
+    #[cfg(not(target_os = "windows"))]
+    let default_filter = "vault_v2=info,keepkey_rust=info";
+    
     env_logger::Builder::from_env(env_logger::Env::default()
-        .default_filter_or("vault_v2=info,keepkey_rust=info"))
+        .default_filter_or(default_filter))
         .format_timestamp_millis()
+        .format_module_path(true)
+        .format_target(true)
         .init();
     
     log::info!("🚀 Starting KeepKey Vault v2 - Logging initialized");
+    log::info!("Platform: {}", std::env::consts::OS);
+    log::info!("Architecture: {}", std::env::consts::ARCH);
     log::debug!("Debug logging is enabled");
+    
+    #[cfg(target_os = "windows")]
+    {
+        log::info!("Windows-specific debugging enabled");
+        log::debug!("HID/USB verbose logging active");
+        log::debug!("Default log level: {}", default_filter);
+    }
     
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

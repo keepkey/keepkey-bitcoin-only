@@ -1,0 +1,58 @@
+# Makefile for Windows builds using Docker
+
+.PHONY: build-windows clean-windows docker-shell help
+
+# Default target
+all: build-windows
+
+# Build Windows executable using Docker
+build-windows:
+	@echo "🏗️  Building Windows .exe with Docker..."
+	@./build-windows.sh
+
+# Clean build artifacts
+clean-windows:
+	@echo "🧹 Cleaning Windows build artifacts..."
+	@rm -rf dist-windows
+	@docker-compose -f docker-compose.windows.yml down -v
+	@docker rmi vault-v2-windows-builder 2>/dev/null || true
+
+# Open shell in Docker container for debugging
+docker-shell:
+	@echo "🐚 Opening shell in Docker build container..."
+	@docker-compose -f docker-compose.windows.yml run --rm windows-builder /bin/bash
+
+# Quick build without Docker (requires Windows or cross-compilation setup)
+build-native-windows:
+	@echo "⚠️  This requires Windows or properly configured cross-compilation tools"
+	@echo "🏗️  Building for Windows (native)..."
+	cd src-tauri && cargo build --release --target x86_64-pc-windows-gnu
+	@echo "✅ Executable available at: src-tauri/target/x86_64-pc-windows-gnu/release/vault-v2.exe"
+
+# Build installer with Tauri
+build-installer:
+	@echo "📦 Building Windows installer..."
+	cd src-tauri && cargo tauri build --target x86_64-pc-windows-gnu
+	@echo "✅ Installer available in: src-tauri/target/release/bundle/"
+
+# Test the Windows build with Wine
+test-wine:
+	@if [ -f "dist-windows/vault-v2.exe" ]; then \
+		echo "🍷 Testing Windows build with Wine..."; \
+		wine dist-windows/vault-v2.exe; \
+	else \
+		echo "❌ No Windows build found. Run 'make build-windows' first."; \
+	fi
+
+# Help target
+help:
+	@echo "Windows Build Targets:"
+	@echo "  make build-windows    - Build Windows .exe using Docker (recommended)"
+	@echo "  make clean-windows    - Clean Windows build artifacts"
+	@echo "  make docker-shell     - Open shell in Docker container"
+	@echo "  make test-wine        - Test Windows .exe with Wine"
+	@echo "  make build-installer  - Build Windows installer (NSIS/MSI)"
+	@echo ""
+	@echo "Requirements:"
+	@echo "  - Docker installed and running"
+	@echo "  - Wine (optional, for testing)"
