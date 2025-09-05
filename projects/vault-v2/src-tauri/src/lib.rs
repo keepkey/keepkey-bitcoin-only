@@ -32,6 +32,31 @@ fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+// Command to set log level at runtime
+#[tauri::command]
+fn set_log_level(level: String) -> Result<String, String> {
+    let log_level = match level.to_lowercase().as_str() {
+        "trace" => log::LevelFilter::Trace,
+        "debug" => log::LevelFilter::Debug,
+        "info" => log::LevelFilter::Info,
+        "warn" => log::LevelFilter::Warn,
+        "error" => log::LevelFilter::Error,
+        "off" => log::LevelFilter::Off,
+        _ => return Err(format!("Invalid log level: {}. Use: trace, debug, info, warn, error, or off", level))
+    };
+    
+    log::set_max_level(log_level);
+    let message = format!("Log level set to: {:?}", log_level);
+    log::info!("{}", message);
+    Ok(message)
+}
+
+// Command to get current log level
+#[tauri::command]
+fn get_log_level() -> String {
+    format!("{:?}", log::max_level())
+}
+
 // Onboarding related commands moved to commands.rs
 
 
@@ -310,6 +335,17 @@ async fn perform_usb_device_reset(device_id: &str) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize env_logger for production logging
+    // Set RUST_LOG environment variable to control log level
+    // Examples: RUST_LOG=debug, RUST_LOG=vault_v2=debug, RUST_LOG=info
+    env_logger::Builder::from_env(env_logger::Env::default()
+        .default_filter_or("vault_v2=info,keepkey_rust=info"))
+        .format_timestamp_millis()
+        .init();
+    
+    log::info!("🚀 Starting KeepKey Vault v2 - Logging initialized");
+    log::debug!("Debug logging is enabled");
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
@@ -407,6 +443,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             open_devtools,
+            set_log_level,
+            get_log_level,
             vault_change_view,
             vault_open_support,
             vault_open_app,

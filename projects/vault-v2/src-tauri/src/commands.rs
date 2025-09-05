@@ -209,10 +209,39 @@ pub async fn reset_device_queue(
 ) -> Result<(), String> {
     println!("🔄 Resetting device queue for: {}", device_id);
     
+    let canonical_id = get_canonical_device_id(&device_id);
     let mut manager = queue_manager.lock().await;
-    if let Some(handle) = manager.remove(&device_id) {
-        let _ = handle.shutdown().await;
-        println!("✅ Device queue reset for: {}", device_id);
+    
+    // Remove any handles associated with this physical device (original, canonical, aliases)
+    let keys_to_remove: Vec<String> = manager
+        .keys()
+        .filter(|k| *k == &device_id || **k == canonical_id || are_devices_potentially_same(k, &device_id))
+        .cloned()
+        .collect();
+    
+    for key in keys_to_remove {
+        if let Some(handle) = manager.remove(&key) {
+            println!("  ♻️ Removing queue for key: {}", key);
+            let _ = handle.shutdown().await;
+        }
+    }
+    println!("✅ Device queue reset for: {} (canonical: {})", device_id, canonical_id);
+    
+    // Clear per-device caches to avoid stale state when switching devices
+    {
+        let mut state_cache = crate::device::queue::DEVICE_STATE_CACHE.write().await;
+        state_cache.remove(&device_id);
+        state_cache.remove(&canonical_id);
+    }
+    {
+        let mut passphrase_state = crate::device::queue::PASSPHRASE_REQUEST_STATE.write().await;
+        passphrase_state.remove(&device_id);
+        passphrase_state.remove(&canonical_id);
+    }
+    {
+        let mut tracker = crate::device::state::DEVICE_STATE_TRACKER.write().await;
+        tracker.remove(&device_id);
+        tracker.remove(&canonical_id);
     }
     
     Ok(())

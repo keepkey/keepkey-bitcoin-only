@@ -1,6 +1,6 @@
 [package]
 name = "vault-v2"
-version = "2.2.10"
+version = "0.2.11"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -36,6 +36,7 @@ chrono = { version = "0.4", features = ["serde"] }  # For timestamp logging
 dirs = "5.0"  # For finding home directory
 semver = "1.0.26"
 log = "0.4"  # For logging support in PIN creation
+env_logger = "0.11"  # For environment-based logging configuration
 # Server dependencies
 axum = "0.7"
 tower = "0.4"
